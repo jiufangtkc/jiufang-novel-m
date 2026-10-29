@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { BookIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon } from '../components/Icons';
+import { BookIcon, CloseIcon, FolderIcon, PlusIcon } from '../components/Icons';
 import { OPEN_DB_FAIL } from '../copy/userFacing';
 import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
 import { canPickLocalFiles } from '../db/browserDisk';
@@ -21,14 +21,6 @@ export function HomeScreen() {
     <div className="home" data-testid="home-screen">
       <header className="topbar">
         <h1>九方小說編輯器M</h1>
-        <button
-          type="button"
-          className="icon-button"
-          aria-label="重新整理"
-          onClick={() => actions.toast('清單已是這個畫面上的專案。')}
-        >
-          <RefreshIcon />
-        </button>
       </header>
       <main className="home-main">
         <h2>最近開啟的稿子</h2>

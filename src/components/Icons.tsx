@@ -33,15 +33,6 @@ export function BookIcon({ size = 28 }: IconProps) {
   );
 }
 
-export function RefreshIcon(props: IconProps) {
-  return (
-    <Stroke {...props}>
-      <path d="M20 12a8 8 0 1 1-2.2-5.5" />
-      <path d="M20 4v5h-5" />
-    </Stroke>
-  );
-}
-
 export function CloseIcon(props: IconProps) {
   return (
     <Stroke {...props}>

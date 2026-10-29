@@ -63,6 +63,7 @@ const fontReady = await page.evaluate(async () => {
 });
 assert(fontReady, '芫荽沒有載入');
 const homeText = await page.getByTestId('home-screen').innerText();
+assert((await page.getByRole('button', { name: '重新整理' }).count()) === 0, '首頁不該有重新整理按鈕');
 assert(homeText.includes('7月2日（四）'), '首頁舊稿日期應為月日星期');
 assert(!homeText.includes('2026-07-02'), '首頁不該再顯示 ISO 日期');
 await shot('01-首頁.png');
