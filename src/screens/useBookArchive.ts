@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ARCHIVE_KEEP_FAIL } from '../copy/userFacing';
+import { archiveWriteFailureMessage, type ArchiveWriteKind } from '../copy/userFacing';
 import { bookArchive } from '../db/chapterArchive';
 import { emptyArchive, type BookArchive } from '../domain/chapterVersions';
 import { useSample } from '../state/sampleStore';
 
 export function useBookArchive(bookId: string): {
   archive: BookArchive;
-  update: (recipe: (current: BookArchive) => BookArchive) => void;
+  update: (recipe: (current: BookArchive) => BookArchive, kind?: ArchiveWriteKind) => Promise<BookArchive>;
   archivePersistOk: boolean;
 } {
   const { actions } = useSample();
@@ -18,10 +18,13 @@ export function useBookArchive(bookId: string): {
     const unsubscribe = bookArchive.subscribe((id, next) => {
       if (alive && id === bookId) setArchive(next);
     });
-    const unsubscribePersist = bookArchive.subscribePersist((id, ok) => {
+    const unsubscribePersist = bookArchive.subscribePersist((id, ok, kind) => {
       if (!alive || id !== bookId) return;
       setArchivePersistOk(ok);
-      if (!ok) actions.toast(ARCHIVE_KEEP_FAIL);
+      if (!ok) {
+        const noticeKind: ArchiveWriteKind = kind === 'delete' || kind === 'restore' ? kind : 'version';
+        actions.toast(archiveWriteFailureMessage(noticeKind));
+      }
     });
     void bookArchive.read(bookId).then((data) => {
       if (alive) setArchive(data);
@@ -34,9 +37,9 @@ export function useBookArchive(bookId: string): {
   }, [bookId, actions]);
 
   const update = useCallback(
-    (recipe: (current: BookArchive) => BookArchive) => {
+    (recipe: (current: BookArchive) => BookArchive, kind: ArchiveWriteKind = 'version') => {
       setArchive((current) => recipe(current));
-      void bookArchive.update(bookId, recipe);
+      return bookArchive.update(bookId, recipe, kind);
     },
     [bookId],
   );

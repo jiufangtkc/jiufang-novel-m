@@ -53,6 +53,7 @@ import {
   TREE_DRAG_HINT,
   TREE_DELETE_RECOVERABLE,
   deleteConfirmShowsRecoverable,
+  contentAfterVersionRestore,
   TREE_EMPTY_NAME,
   TREE_FIND_DELETED,
   TREE_FIND_VERSION,
@@ -357,7 +358,7 @@ export function WriteScreen() {
     const stamped = liveNodes();
     const when = Date.now();
     const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
-    if (record) updateArchive((current) => archiveDeletion(current, record, versionsForNode(record.node, when)));
+    if (record) void updateArchive((current) => archiveDeletion(current, record, versionsForNode(record.node, when)), 'delete');
     commit(next, treeDeletedToast(node.title), { deleted: record });
     if (pickedId === id) setPickedId(null);
     setConfirmId(null);
@@ -414,21 +415,30 @@ export function WriteScreen() {
     pendingScroll.current = record.node.id;
   }
 
-  function restoreVersion(version: ChapterVersion) {
+  async function restoreVersion(version: ChapterVersion) {
     const node = findNode(book.nodes, version.nodeId);
     if (!node || node.type === 'folder') return;
     const live = readLiveDraftFromEditor();
     const content = live && live.projectId === book.id && live.chapterId === node.id ? live.text : (node.content ?? '');
     const savedAt = Date.now();
-    updateArchive((current) =>
-      withVersion(
-        current,
-        versionFromNode({ id: node.id, title: node.title, content }, savedAt, `v-${savedAt}-${node.id}`),
-      ),
-    );
+    let kept = true;
+    try {
+      await updateArchive(
+        (current) =>
+          withVersion(
+            current,
+            versionFromNode({ id: node.id, title: node.title, content }, savedAt, `v-${savedAt}-${node.id}`),
+          ),
+        'restore',
+      );
+    } catch {
+      kept = false;
+    }
+    const nextContent = contentAfterVersionRestore(kept, content, version.content);
+    if (nextContent === content && !kept) return;
     actions.setNodes(
       book.id,
-      updateNode(book.nodes, node.id, (item) => nodeAfterVersionRestore(item, version)),
+      updateNode(book.nodes, node.id, (item) => nodeAfterVersionRestore(item, { content: nextContent })),
     );
     if (chapterId === node.id) setEditorEpoch((value) => value + 1);
     setPreview(null);

@@ -30,7 +30,14 @@ describe('章節目錄草案文案', () => {
 
   it('舊版、單篇與上下章的句子先照草案', async () => {
     const copy = await import('./userFacing');
-    expect(copy.ARCHIVE_KEEP_FAIL).toBe('這次沒留下舊版。');
+    expect(copy.ARCHIVE_KEEP_FAIL).toBe('這次沒留下舊版，正文沒受影響。');
+    expect(copy.ARCHIVE_RESTORE_HELD).toBe('現在的內容沒留成舊版，先不換。');
+    expect(copy.ARCHIVE_DELETE_UNSAVED).toBe('這次刪掉的內容找不回來，10 秒內可按「復原」。');
+    expect(copy.archiveWriteFailureMessage('version')).toBe(copy.ARCHIVE_KEEP_FAIL);
+    expect(copy.archiveWriteFailureMessage('restore')).toBe(copy.ARCHIVE_RESTORE_HELD);
+    expect(copy.archiveWriteFailureMessage('delete')).toBe(copy.ARCHIVE_DELETE_UNSAVED);
+    expect(copy.contentAfterVersionRestore(false, '現在的字', '舊版的字')).toBe('現在的字');
+    expect(copy.contentAfterVersionRestore(true, '現在的字', '舊版的字')).toBe('舊版的字');
     expect(copy.deleteConfirmShowsRecoverable(true)).toBe(true);
     expect(copy.deleteConfirmShowsRecoverable(false)).toBe(false);
     expect(copy.TREE_FIND_VERSION).toBe('找回之前的版本');

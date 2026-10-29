@@ -34,6 +34,25 @@ describe('舊版儲存排隊', () => {
     expect(persist).toEqual([false]);
   });
 
+  it('換版前留舊版失敗時，會標成 restore', async () => {
+    const backing: ArchiveBacking = {
+      async read() {
+        return emptyArchive();
+      },
+      async write() {
+        throw new Error('舊版沒寫入');
+      },
+    };
+    const client = createArchiveClient(backing);
+    const kinds: string[] = [];
+    client.subscribePersist((_id, ok, kind) => {
+      if (!ok) kinds.push(kind);
+    });
+    await expect(client.update('book', (current) => current, 'restore')).rejects.toThrow('舊版沒寫入');
+    await expect(client.update('book', (current) => current, 'delete')).rejects.toThrow('舊版沒寫入');
+    expect(kinds).toEqual(['restore', 'delete']);
+  });
+
   it('兩次更新接連寫入時，兩筆都會留下', async () => {
     let stored = emptyArchive();
     let release = () => {};

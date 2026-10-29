@@ -18,10 +18,14 @@ export interface ArchiveBacking {
 
 export interface ArchiveClient {
   read(bookId: string): Promise<BookArchive>;
-  update(bookId: string, recipe: (current: BookArchive) => BookArchive): Promise<BookArchive>;
+  update(
+    bookId: string,
+    recipe: (current: BookArchive) => BookArchive,
+    kind?: string,
+  ): Promise<BookArchive>;
   subscribe(listener: (bookId: string, archive: BookArchive) => void): () => void;
   isPersistOk(bookId: string): boolean;
-  subscribePersist(listener: (bookId: string, ok: boolean) => void): () => void;
+  subscribePersist(listener: (bookId: string, ok: boolean, kind: string) => void): () => void;
 }
 
 function normalize(value: unknown): BookArchive {
@@ -38,11 +42,11 @@ export function createArchiveClient(backing: ArchiveBacking): ArchiveClient {
   const tails = new Map<string, Promise<unknown>>();
   const listeners = new Set<(bookId: string, archive: BookArchive) => void>();
   const persistOk = new Map<string, boolean>();
-  const persistListeners = new Set<(bookId: string, ok: boolean) => void>();
+  const persistListeners = new Set<(bookId: string, ok: boolean, kind: string) => void>();
 
-  function notifyPersist(bookId: string, ok: boolean) {
+  function notifyPersist(bookId: string, ok: boolean, kind: string) {
     persistOk.set(bookId, ok);
-    for (const listener of persistListeners) listener(bookId, ok);
+    for (const listener of persistListeners) listener(bookId, ok, kind);
   }
 
   function enqueue<T>(bookId: string, job: () => Promise<T>): Promise<T> {
@@ -67,19 +71,19 @@ export function createArchiveClient(backing: ArchiveBacking): ArchiveClient {
         return cache.get(bookId)!;
       });
     },
-    update(bookId, recipe) {
+    update(bookId, recipe, kind = 'version') {
       return enqueue(bookId, async () => {
         const current = cache.get(bookId) ?? normalize(await backing.read(bookId));
         const next = recipe(current);
         cache.set(bookId, next);
         try {
           await backing.write(bookId, next);
-          notifyPersist(bookId, true);
+          notifyPersist(bookId, true, kind);
           for (const listener of listeners) listener(bookId, next);
           return next;
         } catch (error) {
           cache.set(bookId, current);
-          notifyPersist(bookId, false);
+          notifyPersist(bookId, false, kind);
           for (const listener of listeners) listener(bookId, current);
           throw error;
         }

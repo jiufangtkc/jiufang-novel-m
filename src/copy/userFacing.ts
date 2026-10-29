@@ -47,8 +47,26 @@ export const TREE_DESKTOP_HINT =
   '滑過任一列會出現 ≡，可直接用滑鼠拖。F2 改名、Del 刪除、Alt+↑↓ 移動、Ctrl+Z 復原';
 export const TREE_UNDO_HINT = '刪除後 10 秒內可以按「復原」。';
 export const TREE_DELETE_RECOVERABLE = '之後仍可從目錄最下方的「找回刪掉的章」放回來。';
-/** 舊版或刪除紀錄寫入 IndexedDB 失敗時的提示（草案，待九方審）。 */
-export const ARCHIVE_KEEP_FAIL = '這次沒留下舊版。';
+/** 舊版寫入 IndexedDB 失敗時的提示（草案，待九方審）。 */
+export const ARCHIVE_KEEP_FAIL = '這次沒留下舊版，正文沒受影響。';
+/** 按「用這一版」前，現在的正文沒留成舊版（草案，待九方審）。 */
+export const ARCHIVE_RESTORE_HELD = '現在的內容沒留成舊版，先不換。';
+/** 刪除紀錄沒寫入時的提示（草案，待九方審）。 */
+export const ARCHIVE_DELETE_UNSAVED = '這次刪掉的內容找不回來，10 秒內可按「復原」。';
+
+export type ArchiveWriteKind = 'version' | 'delete' | 'restore';
+
+/** 寫入失敗時要顯示的那一句。換版失敗與刪除失敗不能用同一句。 */
+export function archiveWriteFailureMessage(kind: ArchiveWriteKind): string {
+  if (kind === 'restore') return ARCHIVE_RESTORE_HELD;
+  if (kind === 'delete') return ARCHIVE_DELETE_UNSAVED;
+  return ARCHIVE_KEEP_FAIL;
+}
+
+/** 現在的正文沒留成舊版時，不換上那一版。 */
+export function contentAfterVersionRestore(kept: boolean, current: string, restored: string): string {
+  return kept ? restored : current;
+}
 
 /** 刪除確認是否顯示「之後找得回」那句。 */
 export function deleteConfirmShowsRecoverable(archivePersistOk: boolean): boolean {
