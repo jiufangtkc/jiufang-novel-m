@@ -475,6 +475,7 @@ export function WriteScreen() {
             <p className="hint">
               {treeMoreSummary(
                 menuNode.type === 'folder' ? TREE_KIND_VOLUME : menuNode.type === 'scene' ? TREE_KIND_SCENE : TREE_KIND_CHAPTER,
+                removalImpact(menuNode).chapters,
                 removalImpact(menuNode).scenes,
                 formatInteger(removalImpact(menuNode).words),
               )}

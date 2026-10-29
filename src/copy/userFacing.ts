@@ -9,8 +9,6 @@ export const OPEN_DB_FAIL =
 
 export const OPEN_DB_HINT = '請選擇使用九方編輯器編寫的 .db 稿件檔。';
 
-export const FEATURE_PREPARING = '功能還在準備中。';
-
 export const SAVE_PERMISSION_DENIED = '沒有寫入權限，請再按一次並選「允許」。';
 
 export const SAVE_PARTIAL_FAIL = '存檔失敗。稿件目前仍在 APP 暫存空間。';
@@ -34,8 +32,6 @@ export const TREE_MOVE_DOWN = '下移';
 export const TREE_MORE = '更多';
 export const TREE_MOVE_VOLUME = '移到別卷…';
 export const TREE_MOVE_ROOT = '移到最上層';
-export const TREE_DELETE = '刪除…';
-export const TREE_DELETE_NODE = '刪除這項…';
 export const TREE_DELETE_CHAPTER = '刪除這章…';
 export const TREE_DELETE_SCENE = '刪除這幕…';
 export const TREE_DELETE_VOLUME = '刪除這卷…';
@@ -82,7 +78,8 @@ export function treeDeleteImpact(chapters: number, scenes: number, words: string
   return `裡面有 ${parts.join('、')}、共 ${words} 字，會一起刪除。`;
 }
 
-export function treeMoreSummary(kind: string, scenes: number, words: string): string {
-  if (kind === TREE_KIND_VOLUME) return `${kind} · ${scenes} 幕 · 共 ${words} 字`;
+export function treeMoreSummary(kind: string, chapters: number, scenes: number, words: string): string {
+  if (kind === TREE_KIND_VOLUME) return `${kind} · ${chapters} 章 · ${scenes} 幕 · 共 ${words} 字`;
+  if (kind === TREE_KIND_SCENE) return `${kind} · 共 ${words} 字`;
   return `${kind} · ${scenes} 幕 · 共 ${words} 字`;
 }
