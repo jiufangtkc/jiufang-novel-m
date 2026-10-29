@@ -27,6 +27,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   const { ref } = useWritingSurface({
     bookId: projectId,
     chapterId: chapter.id,
+    openingText: chapter.content ?? '',
     onCommit: (text) => actions.commitText(projectId, chapter.id, text),
     onLarge: actions.noteLarge,
     onDuration: actions.addDuration,

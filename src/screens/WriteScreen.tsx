@@ -18,6 +18,7 @@ import {
   withoutNode,
 } from '../domain/chapterOps';
 import { nextChapterTitle, sourceTitleForNewChapter } from '../domain/chapterTitle';
+import { nodesAfterDeleteUndo } from '../domain/undoDelete';
 import {
   archiveDeletion,
   deletedFromNode,
@@ -87,9 +88,10 @@ import { ChapterTree } from './ChapterTree';
 import { EditorPane } from './EditorPane';
 import { focusTitleInput } from './titleCaret';
 import { loadTreePlace, saveTreePlace, scrollTopForRow, type TreePlace } from './treeScroll';
+import { reduceDrag, type DragState } from './dragSession';
 import { useBookArchive } from './useBookArchive';
 
-type UndoBar = { nodes: ChapterNode[]; text: string; token: number; deletedId?: string };
+type UndoBar = { nodes: ChapterNode[]; text: string; token: number; deleted?: DeletedRecord };
 type RenameIntent = 'stay' | 'write';
 type MenuKind = 'short' | 'full' | 'more' | 'progress' | 'volume';
 
@@ -133,8 +135,8 @@ export function WriteScreen() {
   const [highlightId, setHighlightId] = useState<string | null>(chapterId ?? null);
   const pendingScroll = useRef<string | null>(null);
   const restoredKey = useRef<string | null>(null);
-  const dropRef = useRef(drop);
-  dropRef.current = drop;
+  const dragSession = useRef<DragState>({ dragId: null, drop: null });
+  const undoAction = useRef<(() => void) | null>(null);
   nodesRef.current = project?.nodes ?? [];
 
   const showOrganize = organizing && !desktop;
@@ -184,7 +186,8 @@ export function WriteScreen() {
   });
 
   useEffect(() => {
-    if (!draggingId) return;
+    if (!draggingId || !project) return;
+    dragSession.current = reduceDrag({ dragId: null, drop: null }, { type: 'start', id: draggingId }).state;
     const move = (event: PointerEvent) => {
       const pane = scrollRef.current;
       if (!pane) return;
@@ -198,50 +201,53 @@ export function WriteScreen() {
       });
       if (!hit?.dataset.nodeId) return;
       const box = hit.getBoundingClientRect();
-      setDrop({ id: hit.dataset.nodeId, after: event.clientY > box.top + box.height / 2 });
+      const step = reduceDrag(dragSession.current, {
+        type: 'hover',
+        drop: { id: hit.dataset.nodeId, after: event.clientY > box.top + box.height / 2 },
+      });
+      dragSession.current = step.state;
+      setDrop(step.state.drop);
     };
-    const up = () => {
-      const current = dropRef.current;
+    const finish = (type: 'pointerup' | 'pointercancel' | 'lostpointercapture') => {
+      const step = reduceDrag(dragSession.current, { type });
+      dragSession.current = step.state;
+      setDraggingId(step.state.dragId);
+      setDrop(step.state.drop);
+      if (!step.move) return;
       const nodes = nodesRef.current;
-      const dragId = draggingId;
-      setDraggingId(null);
-      setDrop(null);
-      if (!current || !project) return;
-      const target = resolveDrop(nodes, dragId, current.id, current.after);
+      const target = resolveDrop(nodes, step.move.dragId, step.move.drop.id, step.move.drop.after);
       if (!target) return;
-      const next = moveNode(nodes, dragId, target.parentId, target.index);
+      const next = moveNode(nodes, step.move.dragId, target.parentId, target.index);
       if (!next || JSON.stringify(next) === JSON.stringify(nodes)) return;
-      const title = findNode(nodes, dragId)?.title ?? '';
+      const title = findNode(nodes, step.move.dragId)?.title ?? '';
       setUndo({ nodes, text: treeMovedToast(title), token: Date.now() });
       actions.setNodes(project.id, next);
-      pendingScroll.current = dragId;
+      pendingScroll.current = step.move.dragId;
     };
+    const onUp = () => finish('pointerup');
+    const onCancel = () => finish('pointercancel');
+    const onLost = () => finish('lostpointercapture');
     window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onCancel);
+    window.addEventListener('lostpointercapture', onLost, true);
     return () => {
       window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onCancel);
+      window.removeEventListener('lostpointercapture', onLost, true);
     };
   }, [draggingId, actions, project]);
 
   useEffect(() => {
     if (!desktop || !project) return;
-    const current = project;
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
       const id = pickedId ?? highlightId;
-      if ((event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey) && undo) {
+      if ((event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey) && undoAction.current) {
         event.preventDefault();
-        if (undo.deletedId) {
-          const deletedId = undo.deletedId;
-          updateArchive((currentArchive) => ({
-            ...currentArchive,
-            deleted: forgetDeleted(currentArchive.deleted, deletedId),
-          }));
-        }
-        actions.setNodes(current.id, undo.nodes);
-        setUndo(null);
+        undoAction.current();
         return;
       }
       if (!id) return;
@@ -290,22 +296,27 @@ export function WriteScreen() {
     setHighlightId(id);
   }
 
-  function commit(next: ChapterNode[] | null, bar: string | null, deletedId?: string) {
+  function commit(next: ChapterNode[] | null, bar: string | null, deleted?: DeletedRecord | null) {
     if (!next) return;
-    if (bar) setUndo({ nodes: book.nodes, text: bar, token: Date.now(), deletedId });
+    if (bar) setUndo({ nodes: book.nodes, text: bar, token: Date.now(), deleted: deleted ?? undefined });
     else setUndo(null);
     actions.setNodes(book.id, next);
   }
 
   function undoNow() {
     if (!undo) return;
-    if (undo.deletedId) {
-      const deletedId = undo.deletedId;
-      updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, deletedId) }));
+    if (undo.deleted) {
+      const deleted = undo.deleted;
+      const next = nodesAfterDeleteUndo(liveNodes(), { snapshot: undo.nodes, deleted });
+      actions.setNodes(book.id, expandToNode(next, deleted.node.id));
+      updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, deleted.id) }));
+      pendingScroll.current = deleted.node.id;
+    } else {
+      actions.setNodes(book.id, undo.nodes);
     }
-    actions.setNodes(book.id, undo.nodes);
     setUndo(null);
   }
+  undoAction.current = undo ? undoNow : null;
 
   function liveNodes(): ChapterNode[] {
     const live = readLiveDraftFromEditor();
@@ -321,7 +332,7 @@ export function WriteScreen() {
     const when = Date.now();
     const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
     if (record) updateArchive((current) => archiveDeletion(current, record, versionsForNode(record.node, when)));
-    commit(next, treeDeletedToast(node.title), record?.id);
+    commit(next, treeDeletedToast(node.title), record);
     if (pickedId === id) setPickedId(null);
     setConfirmId(null);
     setMenu(null);
