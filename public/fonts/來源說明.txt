@@ -1,0 +1,7 @@
+芫荽（Iansui）
+作者：But Ko／Fontworks Inc.
+來源：https://github.com/ButTaiwan/iansui 發行標籤 v1.020
+授權：SIL Open Font License 1.1（全文見同目錄 OFL.txt）
+
+本網站存放的 woff2 是由原版字型依 Unicode 碼位切成小塊，供瀏覽器按需下載。
+字型名稱仍為 Iansui。這些小塊不是拿來單獨販售的商品。
