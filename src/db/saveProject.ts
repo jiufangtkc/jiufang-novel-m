@@ -24,7 +24,7 @@ export function saveNotice(outcome: SaveOutcome): string | null {
     case 'saved-as':
       return '已另存';
     case 'handed-off':
-      return outcome.via === 'share' ? '已交給存檔選單' : '已下載，請自行放到想放的位置';
+      return outcome.via === 'share' ? '已另存' : '已下載，請自行放到想放的位置';
     case 'cancelled':
       return null;
     case 'permission-denied':

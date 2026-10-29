@@ -147,6 +147,17 @@ describe('儲存專案', () => {
 });
 
 describe('另存專案', () => {
+  it('分享選單成功後提示已另存', () => {
+    expect(saveNotice({ kind: 'handed-off', via: 'share', filename: '【示範】假書_20260315-0905.db' })).toBe('已另存');
+  });
+
+  it('分享選單取消時不顯示成功', async () => {
+    const box = env({ share: async () => 'cancelled' });
+    const outcome = await saveProjectAsNew(box.env, 'book-1', NEXT, '【示範】假書_20260315-0905.db');
+    expect(outcome.kind).toBe('cancelled');
+    expect(saveNotice(outcome)).toBeNull();
+  });
+
   it('桌機另存後，儲存專案改寫新檔', async () => {
     const original = new FakeDisk('原稿.db', ORIGINAL);
     const created = new FakeDisk('霧港_20260315-0905.db', new Uint8Array());
@@ -175,6 +186,7 @@ describe('另存專案', () => {
       via: 'share',
       filename: '霧港_20260315-0905.db',
     });
+    expect(saveNotice(savedAs)).toBe('已另存');
     const loaded = await box.store.load('book-1');
     expect(loaded?.filename).toBe('原稿.db');
     expect(loaded?.file).toBeNull();
