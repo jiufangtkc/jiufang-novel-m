@@ -10,7 +10,7 @@ export default defineConfig({
       includeAssets: ['favicon.png', 'apple-touch-icon.png', 'fonts/OFL.txt', 'fonts/來源說明.txt'],
       manifest: {
         name: '九方小說編輯器M',
-        short_name: '九方小說M',
+        short_name: '九方小說 M',
         description: '可加到主畫面、可離線寫作的小說編輯器',
         lang: 'zh-Hant',
         dir: 'ltr',
