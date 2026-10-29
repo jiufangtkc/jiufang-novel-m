@@ -16,7 +16,10 @@ import {
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
+import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
+import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
+import { exportBook, importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
 import {
   applyLargeEvent,
   classifyTextDelta,
@@ -42,8 +45,14 @@ interface SampleState {
   projects: DemoProject[];
   recentIds: string[];
   schedule: GoalSchedule;
+  demoSchedule: GoalSchedule;
+  goalById: Record<string, GoalSchedule>;
+  activeProjectId: string | null;
   logs: WritingLogRow[];
+  demoLogs: WritingLogRow[];
   toast: string | null;
+  /** 匯入檔的卡片與寫作紀錄，用來原樣交回。 */
+  fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
 }
 
 type Action =
@@ -58,6 +67,14 @@ type Action =
   | { type: 'set-hour'; hour: number }
   | { type: 'set-book-goal'; projectId: string; bookGoal: number }
   | { type: 'add-scene'; projectId: string; chapterId: string; sceneId: string }
+  | { type: 'focus-project'; id: string }
+  | {
+      type: 'attach-file';
+      project: DemoProject;
+      schedule: GoalSchedule;
+      extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
+      quiet?: boolean;
+    }
   | { type: 'toast'; message: string | null };
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
@@ -91,14 +108,132 @@ function savedProjects(): DemoProject[] | null {
 
 function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
-  const projects = savedProjects() ?? DEMO_PROJECTS;
+  const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) => ({
+    ...project,
+    origin: project.origin ?? 'demo',
+  }));
+  const logs = alignToday(demoLogs(), schedule);
   return {
     projects,
     recentIds: projects.map((project) => project.id),
     schedule,
-    logs: alignToday(demoLogs(), schedule),
+    demoSchedule: schedule,
+    goalById: {},
+    activeProjectId: null,
+    logs,
+    demoLogs: logs,
     toast: null,
+    fileExtras: {},
   };
+}
+
+function applyLargeToFile(log: FileLog, delta: TextDelta): FileLog {
+  return {
+    ...log,
+    paste_large_count: log.paste_large_count + (delta.largeInsert ? 1 : 0),
+    delete_large_count: log.delete_large_count + (delta.largeDelete ? 1 : 0),
+  };
+}
+
+function bumpFileLog(
+  state: SampleState,
+  dayKey: string,
+  update: (log: FileLog) => FileLog,
+): SampleState['fileExtras'] {
+  const project = state.projects.find((item) => item.id === state.activeProjectId);
+  if (!project?.dbKey || project.origin !== 'file') return state.fileExtras;
+  const extra = state.fileExtras[project.dbKey];
+  if (!extra) return state.fileExtras;
+  let found = false;
+  const logs = extra.logs.map((log) => {
+    if (log.date !== dayKey) return log;
+    found = true;
+    return update(log);
+  });
+  if (!found) {
+    logs.push(
+      update({
+        date: dayKey,
+        duration: 0,
+        word_count: 0,
+        ai_continuation_count: 0,
+        ai_continuation_chars: 0,
+        ai_chat_count: 0,
+        ai_details: '{}',
+        paste_large_count: 0,
+        delete_large_count: 0,
+      }),
+    );
+  }
+  return { ...state.fileExtras, [project.dbKey]: { ...extra, logs } };
+}
+
+function fileLogsToRows(logs: readonly FileLog[]): WritingLogRow[] {
+  return logs.map((log, index) => ({
+    id: index + 1,
+    date: log.date,
+    duration: log.duration,
+    word_count: log.word_count,
+    ai_continuation_count: log.ai_continuation_count,
+    ai_continuation_chars: log.ai_continuation_chars,
+    ai_chat_count: log.ai_chat_count,
+    ai_details: log.ai_details,
+    paste_large_count: log.paste_large_count,
+    delete_large_count: log.delete_large_count,
+  }));
+}
+
+function syncFileLog(
+  extras: SampleState['fileExtras'],
+  project: DemoProject,
+  schedule: GoalSchedule,
+  nodeId?: string,
+): SampleState['fileExtras'] {
+  if (project.origin !== 'file' || !project.dbKey) return extras;
+  const extra = extras[project.dbKey];
+  const open = schedule.open;
+  if (!extra || !open) return extras;
+  const logs = extra.logs.map((log) => ({ ...log }));
+  const found = logs.find((log) => log.date === open.dayKey);
+  if (found) found.word_count = open.wordCount;
+  else {
+    logs.push({
+      date: open.dayKey,
+      duration: 0,
+      word_count: open.wordCount,
+      ai_continuation_count: 0,
+      ai_continuation_chars: 0,
+      ai_chat_count: 0,
+      ai_details: '{}',
+      paste_large_count: 0,
+      delete_large_count: 0,
+    });
+  }
+  return {
+    ...extras,
+    [project.dbKey]: {
+      ...extra,
+      info: {
+        ...extra.info,
+        lastOpenedNodeId: nodeId ?? extra.info.lastOpenedNodeId,
+        dailyTargetWordCount: open.goals.at(-1)?.goal ?? extra.info.dailyTargetWordCount,
+        targetWordCount: project.bookGoal,
+      },
+      logs,
+    },
+  };
+}
+
+function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
+  const active = state.projects.find((project) => project.id === state.activeProjectId);
+  if (active?.origin === 'file' && state.activeProjectId) {
+    return {
+      ...state,
+      schedule,
+      goalById: { ...state.goalById, [state.activeProjectId]: schedule },
+    };
+  }
+  return { ...state, schedule, demoSchedule: schedule };
 }
 
 function reduce(state: SampleState, action: Action): SampleState {
@@ -166,17 +301,23 @@ function reduce(state: SampleState, action: Action): SampleState {
       const project = state.projects.find((item) => item.id === action.projectId);
       const node = project ? findNode(project.nodes, action.nodeId) : null;
       if (!project || !node || (node.content ?? '') === action.text) return state;
-      const delta = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' });
-      const schedule = applyWordDelta(state.schedule, delta.wordDelta, now);
+      const deltaWords =
+        project.origin === 'file'
+          ? countManuscriptWords(action.text) - countManuscriptWords(node.content ?? '')
+          : classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      const schedule = applyWordDelta(state.schedule, deltaWords, now);
+      const next = keepSchedule(state, schedule);
+      const projects = mapProject(next.projects, action.projectId, (current) => ({
+        ...current,
+        updatedLabel: '剛剛',
+        nodes: updateNode(current.nodes, action.nodeId, (item) => ({ ...item, content: action.text })),
+      }));
+      const extras = syncFileLog(next.fileExtras, project, schedule, action.nodeId);
       return {
-        ...state,
-        schedule,
-        logs: alignToday(state.logs, schedule),
-        projects: mapProject(state.projects, action.projectId, (current) => ({
-          ...current,
-          updatedLabel: '剛剛',
-          nodes: updateNode(current.nodes, action.nodeId, (item) => ({ ...item, content: action.text })),
-        })),
+        ...next,
+        projects,
+        logs: alignToday(next.logs, schedule),
+        fileExtras: extras,
       };
     }
     case 'note-large': {
@@ -186,7 +327,7 @@ function reduce(state: SampleState, action: Action): SampleState {
       const logs = alignToday(state.logs, state.schedule).map((log) =>
         log.date === dayKey ? applyLargeEvent(log, action.delta) : log,
       );
-      return { ...state, logs };
+      return { ...state, logs, fileExtras: bumpFileLog(state, dayKey, (log) => applyLargeToFile(log, action.delta)) };
     }
     case 'add-duration': {
       if (!state.schedule.open || action.seconds <= 0) return state;
@@ -194,16 +335,54 @@ function reduce(state: SampleState, action: Action): SampleState {
       const logs = alignToday(state.logs, state.schedule).map((log) =>
         log.date === dayKey ? withAddedDuration(log, action.seconds) : log,
       );
-      return { ...state, logs };
-    }
-    case 'set-goal':
-      return { ...state, schedule: changeGoal(state.schedule, action.goal, now), toast: '已更新今日目標' };
-    case 'set-hour':
       return {
         ...state,
-        schedule: changeDayEndHour(state.schedule, action.hour, now),
+        logs,
+        fileExtras: bumpFileLog(state, dayKey, (log) => ({ ...log, duration: log.duration + action.seconds })),
+      };
+    }
+    case 'set-goal':
+      return { ...keepSchedule(state, changeGoal(state.schedule, action.goal, now)), toast: '已更新今日目標' };
+    case 'set-hour':
+      return {
+        ...keepSchedule(state, changeDayEndHour(state.schedule, action.hour, now)),
         toast: '已記下結束時刻，從下一個寫作日開始用',
       };
+    case 'focus-project': {
+      const project = state.projects.find((item) => item.id === action.id);
+      if (!project || state.activeProjectId === action.id) return state;
+      if (project.origin === 'file') {
+        const schedule = state.goalById[project.id] ?? state.schedule;
+        const extra = state.fileExtras[project.dbKey ?? ''];
+        return {
+          ...state,
+          activeProjectId: project.id,
+          schedule,
+          logs: extra ? fileLogsToRows(extra.logs) : state.logs,
+        };
+      }
+      return {
+        ...state,
+        activeProjectId: project.id,
+        schedule: state.demoSchedule,
+        logs: state.demoLogs,
+      };
+    }
+    case 'attach-file': {
+      if (action.quiet && state.projects.some((item) => item.id === action.project.id)) return state;
+      const projects = [action.project, ...state.projects.filter((item) => item.id !== action.project.id)];
+      return {
+        ...state,
+        projects,
+        recentIds: [action.project.id, ...state.recentIds.filter((id) => id !== action.project.id)],
+        goalById: { ...state.goalById, [action.project.id]: action.schedule },
+        fileExtras: { ...state.fileExtras, [action.project.dbKey ?? action.project.id]: action.extras },
+        activeProjectId: action.quiet ? state.activeProjectId : action.project.id,
+        schedule: action.quiet ? state.schedule : action.schedule,
+        logs: action.quiet ? state.logs : fileLogsToRows(action.extras.logs),
+        toast: action.quiet ? state.toast : '已匯入檔案',
+      };
+    }
     case 'add-scene': {
       const project = state.projects.find((item) => item.id === action.projectId);
       const chapter = project ? findNode(project.nodes, action.chapterId) : null;
@@ -238,6 +417,15 @@ interface SampleActions {
   setHour: (hour: number) => void;
   setBookGoal: (projectId: string, bookGoal: number) => void;
   addScene: (projectId: string, chapterId: string) => void;
+  focusProject: (id: string) => void;
+  attachImported: (payload: {
+    project: DemoProject;
+    schedule: GoalSchedule;
+    extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
+  }) => void;
+  importFile: (file: File) => Promise<string>;
+  saveNow: () => Promise<void>;
+  handBack: () => Promise<void>;
   toast: (message: string | null) => void;
 }
 
@@ -258,11 +446,95 @@ export function SampleProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
     try {
-      saveProjects(localStorage, state.projects);
+      saveProjects(
+        localStorage,
+        state.projects.filter((project) => project.origin !== 'file'),
+      );
     } catch {
       // 私人瀏覽可能不准寫入，畫面仍可繼續用。
     }
   }, [state.projects]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadStoredBooks()
+      .then((books) => {
+        if (cancelled) return;
+        for (const book of books) {
+          dispatch({
+            type: 'attach-file',
+            quiet: true,
+            project: {
+              id: book.key,
+              title: book.title,
+              updatedLabel: '已在手機',
+              bookGoal: book.info.targetWordCount,
+              nodes: book.tree,
+              origin: 'file',
+              dbKey: book.key,
+              filename: book.filename,
+            },
+            schedule: book.schedule,
+            extras: { info: book.info, cards: book.cards, logs: book.logs },
+          });
+        }
+      })
+      .catch(() => {
+        // 沒有手機儲存空間時，示範專案仍可寫。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const project = state.projects.find((item) => item.id === state.activeProjectId);
+    if (!project || project.origin !== 'file' || !project.dbKey) return;
+    const extra = state.fileExtras[project.dbKey];
+    if (!extra) return;
+    const save = () =>
+      saveBookBytes(
+        project.dbKey!,
+        project.filename ?? '交回.db',
+        project.title,
+        { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
+        project.nodes,
+        extra.cards,
+        extra.logs,
+      );
+    const timer = window.setTimeout(() => void save(), 250);
+    return () => {
+      window.clearTimeout(timer);
+      void save();
+    };
+  }, [state.projects, state.fileExtras, state.activeProjectId]);
+
+  useEffect(() => {
+    const flush = () => {
+      const project = state.projects.find((item) => item.id === state.activeProjectId);
+      if (!project?.dbKey || project.origin !== 'file') return;
+      const extra = state.fileExtras[project.dbKey];
+      if (!extra) return;
+      void saveBookBytes(
+        project.dbKey,
+        project.filename ?? '交回.db',
+        project.title,
+        { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
+        project.nodes,
+        extra.cards,
+        extra.logs,
+      );
+    };
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    document.addEventListener('visibilitychange', onHide);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', onHide);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [state.projects, state.fileExtras, state.activeProjectId]);
 
   useEffect(() => {
     if (!state.toast) return;
@@ -290,9 +562,80 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       setBookGoal: (projectId, bookGoal) => dispatch({ type: 'set-book-goal', projectId, bookGoal }),
       addScene: (projectId, chapterId) =>
         dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
+      focusProject: (id) => dispatch({ type: 'focus-project', id }),
+      attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
+      importFile: async (file: File) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const book = await importBook(file.name, bytes);
+        const project: DemoProject = {
+          id: book.key,
+          title: book.title,
+          updatedLabel: '剛剛',
+          bookGoal: book.info.targetWordCount,
+          nodes: book.tree,
+          origin: 'file',
+          dbKey: book.key,
+          filename: book.filename,
+        };
+        dispatch({
+          type: 'attach-file',
+          project,
+          schedule: book.schedule,
+          extras: { info: book.info, cards: book.cards, logs: book.logs },
+        });
+        return book.key;
+      },
+      saveNow: async () => {
+        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        if (!project?.dbKey || project.origin !== 'file') {
+          dispatch({ type: 'toast', message: '示範專案只留在這個畫面。請先開啟自己的 .db。' });
+          return;
+        }
+        const extra = state.fileExtras[project.dbKey];
+        if (!extra) return;
+        await saveBookBytes(
+          project.dbKey,
+          project.filename ?? '交回.db',
+          project.title,
+          { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
+          project.nodes,
+          extra.cards,
+          extra.logs,
+        );
+        dispatch({ type: 'toast', message: '已寫入手機' });
+      },
+      handBack: async () => {
+        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        if (!project?.dbKey || project.origin !== 'file') {
+          dispatch({ type: 'toast', message: '示範專案不能交回。請先開啟自己的 .db。' });
+          return;
+        }
+        const extra = state.fileExtras[project.dbKey];
+        if (extra) {
+          await saveBookBytes(
+            project.dbKey,
+            project.filename ?? '交回.db',
+            project.title,
+            { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
+            project.nodes,
+            extra.cards,
+            extra.logs,
+          );
+        }
+        const packed = await exportBook(project.dbKey);
+        if (!packed) {
+          dispatch({ type: 'toast', message: '找不到可交回的檔案' });
+          return;
+        }
+        const mode = await shareDatabase(packed.filename, packed.bytes);
+        dispatch({
+          type: 'toast',
+          message: mode === 'shared' ? '請在分享選單選 OneDrive 或其他位置' : '已下載檔案，可再存到電腦',
+        });
+      },
       toast: (message) => dispatch({ type: 'toast', message }),
     }),
-    [],
+    [state],
   );
 
   const achievementCount = countAchievements(state.schedule.settled);
@@ -302,7 +645,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
     (projectId: string) => {
       const project = state.projects.find((item) => item.id === projectId);
       if (!project) return 0;
-      return collectContents(project.nodes).reduce((sum, text) => sum + countWords(text), 0);
+      return collectContents(project.nodes).reduce(
+        (sum, text) => sum + (project.origin === 'file' ? countManuscriptWords(text) : countWords(text)),
+        0,
+      );
     },
     [state.projects],
   );

@@ -16,6 +16,9 @@ export interface ChapterNode {
   content?: string;
   expanded?: boolean;
   children?: ChapterNode[];
+  sceneSummary?: string;
+  scenePov?: string;
+  sceneLocation?: string;
 }
 
 export interface DemoProject {
@@ -24,6 +27,10 @@ export interface DemoProject {
   updatedLabel: string;
   bookGoal: number;
   nodes: ChapterNode[];
+  /** 從電腦版檔案匯入的專案。示範專案沒有這個欄位。 */
+  origin?: 'demo' | 'file';
+  dbKey?: string;
+  filename?: string;
 }
 
 export function demoParagraph(label: string, index: number): string {

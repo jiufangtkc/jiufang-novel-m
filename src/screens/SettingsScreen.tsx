@@ -64,12 +64,19 @@ export function SettingsScreen() {
         <button
           type="button"
           className="setting-row"
-          onClick={() => actions.toast('樣品階段只存在這個畫面裡，尚未寫入檔案')}
+          onClick={() => void actions.saveNow()}
         >
           <DownloadIcon />
           <span>
             <strong>儲存專案</strong>
-            <small>將所有修改全量寫入本機專案檔案</small>
+            <small>立刻寫入手機，切換或關閉也會自動存</small>
+          </span>
+        </button>
+        <button type="button" className="setting-row" data-testid="hand-back" onClick={() => void actions.handBack()}>
+          <DownloadIcon />
+          <span>
+            <strong>交回電腦</strong>
+            <small>匯出完整 .db，用分享選單存到 OneDrive 或檔案</small>
           </span>
         </button>
         <Link className="setting-row" to={`/p/${project.id}/logs`}>

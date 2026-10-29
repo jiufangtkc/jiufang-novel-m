@@ -1,10 +1,15 @@
+import { useEffect } from 'react';
 import { Outlet, useParams } from 'react-router-dom';
 import { AppNav } from '../components/AppNav';
-import { useProject } from '../state/sampleStore';
+import { useProject, useSample } from '../state/sampleStore';
 
 export function Workspace() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
+  const { actions } = useSample();
+  useEffect(() => {
+    if (project) actions.focusProject(project.id);
+  }, [project, actions]);
   if (!project) {
     return (
       <div className="page">

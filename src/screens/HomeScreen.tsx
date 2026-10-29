@@ -7,7 +7,7 @@ export function HomeScreen() {
   const { state, actions, bookWords } = useSample();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
-  const [opening, setOpening] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [title, setTitle] = useState('【示範】未命名專案');
   const recent = state.recentIds
     .map((id) => state.projects.find((project) => project.id === id))
@@ -21,7 +21,7 @@ export function HomeScreen() {
           type="button"
           className="icon-button"
           aria-label="重新整理"
-          onClick={() => actions.toast('已重新整理。樣品沒有伺服器，清單就是目前畫面上的示範專案。')}
+          onClick={() => actions.toast('清單已是這個畫面上的專案。')}
         >
           <RefreshIcon />
         </button>
@@ -63,10 +63,28 @@ export function HomeScreen() {
           <PlusIcon size={18} />
           新增專案
         </button>
-        <button type="button" className="button secondary" onClick={() => setOpening(true)}>
+        <label className="button secondary">
           <FolderIcon size={18} />
           開啟檔案
-        </button>
+          <input
+            type="file"
+            accept=".db,application/octet-stream,application/x-sqlite3"
+            hidden
+            data-testid="open-db"
+            disabled={busy}
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              setBusy(true);
+              void actions
+                .importFile(file)
+                .then((id) => navigate(`/p/${id}/write`))
+                .catch(() => actions.toast('這個檔案讀不了'))
+                .finally(() => setBusy(false));
+            }}
+          />
+        </label>
       </footer>
       {creating && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setCreating(false)}>
@@ -101,21 +119,6 @@ export function HomeScreen() {
               </button>
             </div>
           </form>
-        </div>
-      )}
-      {opening && (
-        <div className="sheet-backdrop" role="presentation" onClick={() => setOpening(false)}>
-          <div className="dialog" role="dialog" aria-labelledby="open-file-title" onClick={(event) => event.stopPropagation()}>
-            <h2 id="open-file-title">開啟檔案</h2>
-            <p>
-              匯入電腦版的 .db 會在成品階段才接上。這個樣品不會讀取任何檔案，也不會把書稿放進公開的程式庫。
-            </p>
-            <div className="dialog-actions">
-              <button type="button" className="button primary" onClick={() => setOpening(false)}>
-                知道了
-              </button>
-            </div>
-          </div>
         </div>
       )}
     </div>

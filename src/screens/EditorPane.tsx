@@ -4,15 +4,17 @@ import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon, SaveIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
 import type { ChapterNode } from '../data/demo';
+import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
 import { revealCaret } from '../editor/caret';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
-import { useSample } from '../state/sampleStore';
+import { useProject, useSample } from '../state/sampleStore';
 
 export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
   const navigate = useNavigate();
   const { actions, state, isGlowing } = useSample();
+  const project = useProject(projectId);
   const [focused, setFocused] = useState(false);
   const keyboardOpen = useWritingKeyboard(focused);
   const { ref, dirty } = useWritingSurface({
@@ -72,7 +74,12 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       <footer className="editor-status" data-testid="status-bar">
         <DailyProgressBar words={todayWords} goal={goal} met={isGlowing} compact={keyboardOpen} />
         <div className="status-row">
-          <span data-testid="chapter-word-count">本章字數：{countWords(chapter.content ?? '')}</span>
+          <span data-testid="chapter-word-count">
+            本章字數：
+            {project?.origin === 'file'
+              ? countManuscriptWords(chapter.content ?? '')
+              : countWords(chapter.content ?? '')}
+          </span>
           {chapter.progress && <StatusBadge code={chapter.progress} />}
         </div>
       </footer>
