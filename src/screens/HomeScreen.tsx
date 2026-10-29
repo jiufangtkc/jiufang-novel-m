@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon } from '../components/Icons';
+import { canPickLocalFiles } from '../db/browserDisk';
 import { useSample } from '../state/sampleStore';
 
 export function HomeScreen() {
@@ -8,6 +9,7 @@ export function HomeScreen() {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
+  const openInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('【示範】未命名專案');
   const recent = state.recentIds
     .map((id) => state.projects.find((project) => project.id === id))
@@ -63,28 +65,46 @@ export function HomeScreen() {
           <PlusIcon size={18} />
           新增專案
         </button>
-        <label className="button secondary">
-          <FolderIcon size={18} />
-          開啟檔案
-          <input
-            type="file"
-            accept=".db,application/octet-stream,application/x-sqlite3"
-            hidden
-            data-testid="open-db"
-            disabled={busy}
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (!file) return;
+        <button
+          type="button"
+          className="button secondary"
+          disabled={busy}
+          onClick={() => {
+            if (canPickLocalFiles()) {
               setBusy(true);
               void actions
-                .importFile(file)
-                .then((id) => navigate(`/p/${id}/write`))
+                .openWithPicker()
+                .then((id) => {
+                  if (id) navigate(`/p/${id}/write`);
+                })
                 .catch(() => actions.toast('這個檔案讀不了'))
                 .finally(() => setBusy(false));
-            }}
-          />
-        </label>
+              return;
+            }
+            openInputRef.current?.click();
+          }}
+        >
+          <FolderIcon size={18} />
+          開啟檔案
+        </button>
+        <input
+          ref={openInputRef}
+          type="file"
+          accept=".db,application/octet-stream,application/x-sqlite3"
+          hidden
+          data-testid="open-db"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            event.target.value = '';
+            if (!file) return;
+            setBusy(true);
+            void actions
+              .importFile(file)
+              .then((id) => navigate(`/p/${id}/write`))
+              .catch(() => actions.toast('這個檔案讀不了'))
+              .finally(() => setBusy(false));
+          }}
+        />
       </footer>
       {creating && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setCreating(false)}>

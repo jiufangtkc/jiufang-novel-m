@@ -15,6 +15,16 @@ export function exportDbFilename(title: string, now = new Date()): string {
   return `${sanitizeDbBasename(title)}_${stamp}.db`;
 }
 
+/** 儲存專案時的預設檔名：有原檔名就用原檔名，否則用書名.db。 */
+export function projectSaveFilename(title: string, originalFilename?: string | null): string {
+  const raw = originalFilename?.trim() ?? '';
+  if (raw) {
+    const cleaned = raw.replace(/[/\\:*?"<>|]/g, '').replace(/[\u0000-\u001f]/g, '').trim();
+    if (cleaned) return cleaned.toLowerCase().endsWith('.db') ? cleaned : `${cleaned}.db`;
+  }
+  return `${sanitizeDbBasename(title)}.db`;
+}
+
 export function localDbFilename(title: string, importedName?: string): string {
-  return importedName ?? `${sanitizeDbBasename(title)}.db`;
+  return projectSaveFilename(title, importedName);
 }

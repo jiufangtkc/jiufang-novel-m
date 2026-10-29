@@ -1,56 +1,22 @@
 import { settleImportedLogs, writingDayKey, type GoalSchedule, createSchedule, withClock, applyWordDelta } from '../domain/dailyGoal';
 import { MIN_DAILY_GOAL } from '../domain/dailyGoal';
+import { appSpace } from './browserSpace';
+import type { StoredBook } from './appSpace';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
 import { openMemoryDb } from './wasmDb';
 
-const DB_NAME = 'jiufang-novel-m';
-const STORE = 'files';
-
-export interface StoredBook {
-  key: string;
-  filename: string;
-  title: string;
-  bytes: Uint8Array;
-}
-
-function openStore(): Promise<IDBDatabase> {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, 1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE)) request.result.createObjectStore(STORE);
-    };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('無法打開手機上的儲存空間'));
-  });
-}
-
-async function withStore<T>(mode: IDBTransactionMode, run: (store: IDBObjectStore) => IDBRequest<T>): Promise<T> {
-  const database = await openStore();
-  try {
-    const transaction = database.transaction(STORE, mode);
-    const request = run(transaction.objectStore(STORE));
-    const result = await new Promise<T>((resolve, reject) => {
-      request.onsuccess = () => resolve(request.result);
-      request.onerror = () => reject(request.error ?? new Error('讀寫失敗'));
-    });
-    return result;
-  } finally {
-    database.close();
-  }
-}
+export type { StoredBook };
 
 export async function putBook(book: StoredBook): Promise<void> {
-  await withStore('readwrite', (store) => store.put(book, book.key));
+  await (await appSpace()).put(book);
 }
 
 export async function getBook(key: string): Promise<StoredBook | null> {
-  const value = await withStore<StoredBook | undefined>('readonly', (store) => store.get(key));
-  return value ?? null;
+  return (await appSpace()).get(key);
 }
 
 export async function listBooks(): Promise<StoredBook[]> {
-  const value = await withStore<StoredBook[]>('readonly', (store) => store.getAll());
-  return value ?? [];
+  return (await appSpace()).list();
 }
 
 export interface ImportedBook {

@@ -552,6 +552,10 @@ html.keyboard-open .bottom-nav { display: none; }
   min-height: 48px;
   margin-top: 4px;
 }
+.files-secondary-action {
+  width: 100%;
+  margin-top: 4px;
+}
 .files-action-hint {
   margin: 8px 0 16px;
   text-align: center;

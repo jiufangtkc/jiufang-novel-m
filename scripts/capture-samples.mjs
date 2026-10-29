@@ -114,10 +114,11 @@ await shot('07-寫作過程紀錄.png');
 await page.getByTestId('bottom-nav').getByTestId('nav-files').click();
 await page.getByTestId('files-screen').waitFor();
 const filesText = await page.getByTestId('files-screen').innerText();
-assert(filesText.includes('另存專案'), '檔案頁缺少主按鈕');
-assert(filesText.includes('將稿子存到各類雲端或其他位置'), '另存專案說明應為定案文案');
 assert(filesText.includes('儲存專案'), '檔案頁缺少儲存專案');
-assert(filesText.includes('立刻儲存專案至手機'), '儲存專案說明應為定案文案');
+assert(filesText.includes('另存專案'), '檔案頁缺少另存專案');
+assert(filesText.includes('將稿子存到各類雲端或其他位置'), '另存專案說明應為定案文案');
+assert(filesText.includes('立刻暫存稿子'), '檔案頁缺少立刻暫存');
+assert(filesText.includes('立刻存進這支手機的 App 空間，防止掉字'), '暫存說明應為定案文案');
 await shot('14-檔案.png');
 
 await page.getByTestId('bottom-nav').getByTestId('nav-cards').click();

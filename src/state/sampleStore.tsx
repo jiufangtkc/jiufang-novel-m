@@ -16,11 +16,18 @@ import {
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
-import { exportDbFilename, localDbFilename } from '../domain/exportFilename';
+import { exportDbFilename, localDbFilename, projectSaveFilename } from '../domain/exportFilename';
+import { canPickLocalFiles, pickExistingDatabase, pickSaveFile } from '../db/browserDisk';
+import { createBrowserTargetStore } from '../db/browserTargetStore';
+import type { DiskFile } from '../db/fileTarget';
+import { currentSchemaVersion } from '../db/migrations';
+import { openMemoryDb } from '../db/wasmDb';
+import { saveNotice, saveProjectAsNew, saveProjectToPlace, type SaveEnvironment, type SaveOutcome } from '../db/saveProject';
+import { verifyExportedDatabase } from '../db/verifyDatabase';
 import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
-import { exportBook, importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
+import { importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
 import {
   applyLargeEvent,
   classifyTextDelta,
@@ -60,6 +67,7 @@ interface SampleState {
       lastAutoSaveMs: number | null;
       lastManualSaveMs: number | null;
       lastExportMs: number | null;
+      lastProjectSaveMs: number | null;
     }
   >;
 }
@@ -87,7 +95,9 @@ type Action =
   | { type: 'toast'; message: string | null }
   | { type: 'record-auto-save'; projectId: string; atMs: number }
   | { type: 'record-manual-save'; projectId: string; atMs: number }
-  | { type: 'record-export'; projectId: string; atMs: number };
+  | { type: 'record-export'; projectId: string; atMs: number }
+  | { type: 'record-project-save'; projectId: string; atMs: number }
+  | { type: 'set-filename'; projectId: string; filename: string };
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
   if (!schedule.open) return logs;
@@ -149,6 +159,7 @@ function patchSaveMeta(
     lastAutoSaveMs: null,
     lastManualSaveMs: null,
     lastExportMs: null,
+    lastProjectSaveMs: null,
   };
   return {
     ...state,
@@ -276,6 +287,16 @@ function reduce(state: SampleState, action: Action): SampleState {
       return patchSaveMeta(state, action.projectId, { lastManualSaveMs: action.atMs });
     case 'record-export':
       return patchSaveMeta(state, action.projectId, { lastExportMs: action.atMs });
+    case 'record-project-save':
+      return patchSaveMeta(state, action.projectId, { lastProjectSaveMs: action.atMs });
+    case 'set-filename':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => ({
+          ...project,
+          filename: action.filename,
+        })),
+      };
     case 'dismiss-recent':
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
     case 'add-project': {
@@ -458,9 +479,11 @@ interface SampleActions {
     schedule: GoalSchedule;
     extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
   }) => void;
-  importFile: (file: File) => Promise<string>;
-  saveNow: () => Promise<void>;
-  saveToCloud: () => Promise<void>;
+  importFile: (file: File, diskFile?: DiskFile | null) => Promise<string>;
+  openWithPicker: () => Promise<string | null>;
+  stashDraft: () => Promise<void>;
+  saveProject: () => Promise<void>;
+  saveProjectAs: () => Promise<void>;
   toast: (message: string | null) => void;
 }
 
@@ -474,6 +497,86 @@ interface SampleContextValue {
 }
 
 const SampleContext = createContext<SampleContextValue | null>(null);
+
+function browserSaveEnv(): SaveEnvironment {
+  return {
+    canPickFiles: canPickLocalFiles(),
+    targets: createBrowserTargetStore(),
+    verify: async (bytes) => {
+      await verifyExportedDatabase(bytes, async (payload) => {
+        const db = await openMemoryDb(payload);
+        try {
+          return currentSchemaVersion(db.sql);
+        } finally {
+          db.close();
+        }
+      });
+    },
+    pickSaveLocation: pickSaveFile,
+    share: (filename, bytes) => shareDatabase(filename, bytes),
+  };
+}
+
+async function snapshotManuscript(state: SampleState, project: DemoProject): Promise<{ key: string; bytes: Uint8Array }> {
+  const key = project.dbKey ?? project.id;
+  const extra = project.dbKey ? state.fileExtras[project.dbKey] : undefined;
+  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  const info: FileProjectInfo = {
+    title: project.title,
+    logline: extra?.info.logline ?? '',
+    currentTheme: extra?.info.currentTheme ?? '',
+    globalFontFamily: extra?.info.globalFontFamily ?? '',
+    globalFontSize: extra?.info.globalFontSize ?? 12,
+    editorFontFamily: extra?.info.editorFontFamily ?? '',
+    editorFontSize: extra?.info.editorFontSize ?? 16,
+    targetWordCount: project.bookGoal,
+    dailyTargetWordCount: goal,
+    categoryOrder: extra?.info.categoryOrder ?? null,
+    expandedCategories: extra?.info.expandedCategories ?? null,
+    categoriesMeta: extra?.info.categoriesMeta ?? '{}',
+    lastOpenedNodeId: extra?.info.lastOpenedNodeId ?? null,
+    lastCursorPosition: extra?.info.lastCursorPosition ?? 0,
+  };
+  const logs: FileLog[] = extra?.logs ?? state.logs.map((log) => ({
+    date: log.date,
+    duration: log.duration,
+    word_count: log.word_count,
+    ai_continuation_count: log.ai_continuation_count,
+    ai_continuation_chars: log.ai_continuation_chars,
+    ai_chat_count: log.ai_chat_count,
+    ai_details: log.ai_details ?? '{}',
+    paste_large_count: log.paste_large_count,
+    delete_large_count: log.delete_large_count,
+  }));
+  const bytes = await saveBookBytes(
+    key,
+    projectSaveFilename(project.title, project.filename),
+    project.title,
+    info,
+    project.nodes,
+    extra?.cards ?? [],
+    logs,
+  );
+  return { key, bytes };
+}
+
+function applySaveOutcome(
+  dispatch: (action: Action) => void,
+  projectId: string,
+  outcome: SaveOutcome,
+  mode: 'save' | 'save-as',
+) {
+  const text = saveNotice(outcome);
+  if (text) dispatch({ type: 'toast', message: text });
+  if (mode === 'save' && outcome.kind === 'saved') {
+    dispatch({ type: 'record-project-save', projectId, atMs: Date.now() });
+    dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+  }
+  if (mode === 'save-as' && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
+    dispatch({ type: 'record-export', projectId, atMs: Date.now() });
+    dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+  }
+}
 
 export function SampleProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reduce, undefined, () => createState(new Date()));
@@ -607,76 +710,88 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
-      importFile: async (file: File) => {
+      importFile: async (file: File, diskFile?: DiskFile | null) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const book = await importBook(file.name, bytes);
-        const project: DemoProject = {
-          id: book.key,
-          title: book.title,
-          updatedLabel: '剛剛',
-          bookGoal: book.info.targetWordCount,
-          nodes: book.tree,
-          origin: 'file',
-          dbKey: book.key,
-          filename: book.filename,
-        };
+        await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
         dispatch({
           type: 'attach-file',
-          project,
+          project: {
+            id: book.key,
+            title: book.title,
+            updatedLabel: '剛剛',
+            bookGoal: book.info.targetWordCount,
+            nodes: book.tree,
+            origin: 'file',
+            dbKey: book.key,
+            filename: book.filename,
+          },
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
         return book.key;
       },
-      saveNow: async () => {
+      openWithPicker: async () => {
+        const picked = await pickExistingDatabase();
+        if (!picked) return null;
+        const copy = new Uint8Array(picked.bytes.byteLength);
+        copy.set(picked.bytes);
+        const book = await importBook(picked.file.name, copy);
+        await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
+        dispatch({
+          type: 'attach-file',
+          project: {
+            id: book.key,
+            title: book.title,
+            updatedLabel: '剛剛',
+            bookGoal: book.info.targetWordCount,
+            nodes: book.tree,
+            origin: 'file',
+            dbKey: book.key,
+            filename: book.filename,
+          },
+          schedule: book.schedule,
+          extras: { info: book.info, cards: book.cards, logs: book.logs },
+        });
+        return book.key;
+      },
+      stashDraft: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
         if (!project) return;
-        const atMs = Date.now();
-        if (project.origin !== 'file' || !project.dbKey) {
-          dispatch({ type: 'record-manual-save', projectId: project.id, atMs });
-          return;
+        try {
+          await snapshotManuscript(state, project);
+          dispatch({ type: 'record-manual-save', projectId: project.id, atMs: Date.now() });
+          dispatch({ type: 'toast', message: '已暫存' });
+        } catch {
+          dispatch({ type: 'toast', message: '暫存失敗，請再試一次' });
         }
-        const extra = state.fileExtras[project.dbKey];
-        if (!extra) return;
-        await saveBookBytes(
-          project.dbKey,
-          localDbFilename(project.title, project.filename),
-          project.title,
-          { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
-          project.nodes,
-          extra.cards,
-          extra.logs,
-        );
-        dispatch({ type: 'record-manual-save', projectId: project.id, atMs });
       },
-      saveToCloud: async () => {
+      saveProject: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
-        if (!project?.dbKey || project.origin !== 'file') {
-          dispatch({ type: 'toast', message: '示範專案無法另存。請先開啟自己的 .db。' });
-          return;
-        }
-        const extra = state.fileExtras[project.dbKey];
-        if (extra) {
-          await saveBookBytes(
-            project.dbKey,
-            localDbFilename(project.title, project.filename),
-            project.title,
-            { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
-            project.nodes,
-            extra.cards,
-            extra.logs,
+        if (!project) return;
+        try {
+          const { key, bytes } = await snapshotManuscript(state, project);
+          const outcome = await saveProjectToPlace(
+            browserSaveEnv(),
+            key,
+            bytes,
+            projectSaveFilename(project.title, project.filename),
           );
-          dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
+          applySaveOutcome(dispatch, project.id, outcome, 'save');
+        } catch {
+          dispatch({ type: 'toast', message: '儲存失敗，稿子仍留在這支裝置' });
         }
-        const packed = await exportBook(project.dbKey);
-        if (!packed) {
-          dispatch({ type: 'toast', message: '找不到可匯出的檔案' });
-          return;
+      },
+      saveProjectAs: async () => {
+        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        if (!project) return;
+        try {
+          const { key, bytes } = await snapshotManuscript(state, project);
+          const outcome = await saveProjectAsNew(browserSaveEnv(), key, bytes, exportDbFilename(project.title));
+          applySaveOutcome(dispatch, project.id, outcome, 'save-as');
+        } catch {
+          dispatch({ type: 'toast', message: '另存失敗，稿子仍留在這支裝置' });
         }
-        const mode = await shareDatabase(exportDbFilename(project.title), packed.bytes);
-        if (mode === 'cancelled') return;
-        dispatch({ type: 'record-export', projectId: project.id, atMs: Date.now() });
-        dispatch({ type: 'toast', message: '已另存' });
       },
       toast: (message) => dispatch({ type: 'toast', message }),
     }),

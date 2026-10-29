@@ -1,7 +1,8 @@
 import { useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon } from '../components/Icons';
-import { formatClockTime, formatLastExportLabel, latestSaveTimestamp } from '../domain/saveClock';
+import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '../components/Icons';
+import { canPickLocalFiles } from '../db/browserDisk';
+import { formatClockTime, formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
 import { useProject, useSample } from '../state/sampleStore';
 
 export function FilesScreen() {
@@ -16,10 +17,25 @@ export function FilesScreen() {
     lastAutoSaveMs: null,
     lastManualSaveMs: null,
     lastExportMs: null,
+    lastProjectSaveMs: null,
   };
   const lastSaveMs = latestSaveTimestamp(meta);
   const lastSaveLabel = lastSaveMs == null ? '—' : formatClockTime(new Date(lastSaveMs));
   const exportLabel = formatLastExportLabel(meta.lastExportMs);
+  const projectSaveLabel = formatLastProjectSave(meta.lastProjectSaveMs);
+
+  const openAnother = async () => {
+    if (canPickLocalFiles()) {
+      try {
+        const id = await actions.openWithPicker();
+        if (id) navigate(`/p/${id}/write`);
+      } catch {
+        actions.toast('這個檔案讀不了');
+      }
+      return;
+    }
+    openInputRef.current?.click();
+  };
 
   return (
     <div className="page" data-testid="files-screen">
@@ -31,35 +47,42 @@ export function FilesScreen() {
           <p className="files-status-title">
             目前的稿子：<strong>《{project.title}》</strong>
           </p>
-          <p className="files-status-line">已自動存在這支手機・最後存檔 {lastSaveLabel}</p>
+          <p className="files-status-line">已自動存在這支手機的 App 空間・最後暫存 {lastSaveLabel}</p>
+          <p className="files-status-line">上次儲存：{projectSaveLabel}</p>
           <p className="files-status-line">上次另存：{exportLabel}</p>
         </article>
 
         <button
           type="button"
           className="button primary files-primary-action"
-          data-testid="save-to-cloud"
-          onClick={() => void actions.saveToCloud()}
+          data-testid="save-project"
+          onClick={() => void actions.saveProject()}
+        >
+          <SaveIcon size={20} />
+          儲存專案
+        </button>
+        <p className="hint files-action-hint">電腦寫回開啟時的檔案；手機則交給存檔選單，預設用原檔名</p>
+
+        <button
+          type="button"
+          className="button secondary files-secondary-action"
+          data-testid="save-as-project"
+          onClick={() => void actions.saveProjectAs()}
         >
           <CloudUploadIcon size={20} />
           另存專案
         </button>
         <p className="hint files-action-hint">將稿子存到各類雲端或其他位置</p>
 
-        <button type="button" className="setting-row" data-testid="save-project" onClick={() => void actions.saveNow()}>
+        <button type="button" className="setting-row" data-testid="stash-draft" onClick={() => void actions.stashDraft()}>
           <DownloadIcon />
           <span>
-            <strong>儲存專案</strong>
-            <small>立刻儲存專案至手機</small>
+            <strong>立刻暫存稿子</strong>
+            <small>立刻存進這支手機的 App 空間，防止掉字</small>
           </span>
         </button>
 
-        <button
-          type="button"
-          className="setting-row"
-          data-testid="open-other-file"
-          onClick={() => openInputRef.current?.click()}
-        >
+        <button type="button" className="setting-row" data-testid="open-other-file" onClick={() => void openAnother()}>
           <FolderIcon />
           <span>
             <strong>開啟別的稿子</strong>

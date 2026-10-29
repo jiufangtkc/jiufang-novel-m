@@ -16,6 +16,18 @@ export function formatLastExportLabel(timestampMs: number | null, now = new Date
   return `${when.getFullYear()}/${pad(when.getMonth() + 1)}/${pad(when.getDate())} ${formatClockTime(when)}`;
 }
 
+export function formatLastProjectSave(timestampMs: number | null, now = new Date()): string {
+  if (timestampMs == null) return '還沒儲存過';
+  const when = new Date(timestampMs);
+  const sameDay =
+    when.getFullYear() === now.getFullYear() &&
+    when.getMonth() === now.getMonth() &&
+    when.getDate() === now.getDate();
+  if (sameDay) return formatClockTime(when);
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${when.getFullYear()}/${pad(when.getMonth() + 1)}/${pad(when.getDate())} ${formatClockTime(when)}`;
+}
+
 export function latestSaveTimestamp(meta: {
   lastAutoSaveMs: number | null;
   lastManualSaveMs: number | null;
