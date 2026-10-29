@@ -1,3 +1,8 @@
+import {
+  SAVE_FATAL_FAIL,
+  SAVE_PARTIAL_FAIL,
+  SAVE_PERMISSION_DENIED,
+} from '../copy/userFacing';
 import type { DiskFile, TargetStore } from './fileTarget';
 
 export type SaveOutcome =
@@ -28,13 +33,11 @@ export function saveNotice(outcome: SaveOutcome): string | null {
     case 'cancelled':
       return null;
     case 'permission-denied':
-      return '沒有寫入權限，原檔沒有更動';
+      return SAVE_PERMISSION_DENIED;
     case 'write-failed':
-      return outcome.restored
-        ? '寫入失敗，原檔已保留。稿子仍在這支裝置的 App 空間'
-        : '寫入失敗。請改用另存專案。稿子仍在這支裝置的 App 空間';
+      return outcome.restored ? SAVE_PARTIAL_FAIL : SAVE_FATAL_FAIL;
     case 'invalid-database':
-      return '匯出的檔案無法確認，沒有覆寫原檔';
+      return SAVE_FATAL_FAIL;
     default:
       return null;
   }

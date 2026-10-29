@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '../components/Icons';
+import {
+  MANUSCRIPT_NOT_FOUND,
+  OPEN_DB_FAIL,
+  OPEN_DB_HINT,
+} from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
 import { useProject, useSample } from '../state/sampleStore';
@@ -28,7 +33,7 @@ export function FilesScreen() {
   const navigate = useNavigate();
   const openInputRef = useRef<HTMLInputElement>(null);
   const computer = useComputerLayout();
-  if (!project) return <p className="empty-note">找不到這個專案。</p>;
+  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
 
   const supportsDirectWriteback = canPickLocalFiles();
   const layout = filesPageLayout(supportsDirectWriteback);
@@ -49,7 +54,7 @@ export function FilesScreen() {
         const id = await actions.openWithPicker();
         if (id) navigate(`/p/${id}/write`);
       } catch {
-        actions.toast('這個檔案讀不了');
+        actions.toast(OPEN_DB_FAIL);
       }
       return;
     }
@@ -138,7 +143,7 @@ export function FilesScreen() {
           <FolderIcon />
           <span>
             <strong>開啟別的稿子</strong>
-            <small>選擇電腦版匯出的 .db</small>
+            <small>{OPEN_DB_HINT}</small>
           </span>
         </button>
         <input
@@ -153,7 +158,7 @@ export function FilesScreen() {
             void actions
               .importFile(file)
               .then((id) => navigate(`/p/${id}/write`))
-              .catch(() => actions.toast('這個檔案讀不了'));
+              .catch(() => actions.toast(OPEN_DB_FAIL));
           }}
         />
 

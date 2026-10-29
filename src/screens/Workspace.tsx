@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { Outlet, useParams } from 'react-router-dom';
+import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { AppNav } from '../components/AppNav';
 import { useProject, useSample } from '../state/sampleStore';
 
@@ -13,7 +14,7 @@ export function Workspace() {
   if (!project) {
     return (
       <div className="page">
-        <p className="empty-note">找不到這個專案。</p>
+        <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>
       </div>
     );
   }

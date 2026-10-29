@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon } from '../components/Icons';
+import { OPEN_DB_FAIL } from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { useSample } from '../state/sampleStore';
 
@@ -29,9 +30,9 @@ export function HomeScreen() {
         </button>
       </header>
       <main className="home-main">
-        <h2>最近開啟的專案</h2>
+        <h2>最近開啟的稿子</h2>
         {recent.length === 0 ? (
-          <p className="empty-note">最近沒有專案。可以新增一個示範專案。</p>
+          <p className="empty-note">還沒有稿子。開一本新的，或開啟已經存在的 .db 稿件檔。</p>
         ) : (
           <ul className="project-list">
             {recent.map((project) => (
@@ -63,7 +64,7 @@ export function HomeScreen() {
       <footer className="home-actions">
         <button type="button" className="button primary" onClick={() => setCreating(true)}>
           <PlusIcon size={18} />
-          新增專案
+          開新稿子
         </button>
         <button
           type="button"
@@ -77,7 +78,7 @@ export function HomeScreen() {
                 .then((id) => {
                   if (id) navigate(`/p/${id}/write`);
                 })
-                .catch(() => actions.toast('這個檔案讀不了'))
+                .catch(() => actions.toast(OPEN_DB_FAIL))
                 .finally(() => setBusy(false));
               return;
             }
@@ -85,7 +86,7 @@ export function HomeScreen() {
           }}
         >
           <FolderIcon size={18} />
-          開啟檔案
+          開啟稿子
         </button>
         <input
           ref={openInputRef}
@@ -101,7 +102,7 @@ export function HomeScreen() {
             void actions
               .importFile(file)
               .then((id) => navigate(`/p/${id}/write`))
-              .catch(() => actions.toast('這個檔案讀不了'))
+              .catch(() => actions.toast(OPEN_DB_FAIL))
               .finally(() => setBusy(false));
           }}
         />
@@ -120,9 +121,9 @@ export function HomeScreen() {
               navigate(`/p/${id}/write`);
             }}
           >
-            <h2 id="new-project-title">新增專案</h2>
+            <h2 id="new-project-title">開新稿子</h2>
             <label>
-              專案名稱
+              書名
               <input
                 value={title}
                 onChange={(event) => setTitle(event.target.value)}

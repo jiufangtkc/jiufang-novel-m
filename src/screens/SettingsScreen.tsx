@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
+import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { useProject, useSample } from '../state/sampleStore';
 
@@ -13,12 +14,12 @@ export function SettingsScreen() {
   const [daily, setDaily] = useState(String(goalNow));
   const [book, setBook] = useState(String(project?.bookGoal ?? 100000));
   const [error, setError] = useState('');
-  if (!project) return <p className="empty-note">找不到這個專案。</p>;
+  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
 
   return (
     <div className="page" data-testid="settings-screen">
       <header className="topbar">
-        <h1>專案與應用設定</h1>
+        <h1>設定</h1>
       </header>
       <div className="scroll-pane settings-page">
         <article className="setting-card">

@@ -17,7 +17,7 @@ function pickerWindow(): PickerWindow {
 }
 
 const DB_TYPE = {
-  description: '小說資料庫',
+  description: '九方小說編輯器稿子',
   accept: { 'application/octet-stream': ['.db'] },
 };
 

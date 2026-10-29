@@ -208,7 +208,7 @@ a { color: var(--accent); }
 .button.primary {
   flex: 1.15;
   background: var(--accent);
-  color: #fff;
+  color: #1e1e1e;
   border: 0;
 }
 

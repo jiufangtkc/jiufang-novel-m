@@ -2,8 +2,30 @@ import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
+/** COEP 需要子資源帶 CORP，否則 sqlite wasm 在 WebKit 會被擋。 */
+function crossOriginResourcePolicyForWasm() {
+  const middleware = (
+    _req: { url?: string },
+    res: { setHeader: (name: string, value: string) => void },
+    next: () => void,
+  ) => {
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+    next();
+  };
+  return {
+    name: 'cross-origin-resource-policy-wasm',
+    configureServer(server) {
+      server.middlewares.use(middleware);
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware);
+    },
+  };
+}
+
 export default defineConfig({
   plugins: [
+    crossOriginResourcePolicyForWasm(),
     react(),
     VitePWA({
       registerType: 'autoUpdate',

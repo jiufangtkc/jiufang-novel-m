@@ -93,7 +93,7 @@ describe('儲存專案', () => {
     expect(file.writes).toBe(0);
     expect(file.requested).toBe(1);
     expect(Array.from(file.bytes)).toEqual(Array.from(ORIGINAL));
-    expect(saveNotice(outcome)).toBe('沒有寫入權限，原檔沒有更動');
+    expect(saveNotice(outcome)).toBe('沒有寫入權限，請再按一次並選「允許」。');
   });
 
   it('寫到一半失敗時把原檔寫回去', async () => {

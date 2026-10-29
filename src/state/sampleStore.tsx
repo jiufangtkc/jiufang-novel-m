@@ -25,6 +25,7 @@ import { currentSchemaVersion } from '../db/migrations';
 import { openMemoryDb } from '../db/wasmDb';
 import { saveNotice, saveProjectAsNew, saveProjectToPlace, type SaveEnvironment, type SaveOutcome } from '../db/saveProject';
 import { verifyExportedDatabase } from '../db/verifyDatabase';
+import { STASH_FAIL } from '../copy/userFacing';
 import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
@@ -846,7 +847,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'record-manual-save', projectId: project.id, atMs: Date.now() });
           dispatch({ type: 'toast', message: '已暫存' });
         } catch {
-          dispatch({ type: 'toast', message: '暫存失敗，請再試一次' });
+          dispatch({ type: 'toast', message: STASH_FAIL });
         }
       },
       saveProject: async () => {
