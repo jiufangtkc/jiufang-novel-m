@@ -37,10 +37,14 @@ npm run build
 
 ## 字型
 
-畫面使用芫荽（Iansui），來自 [ButTaiwan/iansui](https://github.com/ButTaiwan/iansui) 發行標籤 v1.020，依 SIL Open Font License 1.1 散布。授權全文在 [public/fonts/OFL.txt](public/fonts/OFL.txt)。這是字型自己的授權，不是這個 App 的授權條款；App 的 LICENSE 九方還沒決定，所以倉庫裡故意沒有放。
+畫面使用芫荽（Iansui），來自 [ButTaiwan/iansui](https://github.com/ButTaiwan/iansui) 發行標籤 v1.020，依 SIL Open Font License 1.1 散布。授權全文在 [public/fonts/OFL.txt](public/fonts/OFL.txt)。這是字型自己的授權，不是這個 App 的授權條款。
 
 ## 這次沒有做的事
 
 - 不匯入、不匯出 `.db`
 - 不做 AI
 - 不放任何真實書稿
+
+## 授權
+
+授權：MIT，詳見 LICENSE。
