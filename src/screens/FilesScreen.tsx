@@ -4,6 +4,7 @@ import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '.
 import { canPickLocalFiles } from '../db/browserDisk';
 import { formatClockTime, formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
 import { useProject, useSample } from '../state/sampleStore';
+import { filesPageLayout } from './filesPageLayout';
 
 export function FilesScreen() {
   const { projectId = '' } = useParams();
@@ -12,6 +13,9 @@ export function FilesScreen() {
   const navigate = useNavigate();
   const openInputRef = useRef<HTMLInputElement>(null);
   if (!project) return <p className="empty-note">找不到這個專案。</p>;
+
+  const supportsDirectWriteback = canPickLocalFiles();
+  const layout = filesPageLayout(supportsDirectWriteback);
 
   const meta = state.saveMeta[project.id] ?? {
     lastAutoSaveMs: null,
@@ -48,39 +52,66 @@ export function FilesScreen() {
             目前的稿子：<strong>《{project.title}》</strong>
           </p>
           <p className="files-status-line">已自動存在這支手機的 App 空間・最後暫存 {lastSaveLabel}</p>
-          <p className="files-status-line">上次儲存：{projectSaveLabel}</p>
+          {layout.showLastProjectSave ? (
+            <p className="files-status-line" data-testid="last-project-save-line">
+              上次儲存：{projectSaveLabel}
+            </p>
+          ) : null}
           <p className="files-status-line">上次另存：{exportLabel}</p>
         </article>
 
-        <button
-          type="button"
-          className="button primary files-primary-action"
-          data-testid="save-project"
-          onClick={() => void actions.saveProject()}
-        >
-          <SaveIcon size={20} />
-          儲存專案
-        </button>
-        <p className="hint files-action-hint">電腦寫回開啟時的檔案；手機則交給存檔選單，預設用原檔名</p>
+        {layout.showSaveProject ? (
+          <>
+            <button
+              type="button"
+              className="button primary files-primary-action"
+              data-testid="save-project"
+              onClick={() => void actions.saveProject()}
+            >
+              <SaveIcon size={20} />
+              儲存專案
+            </button>
+            <p className="hint files-action-hint">存回開啟時的那個檔案</p>
+          </>
+        ) : null}
 
-        <button
-          type="button"
-          className="button secondary files-secondary-action"
-          data-testid="save-as-project"
-          onClick={() => void actions.saveProjectAs()}
-        >
-          <CloudUploadIcon size={20} />
-          另存專案
-        </button>
-        <p className="hint files-action-hint">將稿子存到各類雲端或其他位置</p>
+        {layout.primaryIsSaveAs ? (
+          <>
+            <button
+              type="button"
+              className="button primary files-primary-action"
+              data-testid="save-as-project"
+              onClick={() => void actions.saveProjectAs()}
+            >
+              <CloudUploadIcon size={20} />
+              另存專案
+            </button>
+            <p className="hint files-action-hint">將稿子存到各類雲端或其他位置</p>
+          </>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="button secondary files-secondary-action"
+              data-testid="save-as-project"
+              onClick={() => void actions.saveProjectAs()}
+            >
+              <CloudUploadIcon size={20} />
+              另存專案
+            </button>
+            <p className="hint files-action-hint">將稿子存到各類雲端或其他位置</p>
+          </>
+        )}
 
-        <button type="button" className="setting-row" data-testid="stash-draft" onClick={() => void actions.stashDraft()}>
-          <DownloadIcon />
-          <span>
-            <strong>立刻暫存稿子</strong>
-            <small>立刻存進這支手機的 App 空間，防止掉字</small>
-          </span>
-        </button>
+        {layout.showStashDraft ? (
+          <button type="button" className="setting-row" data-testid="stash-draft" onClick={() => void actions.stashDraft()}>
+            <DownloadIcon />
+            <span>
+              <strong>立刻暫存稿子</strong>
+              <small>立刻存進這支手機的 App 空間，防止掉字</small>
+            </span>
+          </button>
+        ) : null}
 
         <button type="button" className="setting-row" data-testid="open-other-file" onClick={() => void openAnother()}>
           <FolderIcon />

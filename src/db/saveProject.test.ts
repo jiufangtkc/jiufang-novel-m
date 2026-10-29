@@ -129,28 +129,20 @@ describe('儲存專案', () => {
     expect(file.writes).toBe(0);
   });
 
-  it('不支援選檔時改走分享選單，並用原檔名', async () => {
+  it('不支援選檔且沒有把手時無法儲存專案', async () => {
     const box = env();
     await box.store.save('book-1', { filename: '原稿.db', file: null });
     const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
-    expect(outcome).toEqual({ kind: 'handed-off', via: 'share', filename: '原稿.db' });
-    expect(box.shared).toEqual(['原稿.db']);
-    expect(saveNotice(outcome)).toBe('已交給存檔選單');
+    expect(outcome.kind).toBe('cancelled');
+    expect(box.shared).toEqual([]);
+    expect(saveNotice(outcome)).toBeNull();
   });
 
-  it('沒有原檔名時分享用書名.db', async () => {
+  it('沒有原檔名也沒有把手時仍取消', async () => {
     const box = env();
     const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '未命名.db');
-    expect(outcome).toEqual({ kind: 'handed-off', via: 'share', filename: '未命名.db' });
-  });
-
-  it('分享選單取消時不算成功', async () => {
-    const box = env({
-      share: async () => 'cancelled',
-    });
-    const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '原稿.db');
     expect(outcome.kind).toBe('cancelled');
-    expect(saveNotice(outcome)).toBeNull();
+    expect(box.shared).toEqual([]);
   });
 });
 
@@ -174,7 +166,7 @@ describe('另存專案', () => {
     expect(Array.from(original.bytes)).toEqual(Array.from(ORIGINAL));
   });
 
-  it('手機另存後，下次儲存改用新檔名，但仍走分享選單', async () => {
+  it('手機另存只交給分享選單，不更新儲存目標檔名', async () => {
     const box = env();
     await box.store.save('book-1', { filename: '原稿.db', file: null });
     const savedAs = await saveProjectAsNew(box.env, 'book-1', NEXT, '霧港_20260315-0905.db');
@@ -183,13 +175,9 @@ describe('另存專案', () => {
       via: 'share',
       filename: '霧港_20260315-0905.db',
     });
-    box.shared.length = 0;
-    const saved = await saveProjectToPlace(box.env, 'book-1', NEXT, '原稿.db');
-    expect(saved).toEqual({
-      kind: 'handed-off',
-      via: 'share',
-      filename: '霧港_20260315-0905.db',
-    });
+    const loaded = await box.store.load('book-1');
+    expect(loaded?.filename).toBe('原稿.db');
+    expect(loaded?.file).toBeNull();
   });
 });
 

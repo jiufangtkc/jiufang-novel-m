@@ -79,7 +79,7 @@ async function writeGranted(file: DiskFile, bytes: Uint8Array): Promise<SaveOutc
   return 'ready';
 }
 
-/** 存回開啟時的位置。沒有把手時，桌機改請作家選位置；手機交給存檔選單，檔名用原檔名。 */
+/** 存回開啟時的位置。僅在已有檔案把手或支援選檔寫回時可用；手機請改用另存專案。 */
 export async function saveProjectToPlace(
   env: SaveEnvironment,
   bookKey: string,
@@ -106,15 +106,13 @@ export async function saveProjectToPlace(
     await env.targets.save(bookKey, { filename: picked.name, file: picked });
     return { kind: 'saved', filename: picked.name };
   }
-  const via = await env.share(filename, bytes);
-  if (via === 'cancelled') return { kind: 'cancelled' };
-  return { kind: 'handed-off', via: via === 'shared' ? 'share' : 'download', filename };
+  return { kind: 'cancelled' };
 }
 
 /**
  * 另存到作家指定的新位置。
  * 桌機選好後，「儲存專案」之後改寫這個新檔。
- * 手機無法拿到檔案把手，只把下次預設檔名改成新檔名。
+ * 手機走分享選單，檔名用書名_時間戳；不記住新檔名供儲存專案使用。
  */
 export async function saveProjectAsNew(
   env: SaveEnvironment,
@@ -137,7 +135,5 @@ export async function saveProjectAsNew(
   }
   const via = await env.share(suggestedName, bytes);
   if (via === 'cancelled') return { kind: 'cancelled' };
-  const previous = await env.targets.load(bookKey);
-  await env.targets.save(bookKey, { filename: suggestedName, file: previous?.file ?? null });
   return { kind: 'handed-off', via: via === 'shared' ? 'share' : 'download', filename: suggestedName };
 }
