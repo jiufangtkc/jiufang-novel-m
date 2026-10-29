@@ -3,11 +3,11 @@ import { changeGoal, countAchievements, glowing } from '../domain/dailyGoal';
 import { countWords } from '../domain/wordCount';
 import { createDemoSchedule, demoParagraph } from './demo';
 
-describe('示範資料', () => {
+describe('範例資料', () => {
   const now = new Date('2026-10-29T01:28:00.000Z');
 
-  it('內文都標了示範，而且今天 300 字、目標 1000，尚未達標', () => {
-    expect(demoParagraph('第一章', 1).startsWith('【示範假資料】')).toBe(true);
+  it('內文都標了範例，而且今天 300 字、目標 1000，尚未達標', () => {
+    expect(demoParagraph('第一章', 1).startsWith('【範例】')).toBe(true);
     const schedule = createDemoSchedule(now);
     expect(schedule.open?.dayKey).toBe('2026-10-29');
     expect(schedule.open?.wordCount).toBe(300);

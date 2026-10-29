@@ -34,7 +34,7 @@ export function createScene(chapter: ChapterNode, id: string): ChapterNode {
     type: 'scene',
     title: `幕 ${count}　新幕`,
     progress: 'Draft',
-    content: '【示範】新加的幕，可以在這裡寫。\n',
+    content: '【範例】新加的幕，可以在這裡寫。\n',
   };
 }
 

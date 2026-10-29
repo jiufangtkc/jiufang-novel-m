@@ -1,5 +1,5 @@
 /**
- * 第 2 階段章節目錄樣品（假資料）與長目錄捲動檢查。
+ * 第 2 階段章節目錄樣品（範例）與長目錄捲動檢查。
  * NODE_PATH=/tmp/pw/node_modules node scripts/capture-stage2.mjs
  */
 import { mkdir } from 'node:fs/promises';
@@ -52,7 +52,7 @@ assert(scrolled.canScroll && scrolled.atEnd && scrolled.last, `長目錄捲不�
 shots.push(await shot(phoneDir, '08-長目錄底部.png'));
 
 await page.goto(`${base}/p/fog/write`, { waitUntil: 'networkidle' });
-await page.getByRole('heading', { name: '【示範】霧港紀事' }).waitFor();
+await page.getByRole('heading', { name: '【範例】霧港紀事' }).waitFor();
 const handleHidden = await page.locator('.tree-handle.is-hidden').count();
 assert(handleHidden > 0, '平常目錄不該出現拖曳把手');
 shots.push(await shot(phoneDir, '01-目錄主畫面.png'));
@@ -165,7 +165,7 @@ await page.waitForFunction(() => {
   return Boolean(second && second.lastCursor === 4 && second.lastOpenedNodeId === 'second-ch');
 });
 await page.goto(`${base}/`, { waitUntil: 'networkidle' });
-await page.getByRole('link', { name: /第二本假專案/ }).click();
+await page.getByRole('link', { name: /第二本專案/ }).click();
 await page.getByTestId('writing-input').waitFor();
 const resumed = await page.getByTestId('writing-input').evaluate((element) => element.selectionStart);
 assert(resumed === 4, `再開應回到游標 4，實際 ${resumed}`);

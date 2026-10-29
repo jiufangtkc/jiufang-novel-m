@@ -381,7 +381,7 @@ function reduce(state: SampleState, action: Action): SampleState {
     case 'dismiss-recent':
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
     case 'add-project': {
-      const title = action.title.trim() || '【示範】未命名專案';
+      const title = action.title.trim() || '【範例】未命名專案';
       const chapterId = newChapterId(action.id);
       const single = action.shape === 'single';
       const project: DemoProject = {
@@ -398,7 +398,7 @@ function reduce(state: SampleState, action: Action): SampleState {
             type: 'file',
             title: single ? title : '第一章　起筆',
             progress: 'Draft',
-            content: single ? '' : '【示範】在這裡寫作。這段是假資料。\n',
+            content: single ? '' : '【範例】在這裡寫作。\n',
           },
         ],
       };
@@ -406,7 +406,7 @@ function reduce(state: SampleState, action: Action): SampleState {
         ...state,
         projects: [project, ...state.projects],
         recentIds: [action.id, ...state.recentIds],
-        toast: '已新增示範專案（只留在這個畫面裡）',
+        toast: '已新增範例專案（只留在這個畫面裡）',
       };
     }
     case 'toggle':
@@ -748,7 +748,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
       })
       .catch(() => {
-        // 沒有手機儲存空間時，示範專案仍可寫。
+        // 沒有手機儲存空間時，範例專案仍可寫。
       });
     return () => {
       cancelled = true;

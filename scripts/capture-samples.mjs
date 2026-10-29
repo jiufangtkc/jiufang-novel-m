@@ -134,7 +134,7 @@ await page.getByTestId('files-screen').waitFor();
 const filesText = await page.getByTestId('files-screen').innerText();
 assert(!filesText.includes('儲存專案'), 'iPhone 檔案頁不該顯示儲存專案');
 assert(!filesText.includes('上次儲存'), 'iPhone 檔案頁不該顯示上次儲存');
-assert(filesText.includes('還沒存進這支手機的 App 空間'), '示範專案不該假裝已經存進 App 空間');
+assert(filesText.includes('還沒存進這支手機的 App 空間'), '範例專案不該顯示已經存進 App 空間');
 assert(filesText.includes('另存專案'), '檔案頁缺少另存專案');
 assert(filesText.includes('將稿子存到各類雲端或其他位置'), '另存專案說明應為定案文案');
 assert(filesText.includes('立刻暫存稿子'), '檔案頁缺少立刻暫存');

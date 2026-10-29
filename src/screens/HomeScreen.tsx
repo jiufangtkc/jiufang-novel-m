@@ -13,7 +13,7 @@ export function HomeScreen() {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const openInputRef = useRef<HTMLInputElement>(null);
-  const [title, setTitle] = useState('【示範】未命名專案');
+  const [title, setTitle] = useState('【範例】未命名專案');
   const [shape, setShape] = useState<'novel' | 'single'>('novel');
   const recent = state.recentIds
     .map((id) => state.projects.find((project) => project.id === id))

@@ -148,7 +148,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         autoCorrect="off"
         autoCapitalize="off"
         autoComplete="off"
-        placeholder="【示範】在這裡寫作。"
+        placeholder="【範例】在這裡寫作。"
         aria-label="正文"
         enterKeyHint="enter"
         onFocus={() => setFocused(true)}

@@ -1,6 +1,6 @@
 import type { Sql } from './sql';
 
-/** 給自動測試用的假書，不是任何人的作品。 */
+/** 給自動測試用的範例書。 */
 export function createVersion1(sql: Sql) {
   sql.exec(`CREATE TABLE project_info (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,13 +34,13 @@ export function createVersion1(sql: Sql) {
     word_count INTEGER
   )`);
   sql.run('INSERT INTO project_info (title, logline, current_theme) VALUES (?, ?, ?)', [
-    '【示範】舊檔',
+    '【範例】舊檔',
     '',
     '',
   ]);
   sql.run(
     'INSERT INTO chapters (id, parent_id, name, node_type, content, mark, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?)',
-    ['ch-1', null, '第一章　假信', 'file', '【示範】霧港只有這句假話。', 'Draft', 0],
+    ['ch-1', null, '第一章　信', 'file', '【範例】霧港只有這一句。', 'Draft', 0],
   );
   sql.run(
     'INSERT INTO writing_logs (date, duration, word_count) VALUES (?, ?, ?)',

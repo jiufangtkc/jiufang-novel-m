@@ -17,12 +17,12 @@ import {
   withoutNode,
 } from './chapterOps';
 
-function file(id: string, title: string, children: ChapterNode[] = [], content = '【假資料】正文。'): ChapterNode {
+function file(id: string, title: string, children: ChapterNode[] = [], content = '【範例】正文。'): ChapterNode {
   return { id, type: 'file', title, progress: 'Draft', content, expanded: true, children };
 }
 
 function scene(id: string): ChapterNode {
-  return { id, type: 'scene', title: id, progress: 'Draft', content: '【假資料】幕。', children: [] };
+  return { id, type: 'scene', title: id, progress: 'Draft', content: '【範例】幕。', children: [] };
 }
 
 function volume(id: string, children: ChapterNode[]): ChapterNode {
@@ -36,7 +36,7 @@ const sample = (): ChapterNode[] => [
 ];
 
 const info: FileProjectInfo = {
-  title: '【假資料】排序測試',
+  title: '【範例】排序測試',
   logline: '',
   currentTheme: '',
   globalFontFamily: '',
@@ -91,7 +91,7 @@ describe('章節目錄排序與刪除', () => {
     expect(restored[0].children?.[0]).toMatchObject({
       id: 'c1',
       progress: 'Draft',
-      content: '【假資料】正文。',
+      content: '【範例】正文。',
     });
     expect(restored[0].children?.[0].children?.[0].id).toBe('s1');
   });
@@ -127,7 +127,7 @@ describe('章節目錄排序與刪除', () => {
     const tree = sample();
     writeFileProject(db.sql, info, tree, [], []);
     db.sql.run(
-      `INSERT INTO snapshots (name, note, timestamp, word_count, project_data) VALUES ('keep', '假快照', '2026-01-01', 1, '{}')`,
+      `INSERT INTO snapshots (name, note, timestamp, word_count, project_data) VALUES ('keep', '範例快照', '2026-01-01', 1, '{}')`,
     );
     const before = snapshotFingerprints(db.sql);
     const moved = moveBy(tree, 'c2', -1);
@@ -141,9 +141,9 @@ describe('章節目錄排序與刪除', () => {
     db.close();
   });
 
-  it('四十章以上假書可計算捲動範圍，排序後再開仍一致', async () => {
+  it('四十章以上範例書可計算捲動範圍，排序後再開仍一致', async () => {
     const chapters = Array.from({ length: 41 }, (_, index) =>
-      file(`long-${index + 1}`, `第${index + 1}章　【假資料】`, [], '【假資料】'),
+      file(`long-${index + 1}`, `第${index + 1}章　【範例】`, [], '【範例】'),
     );
     expect(chapters.length).toBeGreaterThan(40);
     const rowHeight = 44;

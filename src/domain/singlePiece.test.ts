@@ -7,11 +7,11 @@ import { moveBy, neighborChapterId, placeRecovered } from './chapterOps';
 import { manuscriptWritePath, shapeAfterEdit } from './openManuscript';
 
 function file(id: string, title: string, children: ChapterNode[] = []): ChapterNode {
-  return { id, type: 'file', title, content: '【假資料】', expanded: false, children };
+  return { id, type: 'file', title, content: '【範例】', expanded: false, children };
 }
 
 const info: FileProjectInfo = {
-  title: '【假資料】單篇',
+  title: '【範例】單篇',
   logline: '',
   currentTheme: '',
   globalFontFamily: '',
@@ -57,7 +57,7 @@ describe('上一章下一章與單篇', () => {
     const db = await openMemoryDb(new Uint8Array());
     writeFileProject(db.sql, info, tree, [], []);
     db.sql.run(
-      `INSERT INTO snapshots (name, note, timestamp, word_count, project_data) VALUES ('keep', '假快照', '2026-01-01', 1, '{}')`,
+      `INSERT INTO snapshots (name, note, timestamp, word_count, project_data) VALUES ('keep', '範例快照', '2026-01-01', 1, '{}')`,
     );
     const before = snapshotFingerprints(db.sql);
     writeFileProject(db.sql, info, tree, [], []);
