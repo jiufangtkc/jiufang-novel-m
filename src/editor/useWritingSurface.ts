@@ -6,10 +6,12 @@ import { revealCaret } from './caret';
 import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './enterGuard';
 import { createIdleGate, IDLE_MS } from './idleGate';
 import { classifyTextDelta, type TextChangeSource, type TextDelta } from '../domain/writingLog';
+import { textForBoundChapter } from './chapterSurface';
 
 interface WritingSurfaceOptions {
   bookId: string;
   chapterId: string;
+  openingText: string;
   onCommit: (text: string) => void;
   onLarge: (delta: TextDelta) => void;
   onDuration: (seconds: number) => void;
@@ -19,6 +21,7 @@ interface WritingSurfaceOptions {
 export function useWritingSurface({
   bookId,
   chapterId,
+  openingText,
   onCommit,
   onLarge,
   onDuration,
@@ -34,10 +37,20 @@ export function useWritingSurface({
   onLargeRef.current = onLarge;
   onDurationRef.current = onDuration;
   onToastRef.current = onToast;
+  const openingRef = useRef(openingText);
+  openingRef.current = openingText;
 
   useEffect(() => {
     const textarea = ref.current;
     if (!textarea) return;
+    const boundText = textForBoundChapter({
+      boundChapterId: textarea.dataset.boundChapter || null,
+      screenText: textarea.value,
+      nextChapterId: chapterId,
+      storedText: openingRef.current,
+    });
+    if (textarea.value !== boundText) textarea.value = boundText;
+    textarea.dataset.boundChapter = chapterId;
     const commit = onCommitRef.current;
     const noteLarge = onLargeRef.current;
     const addDuration = onDurationRef.current;

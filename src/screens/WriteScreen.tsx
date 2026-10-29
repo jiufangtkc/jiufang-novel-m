@@ -80,7 +80,7 @@ export function WriteScreen() {
       </section>
       <section className="editor-pane">
         {chapter ? (
-          <EditorPane projectId={project.id} chapter={chapter} />
+          <EditorPane key={chapter.id} projectId={project.id} chapter={chapter} />
         ) : chapterId ? (
           <div className="editor-empty">
             <p>{CHAPTER_NOT_FOUND}</p>
