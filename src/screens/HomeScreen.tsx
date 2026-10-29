@@ -1,7 +1,13 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon } from '../components/Icons';
-import { NEW_BOOK_NOVEL, NEW_BOOK_SHAPE, NEW_BOOK_SINGLE, OPEN_DB_FAIL } from '../copy/userFacing';
+import {
+  NEW_BOOK_DEFAULT_TITLE,
+  NEW_BOOK_NOVEL,
+  NEW_BOOK_SHAPE,
+  NEW_BOOK_SINGLE,
+  OPEN_DB_FAIL,
+} from '../copy/userFacing';
 import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
 import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
 import { canPickLocalFiles } from '../db/browserDisk';
@@ -13,7 +19,7 @@ export function HomeScreen() {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const openInputRef = useRef<HTMLInputElement>(null);
-  const [title, setTitle] = useState('【範例】未命名專案');
+  const [title, setTitle] = useState(NEW_BOOK_DEFAULT_TITLE);
   const [shape, setShape] = useState<'novel' | 'single'>('novel');
   const recent = state.recentIds
     .map((id) => state.projects.find((project) => project.id === id))
@@ -144,7 +150,6 @@ export function HomeScreen() {
                 {NEW_BOOK_SINGLE}
               </button>
             </div>
-            <p className="hint">只會留在這個畫面裡，不會寫進檔案，也不會上傳。</p>
             <div className="dialog-actions">
               <button type="button" className="button secondary" onClick={() => setCreating(false)}>
                 取消

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
-import { TREE_NEXT_CHAPTER, TREE_PREV_CHAPTER } from '../copy/userFacing';
+import { EDITOR_PLACEHOLDER, TREE_NEXT_CHAPTER, TREE_PREV_CHAPTER } from '../copy/userFacing';
 import { bookArchive } from '../db/chapterArchive';
 import type { ChapterNode } from '../data/demo';
 import { canPickLocalFiles } from '../db/browserDisk';
@@ -157,7 +157,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         autoCorrect="off"
         autoCapitalize="off"
         autoComplete="off"
-        placeholder="【範例】在這裡寫作。"
+        placeholder={EDITOR_PLACEHOLDER}
         aria-label="正文"
         enterKeyHint="enter"
         onFocus={() => setFocused(true)}

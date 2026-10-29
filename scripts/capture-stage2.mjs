@@ -67,11 +67,11 @@ shots.push(await shot(phoneDir, '02-整理模式.png'));
 await page.getByRole('button', { name: '更多' }).click();
 await page.getByTestId('node-menu').waitFor();
 shots.push(await shot(phoneDir, '03-更多.png'));
-await page.getByRole('button', { name: '刪除這章…' }).click();
+await page.getByRole('button', { name: '刪除', exact: true }).click();
 await page.getByTestId('delete-confirm').waitFor();
 const confirmText = await page.getByTestId('delete-confirm').innerText();
 assert(confirmText.includes('留著') && confirmText.includes('幕'), '刪除確認要寫出子項目');
-assert(confirmText.includes('找回刪掉的章'), '刪除確認要寫之後還能找回');
+assert(confirmText.includes('最近刪除'), '刪除確認要寫之後還能找回');
 shots.push(await shot(phoneDir, '05-刪除確認.png'));
 await page.getByRole('button', { name: '留著' }).click();
 
@@ -86,7 +86,7 @@ shots.push(await shot(phoneDir, '07-進度選單.png'));
 await page.locator('.sheet-backdrop').click({ position: { x: 12, y: 80 } });
 
 await page.getByRole('button', { name: '更多' }).click();
-await page.getByRole('button', { name: '刪除這章…' }).click();
+await page.getByRole('button', { name: '刪除', exact: true }).click();
 await page.getByRole('button', { name: '刪除', exact: true }).click();
 await page.getByTestId('tree-undo').waitFor();
 shots.push(await shot(phoneDir, '06-刪除後復原.png'));
@@ -108,9 +108,9 @@ assert((await page.getByTestId('writing-input').count()) === 0, '取消改名應
 
 await page.getByTestId('add-chapter').click();
 await page.getByTestId('rename-dialog').waitFor();
-await page.getByRole('button', { name: '儲存名稱' }).click();
+await page.getByRole('button', { name: '開始寫' }).click();
 await page.getByTestId('writing-input').waitFor();
-assert(page.url().includes('/write/'), '儲存名稱後應進入正文');
+assert(page.url().includes('/write/'), '開始寫後應進入正文');
 
 await page.goto(`${base}/p/fog/write/ch-2`, { waitUntil: 'networkidle' });
 await page.getByTestId('chapter-jump').waitFor();
@@ -129,7 +129,7 @@ await input.press('End');
 await page.keyboard.type('甲');
 await page.getByRole('button', { name: '返回目錄' }).click();
 await page.getByRole('button', { name: '第一章　來信的更多操作' }).click();
-await page.getByRole('button', { name: '找回之前的版本' }).click();
+await page.getByRole('button', { name: '找回舊版' }).click();
 await page.getByTestId('version-sheet').getByRole('button', { name: '預覽' }).first().waitFor();
 shots.push(await shot(phoneDir, '11-找回版本.png'));
 await page.getByRole('button', { name: '預覽' }).last().click();
@@ -140,14 +140,14 @@ await page.getByRole('button', { name: '用這一版' }).click();
 await page.getByTestId('version-sheet').waitFor({ state: 'hidden' });
 
 await page.getByRole('button', { name: '第四章　（刪去的岔路）的更多操作' }).click();
-await page.getByRole('button', { name: '刪除這章…' }).click();
+await page.getByRole('button', { name: '刪除', exact: true }).click();
 await page.getByRole('button', { name: '刪除', exact: true }).click();
 await page.getByTestId('tree-undo').waitFor();
 await page.waitForTimeout(11000);
 assert((await page.getByTestId('tree-undo').count()) === 0, '十秒後復原列應消失');
 await page.getByTestId('find-deleted').click();
 await page.getByTestId('deleted-sheet').waitFor();
-shots.push(await shot(phoneDir, '12-找回刪掉的章.png'));
+shots.push(await shot(phoneDir, '12-最近刪除.png'));
 await page.getByRole('button', { name: '放到最後面' }).click();
 await page.getByRole('button', { name: '第四章　（刪去的岔路）', exact: true }).waitFor();
 

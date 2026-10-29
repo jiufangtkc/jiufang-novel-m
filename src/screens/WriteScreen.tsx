@@ -48,11 +48,15 @@ import {
   TREE_DELETE_CHAPTER,
   TREE_DELETE_SCENE,
   TREE_DELETE_VOLUME,
-  TREE_DESKTOP_HINT,
   TREE_DONE,
   TREE_DRAG_HINT,
-  TREE_DELETE_RECOVERABLE,
+  TREE_NAME_NEW_CHAPTER,
+  TREE_START_WRITING,
   deleteConfirmShowsRecoverable,
+  deleteRecoverableHint,
+  desktopMoveDownShortcut,
+  desktopMoveUpShortcut,
+  treeDesktopHint,
   contentAfterVersionRestore,
   TREE_EMPTY_NAME,
   TREE_FIND_DELETED,
@@ -628,7 +632,7 @@ export function WriteScreen() {
             </button>
           </div>
         ) : null}
-        {desktop ? <p className="hint tree-desktop-hint">{TREE_DESKTOP_HINT}</p> : null}
+        {desktop ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
       </section>
       <section className="editor-pane">
         {chapter ? (
@@ -705,11 +709,11 @@ export function WriteScreen() {
             <>
               <button type="button" className="menu-item" disabled={!canMoveBy(book.nodes, menuNode.id, -1)} onClick={() => { shift(menuNode.id, -1); setMenu(null); }}>
                 {TREE_MOVE_UP}
-                {desktop ? <small>Alt+↑</small> : null}
+                {desktop ? <small>{desktopMoveUpShortcut()}</small> : null}
               </button>
               <button type="button" className="menu-item" disabled={!canMoveBy(book.nodes, menuNode.id, 1)} onClick={() => { shift(menuNode.id, 1); setMenu(null); }}>
                 {TREE_MOVE_DOWN}
-                {desktop ? <small>Alt+↓</small> : null}
+                {desktop ? <small>{desktopMoveDownShortcut()}</small> : null}
               </button>
               {menuNode.type === 'file' ? (
                 <button type="button" className="menu-item" onClick={() => setMenu({ id: menuNode.id, kind: 'volume' })}>
@@ -796,7 +800,7 @@ export function WriteScreen() {
               finishRename(renameNodeNow.id, value, renameIntent);
             }}
           >
-            <h2>{TREE_RENAME}</h2>
+            <h2>{renameIntent === 'write' ? TREE_NAME_NEW_CHAPTER : TREE_RENAME}</h2>
             <input
               name="title"
               data-testid="rename-title"
@@ -810,7 +814,7 @@ export function WriteScreen() {
                 {TREE_CANCEL}
               </button>
               <button type="submit" className="button primary">
-                {TREE_SAVE_NAME}
+                {renameIntent === 'write' ? TREE_START_WRITING : TREE_SAVE_NAME}
               </button>
             </div>
           </form>
@@ -824,7 +828,7 @@ export function WriteScreen() {
             <p>{treeDeleteImpact(impact.chapters, impact.scenes, formatInteger(impact.words))}</p>
             <p className="hint">{TREE_UNDO_HINT}</p>
             {deleteConfirmShowsRecoverable(archivePersistOk) ? (
-              <p className="hint">{TREE_DELETE_RECOVERABLE}</p>
+              <p className="hint">{deleteRecoverableHint(desktop)}</p>
             ) : null}
             <div className="dialog-actions delete-actions">
               <button

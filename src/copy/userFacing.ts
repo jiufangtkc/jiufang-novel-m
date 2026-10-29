@@ -17,7 +17,7 @@ export const SAVE_FATAL_FAIL = '存檔失敗。稿件目前仍在 APP 暫存空�
 
 export const STASH_FAIL = '暫存沒成功，請再按一次「立刻暫存稿子」';
 
-/** 第 2 階段章節目錄。文字先照草案，之後再給九方審。 */
+/** 第 2 階段章節目錄。 */
 export const TREE_ORGANIZE = '整理目錄';
 export const TREE_DONE = '完成';
 export const TREE_ADD_CHAPTER = '新增章';
@@ -25,34 +25,30 @@ export const TREE_ADD_VOLUME = '在下方新增一卷';
 export const TREE_ADD_CHAPTER_BELOW = '在下方新增一章';
 export const TREE_ADD_SCENE = '在這章裡新增幕';
 export const TREE_RENAME = '改名';
-export const TREE_SAVE_NAME = '儲存名稱';
+export const TREE_NAME_NEW_CHAPTER = '幫新章取名';
+export const TREE_SAVE_NAME = '確定';
+export const TREE_START_WRITING = '開始寫';
 export const TREE_CANCEL = '取消';
 export const TREE_MOVE_UP = '上移';
 export const TREE_MOVE_DOWN = '下移';
 export const TREE_MORE = '更多';
 export const TREE_MOVE_VOLUME = '移到別卷…';
-export const TREE_MOVE_ROOT = '移到最上層';
-export const TREE_DELETE_CHAPTER = '刪除這章…';
-export const TREE_DELETE_SCENE = '刪除這幕…';
-export const TREE_DELETE_VOLUME = '刪除這卷…';
+export const TREE_MOVE_ROOT = '不放在任何卷';
+export const TREE_DELETE_CHAPTER = '刪除';
+export const TREE_DELETE_SCENE = '刪除';
+export const TREE_DELETE_VOLUME = '刪除';
 export const TREE_KEEP = '留著';
 export const TREE_CONFIRM_DELETE = '刪除';
 export const TREE_UNDO = '復原';
-export const TREE_PROGRESS = '改進度';
+export const TREE_PROGRESS = '進度標記';
 export const TREE_NEW_CHAPTER = '新章';
 export const TREE_NEW_VOLUME = '新卷';
 export const TREE_EMPTY_NAME = '名稱不能是空白';
 export const TREE_DRAG_HINT = '只有按住 ≡ 才會拖，手指在其他地方滑就是捲動';
-export const TREE_DESKTOP_HINT =
-  '滑過任一列會出現 ≡，可直接用滑鼠拖。F2 改名、Del 刪除、Alt+↑↓ 移動、Ctrl+Z 復原';
 export const TREE_UNDO_HINT = '刪除後 10 秒內可以按「復原」。';
-export const TREE_DELETE_RECOVERABLE = '之後仍可從目錄最下方的「找回刪掉的章」放回來。';
-/** 舊版寫入 IndexedDB 失敗時的提示（草案，待九方審）。 */
-export const ARCHIVE_KEEP_FAIL = '這次沒留下舊版，正文沒受影響。';
-/** 按「用這一版」前，現在的正文沒留成舊版（草案，待九方審）。 */
-export const ARCHIVE_RESTORE_HELD = '現在的內容沒留成舊版，先不換。';
-/** 刪除紀錄沒寫入時的提示（草案，待九方審）。 */
-export const ARCHIVE_DELETE_UNSAVED = '這次刪掉的內容找不回來，10 秒內可按「復原」。';
+export const ARCHIVE_KEEP_FAIL = '這次沒留下舊版，正文沒受影響';
+export const ARCHIVE_RESTORE_HELD = '現在的內容沒留成舊版，先不換';
+export const ARCHIVE_DELETE_UNSAVED = '這次刪掉的內容找不回來，10 秒內可按「復原」';
 
 export type ArchiveWriteKind = 'version' | 'delete' | 'restore';
 
@@ -72,8 +68,42 @@ export function contentAfterVersionRestore(kept: boolean, current: string, resto
 export function deleteConfirmShowsRecoverable(archivePersistOk: boolean): boolean {
   return archivePersistOk;
 }
-export const TREE_FIND_VERSION = '找回之前的版本';
-export const TREE_FIND_DELETED = '找回刪掉的章';
+
+/** 刪除確認底下的小字：手機與電腦各一句。 */
+export function deleteRecoverableHint(computer: boolean): string {
+  const device = computer ? '這台電腦' : '這支手機';
+  return `最近刪除的 10 項會留在${device}，可從目錄最下方的「最近刪除」放回來`;
+}
+
+function isMacDesktop(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const platform = navigator.platform;
+  if (/Win/i.test(platform)) return false;
+  if (/Linux/i.test(platform)) return false;
+  const ua = navigator.userAgent;
+  if (/Windows/i.test(ua)) return false;
+  return /Mac/i.test(platform) || /Macintosh/i.test(ua);
+}
+
+export function desktopUndoShortcut(): string {
+  return isMacDesktop() ? '⌘＋Z' : 'Ctrl＋Z';
+}
+
+export function desktopMoveUpShortcut(): string {
+  return isMacDesktop() ? '⌥＋↑' : 'Alt+↑';
+}
+
+export function desktopMoveDownShortcut(): string {
+  return isMacDesktop() ? '⌥＋↓' : 'Alt+↓';
+}
+
+export function treeDesktopHint(): string {
+  const undo = desktopUndoShortcut();
+  return `滑過任一列會出現 ≡，可直接用滑鼠拖。F2 改名、Del 刪除、Alt+↑↓ 移動、${undo} 復原`;
+}
+
+export const TREE_FIND_VERSION = '找回舊版';
+export const TREE_FIND_DELETED = '最近刪除';
 export const TREE_VERSION_EMPTY = '這一章還沒有舊版。';
 export const TREE_VERSION_PREVIEW = '預覽';
 export const TREE_VERSION_READONLY = '這一版只能看，按「用這一版」才會換上。';
@@ -85,6 +115,9 @@ export const TREE_NEXT_CHAPTER = '下一章';
 export const NEW_BOOK_SHAPE = '這份稿子的形式';
 export const NEW_BOOK_NOVEL = '長篇（卷章幕）';
 export const NEW_BOOK_SINGLE = '單篇（短篇、散文）';
+export const NEW_BOOK_DEFAULT_TITLE = '未命名稿子';
+export const TOAST_NEW_BOOK = '已開新稿子';
+export const EDITOR_PLACEHOLDER = '從這裡開始寫';
 export const TREE_KIND_CHAPTER = '章';
 export const TREE_KIND_SCENE = '幕';
 export const TREE_KIND_VOLUME = '卷';

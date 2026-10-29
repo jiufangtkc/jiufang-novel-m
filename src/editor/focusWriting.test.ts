@@ -6,7 +6,7 @@ describe('新章進入正文', () => {
     let focused = false;
     let range: [number, number] | null = null;
     const box = {
-      value: '【範例】在這裡寫作。',
+      value: '',
       focus() {
         focused = true;
       },
