@@ -1,6 +1,7 @@
 import type { StoredBook } from './appSpace';
 import { createDirectoryAppSpace, createMirroredSpace, type AppSpace, type ByteDirectory } from './appSpace';
 import { openAppDatabase } from './appDatabase';
+import { catchEarlyRejection, requestDurableStorage } from './durableStorage';
 
 function idbSpace(): AppSpace {
   return {
@@ -47,10 +48,10 @@ function idbRequest<T>(
 }
 
 function opfsDirectory(): ByteDirectory {
-  const ready = (async () => {
+  const ready = catchEarlyRejection((async () => {
     const root = await navigator.storage.getDirectory();
     return root.getDirectoryHandle('books', { create: true });
-  })();
+  })());
   return {
     async write(name, bytes) {
       const dir = await ready;
@@ -86,6 +87,7 @@ let spacePromise: Promise<AppSpace> | null = null;
 export function appSpace(): Promise<AppSpace> {
   if (!spacePromise) {
     spacePromise = (async () => {
+      if (typeof navigator !== 'undefined') void requestDurableStorage(navigator.storage);
       const backup = idbSpace();
       if (typeof navigator !== 'undefined' && typeof navigator.storage?.getDirectory === 'function') {
         try {

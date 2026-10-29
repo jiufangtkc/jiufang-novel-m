@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react';
 import {
@@ -28,6 +29,14 @@ import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
 import { importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
+import {
+  bindLeaveFlush,
+  clearLiveDraft,
+  flushOpenDraft,
+  loadLiveDraft,
+  notePersistedDraft,
+  readLiveDraftFromEditor,
+} from '../editor/liveDraft';
 import {
   applyLargeEvent,
   classifyTextDelta,
@@ -97,7 +106,8 @@ type Action =
   | { type: 'record-manual-save'; projectId: string; atMs: number }
   | { type: 'record-export'; projectId: string; atMs: number }
   | { type: 'record-project-save'; projectId: string; atMs: number }
-  | { type: 'set-filename'; projectId: string; filename: string };
+  | { type: 'set-filename'; projectId: string; filename: string }
+  | { type: 'promote-stored'; projectId: string; key: string; filename: string };
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
   if (!schedule.open) return logs;
@@ -297,6 +307,54 @@ function reduce(state: SampleState, action: Action): SampleState {
           filename: action.filename,
         })),
       };
+    case 'promote-stored': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const key = project.dbKey ?? action.key;
+      const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+      const existing = state.fileExtras[key];
+      const extras = existing ?? {
+        info: {
+          title: project.title,
+          logline: '',
+          currentTheme: '',
+          globalFontFamily: '',
+          globalFontSize: 12,
+          editorFontFamily: '',
+          editorFontSize: 16,
+          targetWordCount: project.bookGoal,
+          dailyTargetWordCount: goal,
+          categoryOrder: null,
+          expandedCategories: null,
+          categoriesMeta: '{}',
+          lastOpenedNodeId: null,
+          lastCursorPosition: 0,
+        },
+        cards: [],
+        logs: state.logs.map((log) => ({
+          date: log.date,
+          duration: log.duration,
+          word_count: log.word_count,
+          ai_continuation_count: log.ai_continuation_count,
+          ai_continuation_chars: log.ai_continuation_chars,
+          ai_chat_count: log.ai_chat_count,
+          ai_details: log.ai_details ?? '{}',
+          paste_large_count: log.paste_large_count,
+          delete_large_count: log.delete_large_count,
+        })),
+      };
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          origin: 'file',
+          dbKey: key,
+          filename: current.filename || action.filename,
+        })),
+        fileExtras: { ...state.fileExtras, [key]: extras },
+        goalById: { ...state.goalById, [project.id]: state.goalById[project.id] ?? state.schedule },
+      };
+    }
     case 'dismiss-recent':
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
     case 'add-project': {
@@ -572,14 +630,19 @@ function applySaveOutcome(
     dispatch({ type: 'record-project-save', projectId, atMs: Date.now() });
     dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
   }
-  if (mode === 'save-as' && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
+  if (mode === 'save-as' && outcome.kind === 'saved-as') {
     dispatch({ type: 'record-export', projectId, atMs: Date.now() });
     dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+  }
+  if (mode === 'save-as' && outcome.kind === 'handed-off') {
+    dispatch({ type: 'record-export', projectId, atMs: Date.now() });
   }
 }
 
 export function SampleProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reduce, undefined, () => createState(new Date()));
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
@@ -602,7 +665,14 @@ export function SampleProvider({ children }: { children: ReactNode }) {
     void loadStoredBooks()
       .then((books) => {
         if (cancelled) return;
+        const draft = typeof localStorage === 'undefined' ? null : loadLiveDraft(localStorage);
+        let appliedDraft = false;
         for (const book of books) {
+          let tree = book.tree;
+          if (draft && draft.projectId === book.key && findNode(book.tree, draft.chapterId)) {
+            tree = updateNode(book.tree, draft.chapterId, (node) => ({ ...node, content: draft.text }));
+            appliedDraft = true;
+          }
           dispatch({
             type: 'attach-file',
             quiet: true,
@@ -611,7 +681,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
               title: book.title,
               updatedLabel: '已在手機',
               bookGoal: book.info.targetWordCount,
-              nodes: book.tree,
+              nodes: tree,
               origin: 'file',
               dbKey: book.key,
               filename: book.filename,
@@ -620,6 +690,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
             extras: { info: book.info, cards: book.cards, logs: book.logs },
           });
         }
+        if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
       })
       .catch(() => {
         // 沒有手機儲存空間時，示範專案仍可寫。
@@ -655,32 +726,38 @@ export function SampleProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const flush = () => {
-      const project = state.projects.find((item) => item.id === state.activeProjectId);
-      if (!project?.dbKey || project.origin !== 'file') return;
-      const extra = state.fileExtras[project.dbKey];
-      if (!extra) return;
-      void saveBookBytes(
-        project.dbKey,
-        localDbFilename(project.title, project.filename),
-        project.title,
-        { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
-        project.nodes,
-        extra.cards,
-        extra.logs,
-      ).then(() => {
-        dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
-      });
+      const current = stateRef.current;
+      let projects = current.projects;
+      const live = readLiveDraftFromEditor();
+      try {
+        if (typeof localStorage !== 'undefined') {
+          projects = flushOpenDraft({ store: localStorage, projects: current.projects });
+        }
+      } catch {
+        projects = current.projects;
+      }
+      if (live) {
+        dispatch({ type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text });
+      }
+      const projectId = live?.projectId ?? current.activeProjectId;
+      const project = projects.find((item) => item.id === projectId);
+      if (!project) return;
+      const startedAt = Date.now();
+      void snapshotManuscript({ ...current, projects }, project)
+        .then((result) => {
+          if (live && typeof localStorage !== 'undefined') notePersistedDraft(localStorage, live, startedAt);
+          dispatch({ type: 'record-auto-save', projectId: project.id, atMs: startedAt });
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key: result.key,
+            filename: project.filename || projectSaveFilename(project.title, project.filename),
+          });
+        })
+        .catch(() => undefined);
     };
-    const onHide = () => {
-      if (document.visibilityState === 'hidden') flush();
-    };
-    document.addEventListener('visibilitychange', onHide);
-    window.addEventListener('pagehide', flush);
-    return () => {
-      document.removeEventListener('visibilitychange', onHide);
-      window.removeEventListener('pagehide', flush);
-    };
-  }, [state.projects, state.fileExtras, state.activeProjectId]);
+    return bindLeaveFlush(window, document, flush);
+  }, []);
 
   useEffect(() => {
     if (!state.toast) return;
@@ -759,7 +836,13 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
         if (!project) return;
         try {
-          await snapshotManuscript(state, project);
+          const { key } = await snapshotManuscript(state, project);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key,
+            filename: projectSaveFilename(project.title, project.filename),
+          });
           dispatch({ type: 'record-manual-save', projectId: project.id, atMs: Date.now() });
           dispatch({ type: 'toast', message: '已暫存' });
         } catch {
@@ -771,6 +854,12 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (!project) return;
         try {
           const { key, bytes } = await snapshotManuscript(state, project);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key,
+            filename: projectSaveFilename(project.title, project.filename),
+          });
           const outcome = await saveProjectToPlace(
             browserSaveEnv(),
             key,
@@ -787,6 +876,12 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (!project) return;
         try {
           const { key, bytes } = await snapshotManuscript(state, project);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key,
+            filename: projectSaveFilename(project.title, project.filename),
+          });
           const outcome = await saveProjectAsNew(browserSaveEnv(), key, bytes, exportDbFilename(project.title));
           applySaveOutcome(dispatch, project.id, outcome, 'save-as');
         } catch {

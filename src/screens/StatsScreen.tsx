@@ -97,7 +97,7 @@ export function StatsScreen() {
           <p className="hint">
             一天最多算 1 次。要等那天結束，用最後一次設定的目標來比對當天字數。中途亮過又熄掉，不算。已經算好的日子不會再變。今天就算正在發光，也要等今天結束才記入。
           </p>
-          <Link className="text-link" to={`/p/${project.id}/logs`}>
+          <Link className="text-link stats-log-link" to={`/p/${project.id}/logs`}>
             查看寫作過程紀錄
           </Link>
         </article>

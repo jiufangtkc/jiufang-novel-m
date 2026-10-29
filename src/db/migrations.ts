@@ -106,6 +106,41 @@ const steps: Array<(sql: Sql) => void> = [
   },
 ];
 
+/** 全新的書還沒有任何表。先建與舊版同一套底表，後面的升級才加得了欄位。 */
+export function ensureBaseTables(sql: Sql): void {
+  sql.exec(`CREATE TABLE IF NOT EXISTS project_info (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT,
+    logline TEXT,
+    current_theme TEXT
+  )`);
+  sql.exec(`CREATE TABLE IF NOT EXISTS chapters (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    name TEXT,
+    node_type TEXT,
+    content TEXT,
+    mark TEXT,
+    sort_order INTEGER
+  )`);
+  sql.exec(`CREATE TABLE IF NOT EXISTS cards (
+    id TEXT PRIMARY KEY,
+    parent_id TEXT,
+    category TEXT,
+    title TEXT,
+    content TEXT,
+    color TEXT,
+    is_collapsed INTEGER,
+    sort_order INTEGER
+  )`);
+  sql.exec(`CREATE TABLE IF NOT EXISTS writing_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT UNIQUE,
+    duration INTEGER,
+    word_count INTEGER
+  )`);
+}
+
 function appliedAt(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -114,6 +149,7 @@ function appliedAt(): string {
 
 /** 把 v1～v13 升到 v14。已是 v14 的檔案不會改到內文。 */
 export function applyMigrations(sql: Sql): number {
+  ensureBaseTables(sql);
   sql.exec(`CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
     applied_at TEXT

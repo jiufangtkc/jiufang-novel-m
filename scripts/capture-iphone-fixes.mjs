@@ -45,6 +45,9 @@ async function shot(name) {
 await mkdir(outDir, { recursive: true });
 await page.goto(`${base}/p/fog/write`, { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: '收合第二章　燈塔' }).waitFor();
+const navText = await page.getByTestId('bottom-nav').innerText();
+assert(navText.includes('檔案'), '底部分頁應有檔案');
+assert((await page.getByTestId('bottom-nav').locator('a').count()) === 5, '底部分頁應有五格');
 await shot('11-章展開.png');
 
 await page.getByRole('button', { name: '收合第一卷　霧港（示範）' }).click();
@@ -76,6 +79,8 @@ await page.getByTestId('daily-progress').waitFor();
 await page.waitForFunction(() => document.documentElement.classList.contains('keyboard-open'));
 assert((await page.getByTestId('daily-progress').getAttribute('data-compact')) === 'true', '鍵盤開啟時進度區沒有收合');
 assert(await page.getByTestId('bottom-nav').isHidden(), '鍵盤開啟時底部分頁還在');
+assert((await page.getByTestId('save-button').count()) === 0, '鍵盤畫面不該有磁碟片');
+assert(await page.getByTestId('save-status').isHidden(), '打字收合時不顯示存檔狀態');
 await shot('10-寫作-鍵盤開啟.png');
 
 console.log('shots ok');

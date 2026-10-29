@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { FileProjectInfo } from './projectFile';
 import { columnNames } from './sql';
 import { applyMigrations, currentSchemaVersion } from './migrations';
 import { openNodeSql } from './nodeSql';
 import { proofFingerprints, readFileProject, snapshotFingerprints, writeFileProject } from './projectFile';
 import { createVersion1, createVersion14Shell } from './schemaFixture';
+import { openMemoryDb } from './wasmDb';
 
 describe('舊檔升級', () => {
   it('v1 假書升到 v14 後，章名還在，新欄位也有', () => {
@@ -17,6 +19,56 @@ describe('舊檔升級', () => {
     expect(loaded.tree.map((node) => node.title)).toEqual(['第一章　假信']);
     expect(loaded.tree[0]?.content).toBe('【示範】霧港只有這句假話。');
     expect(loaded.logs).toHaveLength(1);
+  });
+});
+
+describe('空白書檔', () => {
+  it('沒有底層資料庫時先建表，寫入後可以再開', async () => {
+    const info: FileProjectInfo = {
+      title: '【示範】新書',
+      logline: '',
+      currentTheme: '',
+      globalFontFamily: '',
+      globalFontSize: 12,
+      editorFontFamily: '',
+      editorFontSize: 16,
+      targetWordCount: 1000,
+      dailyTargetWordCount: 300,
+      categoryOrder: null,
+      expandedCategories: null,
+      categoriesMeta: '{}',
+      lastOpenedNodeId: null,
+      lastCursorPosition: 0,
+    };
+    const db = await openMemoryDb(new Uint8Array());
+    writeFileProject(
+      db.sql,
+      info,
+      [
+        {
+          id: 'ch-1',
+          type: 'file',
+          title: '第一章　起筆',
+          progress: 'Draft',
+          content: '【示範】新書第一句。',
+        },
+      ],
+      [],
+      [],
+    );
+    const bytes = db.exportBytes();
+    db.close();
+    const again = await openMemoryDb(bytes);
+    try {
+      expect(currentSchemaVersion(again.sql)).toBe(14);
+      const loaded = readFileProject(again.sql);
+      expect(loaded.info.title).toBe('【示範】新書');
+      expect(loaded.tree[0]?.title).toBe('第一章　起筆');
+      expect(loaded.tree[0]?.content).toBe('【示範】新書第一句。');
+      expect(loaded.tree[0]?.progress).toBe('Draft');
+    } finally {
+      again.close();
+    }
   });
 });
 

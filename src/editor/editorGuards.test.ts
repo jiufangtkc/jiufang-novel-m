@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { clearBookClip, clipForBook, rememberBookClip } from './bookClip';
 import { decidePaste, createClipMarker, type InternalClip } from './clipboardPolicy';
 import { scrollDeltaToReveal } from './caret';
 import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './enterGuard';
@@ -91,6 +92,20 @@ describe('只能在編輯器內貼上', () => {
 
   it('組字時不改內容', () => {
     expect(decidePaste(clip.marker, clip, true)).toEqual({ action: 'ignore-composing' });
+  });
+
+  it('同一本書跨章可以貼，換書就不行', () => {
+    clearBookClip();
+    const marker = createClipMarker();
+    rememberBookClip('book-a', { text: '【示範】跨章的句子', marker });
+    expect(decidePaste(marker, clipForBook('book-a'), false)).toEqual({
+      action: 'insert',
+      text: '【示範】跨章的句子',
+    });
+    expect(decidePaste('從備忘錄貼來的', clipForBook('book-a'), false).action).toBe('block');
+    expect(clipForBook('book-b')).toBeNull();
+    expect(decidePaste(marker, null, false).action).toBe('block');
+    clearBookClip();
   });
 });
 

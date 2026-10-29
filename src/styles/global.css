@@ -263,6 +263,13 @@ a { color: var(--accent); }
 
 .tree-pane, .editor-pane { min-height: 0; min-width: 0; }
 
+.tree-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .editor-pane { display: none; flex: 1; }
 
 .write-layout.has-chapter .tree-pane { display: none; }
@@ -438,10 +445,34 @@ html.keyboard-open .bottom-nav { display: none; }
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   min-height: 28px;
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
+}
+
+.status-cluster {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.save-status {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  white-space: nowrap;
+}
+
+button.save-status {
+  border: 0;
+  background: transparent;
+  padding: 8px 0 8px 12px;
+  min-height: 44px;
+  color: var(--accent);
 }
 
 .save-dot {
@@ -525,6 +556,13 @@ html.keyboard-open .bottom-nav { display: none; }
 .book-track span { display: block; height: 100%; background: var(--accent); }
 
 .text-link { display: inline-block; margin-top: 8px; }
+
+.stats-log-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  margin-top: 8px;
+}
 
 .setting-card { margin-bottom: 8px; padding-right: 4px; }
 .files-status-card {

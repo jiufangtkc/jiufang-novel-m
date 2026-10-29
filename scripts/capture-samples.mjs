@@ -77,6 +77,7 @@ await page.getByRole('button', { name: '第一章　來信的更多操作' }).cl
 await page.getByTestId('node-menu').waitFor();
 const menuText = await page.getByTestId('node-menu').innerText();
 assert(menuText.includes('型別：章'), '選單沒有把 file 顯示成章');
+assert(!menuText.includes('英文代碼'), '選單不該露出開發者說明');
 for (const label of ['草稿', '一修', '再修', '完稿', '棄稿']) {
   assert(menuText.includes(label), `選單缺少${label}`);
 }
@@ -86,6 +87,8 @@ await page.locator('.sheet-backdrop').click({ position: { x: 10, y: 10 } });
 await openEditor();
 await page.getByTestId('daily-progress').waitFor();
 assert((await page.getByTestId('daily-progress').getAttribute('data-met')) === 'false', '起初不該達標');
+assert((await page.getByTestId('save-status').innerText()).includes('今天還沒另存'), 'iPhone 正文應提示今天還沒另存');
+assert((await page.getByTestId('save-button').count()) === 0, '寫作畫面不該有磁碟片按鈕');
 const beforeCount = await page.getByTestId('status-bar').innerText();
 await shot('03-寫作-進度未達標.png');
 
@@ -116,6 +119,7 @@ await page.getByTestId('files-screen').waitFor();
 const filesText = await page.getByTestId('files-screen').innerText();
 assert(!filesText.includes('儲存專案'), 'iPhone 檔案頁不該顯示儲存專案');
 assert(!filesText.includes('上次儲存'), 'iPhone 檔案頁不該顯示上次儲存');
+assert(filesText.includes('還沒存進這支手機的 App 空間'), '示範專案不該假裝已經存進 App 空間');
 assert(filesText.includes('另存專案'), '檔案頁缺少另存專案');
 assert(filesText.includes('將稿子存到各類雲端或其他位置'), '另存專案說明應為定案文案');
 assert(filesText.includes('立刻暫存稿子'), '檔案頁缺少立刻暫存');

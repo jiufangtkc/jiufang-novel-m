@@ -1,10 +1,25 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '../components/Icons';
 import { canPickLocalFiles } from '../db/browserDisk';
-import { formatClockTime, formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
+import { formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
 import { useProject, useSample } from '../state/sampleStore';
+import { appSpaceStatusLine, isComputerLayout } from './filesStatus';
 import { filesPageLayout } from './filesPageLayout';
+
+function useComputerLayout(): boolean {
+  const [computer, setComputer] = useState(() =>
+    typeof window !== 'undefined' ? isComputerLayout(window.innerWidth) : false,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 600px)');
+    const apply = () => setComputer(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
+  return computer;
+}
 
 export function FilesScreen() {
   const { projectId = '' } = useParams();
@@ -12,6 +27,7 @@ export function FilesScreen() {
   const { state, actions } = useSample();
   const navigate = useNavigate();
   const openInputRef = useRef<HTMLInputElement>(null);
+  const computer = useComputerLayout();
   if (!project) return <p className="empty-note">找不到這個專案。</p>;
 
   const supportsDirectWriteback = canPickLocalFiles();
@@ -24,7 +40,6 @@ export function FilesScreen() {
     lastProjectSaveMs: null,
   };
   const lastSaveMs = latestSaveTimestamp(meta);
-  const lastSaveLabel = lastSaveMs == null ? '—' : formatClockTime(new Date(lastSaveMs));
   const exportLabel = formatLastExportLabel(meta.lastExportMs);
   const projectSaveLabel = formatLastProjectSave(meta.lastProjectSaveMs);
 
@@ -51,7 +66,13 @@ export function FilesScreen() {
           <p className="files-status-title">
             目前的稿子：<strong>《{project.title}》</strong>
           </p>
-          <p className="files-status-line">已自動存在這支手機的 App 空間・最後暫存 {lastSaveLabel}</p>
+          <p className="files-status-line" data-testid="app-space-status">
+            {appSpaceStatusLine({
+              stored: project.origin === 'file',
+              computer,
+              lastSaveMs,
+            })}
+          </p>
           {layout.showLastProjectSave ? (
             <p className="files-status-line" data-testid="last-project-save-line">
               上次儲存：{projectSaveLabel}
