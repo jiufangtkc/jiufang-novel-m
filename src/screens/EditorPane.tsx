@@ -1,21 +1,27 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
-import { BackIcon, SaveIcon } from '../components/Icons';
+import { BackIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
 import type { ChapterNode } from '../data/demo';
+import { canPickLocalFiles } from '../db/browserDisk';
+import { countManuscriptWords } from '../domain/manuscriptWords';
+import { latestSaveTimestamp } from '../domain/saveClock';
 import { countWords } from '../domain/wordCount';
 import { revealCaret } from '../editor/caret';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
-import { useSample } from '../state/sampleStore';
+import { useProject, useSample } from '../state/sampleStore';
+import { editorSaveStatus } from './editorSaveStatus';
 
 export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
   const navigate = useNavigate();
   const { actions, state, isGlowing } = useSample();
+  const project = useProject(projectId);
   const [focused, setFocused] = useState(false);
   const keyboardOpen = useWritingKeyboard(focused);
-  const { ref, dirty } = useWritingSurface({
+  const { ref } = useWritingSurface({
+    bookId: projectId,
     chapterId: chapter.id,
     onCommit: (text) => actions.commitText(projectId, chapter.id, text),
     onLarge: actions.noteLarge,
@@ -24,6 +30,18 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   });
   const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const todayWords = state.schedule.open?.wordCount ?? 0;
+  const meta = state.saveMeta[projectId] ?? {
+    lastAutoSaveMs: null,
+    lastManualSaveMs: null,
+    lastExportMs: null,
+    lastProjectSaveMs: null,
+  };
+  const saveStatus = editorSaveStatus({
+    directWriteback: canPickLocalFiles(),
+    lastSaveMs: latestSaveTimestamp(meta),
+    lastExportMs: meta.lastExportMs,
+    now: new Date(),
+  });
 
   useEffect(() => {
     if (keyboardOpen && ref.current) revealCaret(ref.current);
@@ -41,16 +59,6 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
           <BackIcon />
         </button>
         <h1>{chapter.title}</h1>
-        <button
-          type="button"
-          className="icon-button save-button"
-          aria-label={dirty ? '有修改，停筆後會記下' : '已記下'}
-          data-dirty={dirty ? 'true' : 'false'}
-          data-testid="save-button"
-        >
-          <SaveIcon />
-          {dirty && <span className="save-dot" />}
-        </button>
       </header>
       <textarea
         ref={ref}
@@ -72,8 +80,29 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       <footer className="editor-status" data-testid="status-bar">
         <DailyProgressBar words={todayWords} goal={goal} met={isGlowing} compact={keyboardOpen} />
         <div className="status-row">
-          <span data-testid="chapter-word-count">本章字數：{countWords(chapter.content ?? '')}</span>
-          {chapter.progress && <StatusBadge code={chapter.progress} />}
+          <span className="status-cluster">
+            <span data-testid="chapter-word-count">
+              本章字數：
+              {project?.origin === 'file'
+                ? countManuscriptWords(chapter.content ?? '')
+                : countWords(chapter.content ?? '')}
+            </span>
+            {chapter.progress && <StatusBadge code={chapter.progress} />}
+          </span>
+          {saveStatus.openFiles ? (
+            <button
+              type="button"
+              className="save-status"
+              data-testid="save-status"
+              onClick={() => navigate(`/p/${projectId}/files`)}
+            >
+              {saveStatus.label}
+            </button>
+          ) : (
+            <span className="save-status" data-testid="save-status">
+              {saveStatus.label}
+            </span>
+          )}
         </div>
       </footer>
     </div>

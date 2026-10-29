@@ -8,8 +8,8 @@ export function CardsScreen() {
       </header>
       <div className="placeholder">
         <CardsIcon size={36} />
-        <p>資料集會在後續階段開放。</p>
-        <p className="hint">這個樣品先把底部的「資料集」留在導覽列上，點了不會讀取任何書稿。</p>
+        <p>資料集還在準備中</p>
+        <p className="hint">之後可以在這裡看角色、世界觀和靈感卡片。</p>
       </div>
     </div>
   );

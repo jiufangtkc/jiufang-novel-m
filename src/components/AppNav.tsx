@@ -1,9 +1,10 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { CardsIcon, ChartIcon, GearIcon, PenIcon } from './Icons';
+import { CardsIcon, ChartIcon, FolderIcon, GearIcon, PenIcon } from './Icons';
 
 const TABS = [
   { id: 'write', label: '寫作', icon: PenIcon },
   { id: 'cards', label: '資料集', icon: CardsIcon },
+  { id: 'files', label: '檔案', icon: FolderIcon },
   { id: 'stats', label: '統計', icon: ChartIcon },
   { id: 'settings', label: '設定', icon: GearIcon },
 ] as const;

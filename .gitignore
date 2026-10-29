@@ -9,3 +9,7 @@ tmp
 playwright-report
 test-results
 *.zip
+uploads/
+*.db
+*.sqlite
+*.sqlite3

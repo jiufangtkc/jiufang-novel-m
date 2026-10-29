@@ -1,11 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { createClipMarker, decidePaste, type InternalClip } from './clipboardPolicy';
+import { clipForBook, rememberBookClip } from './bookClip';
+import { createClipMarker, decidePaste } from './clipboardPolicy';
+import { setLiveReader } from './liveDraft';
 import { revealCaret } from './caret';
 import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './enterGuard';
 import { createIdleGate, IDLE_MS } from './idleGate';
 import { classifyTextDelta, type TextChangeSource, type TextDelta } from '../domain/writingLog';
 
 interface WritingSurfaceOptions {
+  bookId: string;
   chapterId: string;
   onCommit: (text: string) => void;
   onLarge: (delta: TextDelta) => void;
@@ -14,6 +17,7 @@ interface WritingSurfaceOptions {
 }
 
 export function useWritingSurface({
+  bookId,
   chapterId,
   onCommit,
   onLarge,
@@ -43,8 +47,8 @@ export function useWritingSurface({
     const spurious = { current: false };
     const source = { current: 'type' as TextChangeSource };
     const latest = { current: textarea.value };
-    const clip = { current: null as InternalClip | null };
     const lock = { current: false };
+    setLiveReader(() => ({ projectId: bookId, chapterId, text: textarea.value }));
     let lastActivity = 0;
     let billedUntil = 0;
     const gate = createIdleGate(IDLE_MS);
@@ -100,7 +104,7 @@ export function useWritingSurface({
       window.setTimeout(() => {
         lock.current = false;
       }, 0);
-      const decision = decidePaste(incoming, clip.current, composing.current);
+      const decision = decidePaste(incoming, clipForBook(bookId), composing.current);
       if (decision.action === 'ignore-composing') return;
       if (decision.action === 'block') {
         toast('外面的文字不能貼進來');
@@ -170,7 +174,7 @@ export function useWritingSurface({
       if (!text) return;
       event.preventDefault();
       const marker = createClipMarker();
-      clip.current = { text, marker };
+      rememberBookClip(bookId, { text, marker });
       event.clipboardData?.setData('text/plain', marker);
       toast('已複製，只能貼回這個編輯器');
     };
@@ -185,7 +189,7 @@ export function useWritingSurface({
       if (!text) return;
       event.preventDefault();
       const marker = createClipMarker();
-      clip.current = { text, marker };
+      rememberBookClip(bookId, { text, marker });
       event.clipboardData?.setData('text/plain', marker);
       textarea.setRangeText('', start, end, 'end');
       process('type');
@@ -240,6 +244,7 @@ export function useWritingSurface({
     return () => {
       flush(true);
       gate.cancel();
+      setLiveReader(null);
       textarea.removeEventListener('compositionstart', onCompositionStart);
       textarea.removeEventListener('compositionend', onCompositionEnd);
       textarea.removeEventListener('keydown', onKeyDown);
@@ -256,7 +261,7 @@ export function useWritingSurface({
       window.visualViewport?.removeEventListener('resize', onViewport);
       window.visualViewport?.removeEventListener('scroll', onViewport);
     };
-  }, [chapterId]);
+  }, [bookId, chapterId]);
 
   return { ref, dirty };
 }

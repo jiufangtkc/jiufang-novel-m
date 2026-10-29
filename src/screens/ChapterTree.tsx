@@ -10,6 +10,7 @@ export function ChapterTree({
   selectedId,
   onToggle,
   onMore,
+  onOpenChapter,
 }: {
   projectId: string;
   nodes: readonly ChapterNode[];
@@ -17,6 +18,7 @@ export function ChapterTree({
   selectedId?: string;
   onToggle: (id: string) => void;
   onMore: (id: string) => void;
+  onOpenChapter?: (id: string) => void;
 }) {
   const navigate = useNavigate();
   return (
@@ -48,7 +50,10 @@ export function ChapterTree({
                 className="tree-main"
                 onClick={() => {
                   if (node.type === 'folder') onToggle(node.id);
-                  else navigate(`/p/${projectId}/write/${node.id}`);
+                  else {
+                    onOpenChapter?.(node.id);
+                    navigate(`/p/${projectId}/write/${node.id}`);
+                  }
                 }}
               >
                 <span className={`tree-icon type-${node.type}`}>
@@ -80,6 +85,7 @@ export function ChapterTree({
                 selectedId={selectedId}
                 onToggle={onToggle}
                 onMore={onMore}
+                onOpenChapter={onOpenChapter}
               />
             )}
           </li>

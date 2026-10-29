@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useReducer,
+  useRef,
   type ReactNode,
 } from 'react';
 import {
@@ -16,7 +17,27 @@ import {
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
+import { exportDbFilename, localDbFilename, projectSaveFilename } from '../domain/exportFilename';
+import { canPickLocalFiles, pickExistingDatabase, pickSaveFile } from '../db/browserDisk';
+import { createBrowserTargetStore } from '../db/browserTargetStore';
+import type { DiskFile } from '../db/fileTarget';
+import { currentSchemaVersion } from '../db/migrations';
+import { openMemoryDb } from '../db/wasmDb';
+import { saveNotice, saveProjectAsNew, saveProjectToPlace, type SaveEnvironment, type SaveOutcome } from '../db/saveProject';
+import { verifyExportedDatabase } from '../db/verifyDatabase';
+import { STASH_FAIL } from '../copy/userFacing';
+import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
+import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
+import { importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
+import {
+  bindLeaveFlush,
+  clearLiveDraft,
+  flushOpenDraft,
+  loadLiveDraft,
+  notePersistedDraft,
+  readLiveDraftFromEditor,
+} from '../editor/liveDraft';
 import {
   applyLargeEvent,
   classifyTextDelta,
@@ -42,8 +63,23 @@ interface SampleState {
   projects: DemoProject[];
   recentIds: string[];
   schedule: GoalSchedule;
+  demoSchedule: GoalSchedule;
+  goalById: Record<string, GoalSchedule>;
+  activeProjectId: string | null;
   logs: WritingLogRow[];
+  demoLogs: WritingLogRow[];
   toast: string | null;
+  /** 匯入檔的卡片與寫作紀錄，另存時原樣帶出。 */
+  fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
+  saveMeta: Record<
+    string,
+    {
+      lastAutoSaveMs: number | null;
+      lastManualSaveMs: number | null;
+      lastExportMs: number | null;
+      lastProjectSaveMs: number | null;
+    }
+  >;
 }
 
 type Action =
@@ -58,7 +94,21 @@ type Action =
   | { type: 'set-hour'; hour: number }
   | { type: 'set-book-goal'; projectId: string; bookGoal: number }
   | { type: 'add-scene'; projectId: string; chapterId: string; sceneId: string }
-  | { type: 'toast'; message: string | null };
+  | { type: 'focus-project'; id: string }
+  | {
+      type: 'attach-file';
+      project: DemoProject;
+      schedule: GoalSchedule;
+      extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
+      quiet?: boolean;
+    }
+  | { type: 'toast'; message: string | null }
+  | { type: 'record-auto-save'; projectId: string; atMs: number }
+  | { type: 'record-manual-save'; projectId: string; atMs: number }
+  | { type: 'record-export'; projectId: string; atMs: number }
+  | { type: 'record-project-save'; projectId: string; atMs: number }
+  | { type: 'set-filename'; projectId: string; filename: string }
+  | { type: 'promote-stored'; projectId: string; key: string; filename: string };
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
   if (!schedule.open) return logs;
@@ -91,14 +141,150 @@ function savedProjects(): DemoProject[] | null {
 
 function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
-  const projects = savedProjects() ?? DEMO_PROJECTS;
+  const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) => ({
+    ...project,
+    origin: project.origin ?? 'demo',
+  }));
+  const logs = alignToday(demoLogs(), schedule);
   return {
     projects,
     recentIds: projects.map((project) => project.id),
     schedule,
-    logs: alignToday(demoLogs(), schedule),
+    demoSchedule: schedule,
+    goalById: {},
+    activeProjectId: null,
+    logs,
+    demoLogs: logs,
     toast: null,
+    fileExtras: {},
+    saveMeta: {},
   };
+}
+
+function patchSaveMeta(
+  state: SampleState,
+  projectId: string,
+  patch: Partial<SampleState['saveMeta'][string]>,
+): SampleState {
+  const prev = state.saveMeta[projectId] ?? {
+    lastAutoSaveMs: null,
+    lastManualSaveMs: null,
+    lastExportMs: null,
+    lastProjectSaveMs: null,
+  };
+  return {
+    ...state,
+    saveMeta: { ...state.saveMeta, [projectId]: { ...prev, ...patch } },
+  };
+}
+
+function applyLargeToFile(log: FileLog, delta: TextDelta): FileLog {
+  return {
+    ...log,
+    paste_large_count: log.paste_large_count + (delta.largeInsert ? 1 : 0),
+    delete_large_count: log.delete_large_count + (delta.largeDelete ? 1 : 0),
+  };
+}
+
+function bumpFileLog(
+  state: SampleState,
+  dayKey: string,
+  update: (log: FileLog) => FileLog,
+): SampleState['fileExtras'] {
+  const project = state.projects.find((item) => item.id === state.activeProjectId);
+  if (!project?.dbKey || project.origin !== 'file') return state.fileExtras;
+  const extra = state.fileExtras[project.dbKey];
+  if (!extra) return state.fileExtras;
+  let found = false;
+  const logs = extra.logs.map((log) => {
+    if (log.date !== dayKey) return log;
+    found = true;
+    return update(log);
+  });
+  if (!found) {
+    logs.push(
+      update({
+        date: dayKey,
+        duration: 0,
+        word_count: 0,
+        ai_continuation_count: 0,
+        ai_continuation_chars: 0,
+        ai_chat_count: 0,
+        ai_details: '{}',
+        paste_large_count: 0,
+        delete_large_count: 0,
+      }),
+    );
+  }
+  return { ...state.fileExtras, [project.dbKey]: { ...extra, logs } };
+}
+
+function fileLogsToRows(logs: readonly FileLog[]): WritingLogRow[] {
+  return logs.map((log, index) => ({
+    id: index + 1,
+    date: log.date,
+    duration: log.duration,
+    word_count: log.word_count,
+    ai_continuation_count: log.ai_continuation_count,
+    ai_continuation_chars: log.ai_continuation_chars,
+    ai_chat_count: log.ai_chat_count,
+    ai_details: log.ai_details,
+    paste_large_count: log.paste_large_count,
+    delete_large_count: log.delete_large_count,
+  }));
+}
+
+function syncFileLog(
+  extras: SampleState['fileExtras'],
+  project: DemoProject,
+  schedule: GoalSchedule,
+  nodeId?: string,
+): SampleState['fileExtras'] {
+  if (project.origin !== 'file' || !project.dbKey) return extras;
+  const extra = extras[project.dbKey];
+  const open = schedule.open;
+  if (!extra || !open) return extras;
+  const logs = extra.logs.map((log) => ({ ...log }));
+  const found = logs.find((log) => log.date === open.dayKey);
+  if (found) found.word_count = open.wordCount;
+  else {
+    logs.push({
+      date: open.dayKey,
+      duration: 0,
+      word_count: open.wordCount,
+      ai_continuation_count: 0,
+      ai_continuation_chars: 0,
+      ai_chat_count: 0,
+      ai_details: '{}',
+      paste_large_count: 0,
+      delete_large_count: 0,
+    });
+  }
+  return {
+    ...extras,
+    [project.dbKey]: {
+      ...extra,
+      info: {
+        ...extra.info,
+        lastOpenedNodeId: nodeId ?? extra.info.lastOpenedNodeId,
+        dailyTargetWordCount: open.goals.at(-1)?.goal ?? extra.info.dailyTargetWordCount,
+        targetWordCount: project.bookGoal,
+      },
+      logs,
+    },
+  };
+}
+
+function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
+  const active = state.projects.find((project) => project.id === state.activeProjectId);
+  if (active?.origin === 'file' && state.activeProjectId) {
+    return {
+      ...state,
+      schedule,
+      goalById: { ...state.goalById, [state.activeProjectId]: schedule },
+    };
+  }
+  return { ...state, schedule, demoSchedule: schedule };
 }
 
 function reduce(state: SampleState, action: Action): SampleState {
@@ -106,6 +292,70 @@ function reduce(state: SampleState, action: Action): SampleState {
   switch (action.type) {
     case 'toast':
       return { ...state, toast: action.message };
+    case 'record-auto-save':
+      return patchSaveMeta(state, action.projectId, { lastAutoSaveMs: action.atMs });
+    case 'record-manual-save':
+      return patchSaveMeta(state, action.projectId, { lastManualSaveMs: action.atMs });
+    case 'record-export':
+      return patchSaveMeta(state, action.projectId, { lastExportMs: action.atMs });
+    case 'record-project-save':
+      return patchSaveMeta(state, action.projectId, { lastProjectSaveMs: action.atMs });
+    case 'set-filename':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => ({
+          ...project,
+          filename: action.filename,
+        })),
+      };
+    case 'promote-stored': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const key = project.dbKey ?? action.key;
+      const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+      const existing = state.fileExtras[key];
+      const extras = existing ?? {
+        info: {
+          title: project.title,
+          logline: '',
+          currentTheme: '',
+          globalFontFamily: '',
+          globalFontSize: 12,
+          editorFontFamily: '',
+          editorFontSize: 16,
+          targetWordCount: project.bookGoal,
+          dailyTargetWordCount: goal,
+          categoryOrder: null,
+          expandedCategories: null,
+          categoriesMeta: '{}',
+          lastOpenedNodeId: null,
+          lastCursorPosition: 0,
+        },
+        cards: [],
+        logs: state.logs.map((log) => ({
+          date: log.date,
+          duration: log.duration,
+          word_count: log.word_count,
+          ai_continuation_count: log.ai_continuation_count,
+          ai_continuation_chars: log.ai_continuation_chars,
+          ai_chat_count: log.ai_chat_count,
+          ai_details: log.ai_details ?? '{}',
+          paste_large_count: log.paste_large_count,
+          delete_large_count: log.delete_large_count,
+        })),
+      };
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          origin: 'file',
+          dbKey: key,
+          filename: current.filename || action.filename,
+        })),
+        fileExtras: { ...state.fileExtras, [key]: extras },
+        goalById: { ...state.goalById, [project.id]: state.goalById[project.id] ?? state.schedule },
+      };
+    }
     case 'dismiss-recent':
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
     case 'add-project': {
@@ -166,17 +416,23 @@ function reduce(state: SampleState, action: Action): SampleState {
       const project = state.projects.find((item) => item.id === action.projectId);
       const node = project ? findNode(project.nodes, action.nodeId) : null;
       if (!project || !node || (node.content ?? '') === action.text) return state;
-      const delta = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' });
-      const schedule = applyWordDelta(state.schedule, delta.wordDelta, now);
+      const deltaWords =
+        project.origin === 'file'
+          ? countManuscriptWords(action.text) - countManuscriptWords(node.content ?? '')
+          : classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      const schedule = applyWordDelta(state.schedule, deltaWords, now);
+      const next = keepSchedule(state, schedule);
+      const projects = mapProject(next.projects, action.projectId, (current) => ({
+        ...current,
+        updatedLabel: '剛剛',
+        nodes: updateNode(current.nodes, action.nodeId, (item) => ({ ...item, content: action.text })),
+      }));
+      const extras = syncFileLog(next.fileExtras, project, schedule, action.nodeId);
       return {
-        ...state,
-        schedule,
-        logs: alignToday(state.logs, schedule),
-        projects: mapProject(state.projects, action.projectId, (current) => ({
-          ...current,
-          updatedLabel: '剛剛',
-          nodes: updateNode(current.nodes, action.nodeId, (item) => ({ ...item, content: action.text })),
-        })),
+        ...next,
+        projects,
+        logs: alignToday(next.logs, schedule),
+        fileExtras: extras,
       };
     }
     case 'note-large': {
@@ -186,7 +442,7 @@ function reduce(state: SampleState, action: Action): SampleState {
       const logs = alignToday(state.logs, state.schedule).map((log) =>
         log.date === dayKey ? applyLargeEvent(log, action.delta) : log,
       );
-      return { ...state, logs };
+      return { ...state, logs, fileExtras: bumpFileLog(state, dayKey, (log) => applyLargeToFile(log, action.delta)) };
     }
     case 'add-duration': {
       if (!state.schedule.open || action.seconds <= 0) return state;
@@ -194,16 +450,54 @@ function reduce(state: SampleState, action: Action): SampleState {
       const logs = alignToday(state.logs, state.schedule).map((log) =>
         log.date === dayKey ? withAddedDuration(log, action.seconds) : log,
       );
-      return { ...state, logs };
-    }
-    case 'set-goal':
-      return { ...state, schedule: changeGoal(state.schedule, action.goal, now), toast: '已更新今日目標' };
-    case 'set-hour':
       return {
         ...state,
-        schedule: changeDayEndHour(state.schedule, action.hour, now),
+        logs,
+        fileExtras: bumpFileLog(state, dayKey, (log) => ({ ...log, duration: log.duration + action.seconds })),
+      };
+    }
+    case 'set-goal':
+      return { ...keepSchedule(state, changeGoal(state.schedule, action.goal, now)), toast: '已更新今日目標' };
+    case 'set-hour':
+      return {
+        ...keepSchedule(state, changeDayEndHour(state.schedule, action.hour, now)),
         toast: '已記下結束時刻，從下一個寫作日開始用',
       };
+    case 'focus-project': {
+      const project = state.projects.find((item) => item.id === action.id);
+      if (!project || state.activeProjectId === action.id) return state;
+      if (project.origin === 'file') {
+        const schedule = state.goalById[project.id] ?? state.schedule;
+        const extra = state.fileExtras[project.dbKey ?? ''];
+        return {
+          ...state,
+          activeProjectId: project.id,
+          schedule,
+          logs: extra ? fileLogsToRows(extra.logs) : state.logs,
+        };
+      }
+      return {
+        ...state,
+        activeProjectId: project.id,
+        schedule: state.demoSchedule,
+        logs: state.demoLogs,
+      };
+    }
+    case 'attach-file': {
+      if (action.quiet && state.projects.some((item) => item.id === action.project.id)) return state;
+      const projects = [action.project, ...state.projects.filter((item) => item.id !== action.project.id)];
+      return {
+        ...state,
+        projects,
+        recentIds: [action.project.id, ...state.recentIds.filter((id) => id !== action.project.id)],
+        goalById: { ...state.goalById, [action.project.id]: action.schedule },
+        fileExtras: { ...state.fileExtras, [action.project.dbKey ?? action.project.id]: action.extras },
+        activeProjectId: action.quiet ? state.activeProjectId : action.project.id,
+        schedule: action.quiet ? state.schedule : action.schedule,
+        logs: action.quiet ? state.logs : fileLogsToRows(action.extras.logs),
+        toast: action.quiet ? state.toast : '已匯入檔案',
+      };
+    }
     case 'add-scene': {
       const project = state.projects.find((item) => item.id === action.projectId);
       const chapter = project ? findNode(project.nodes, action.chapterId) : null;
@@ -238,6 +532,17 @@ interface SampleActions {
   setHour: (hour: number) => void;
   setBookGoal: (projectId: string, bookGoal: number) => void;
   addScene: (projectId: string, chapterId: string) => void;
+  focusProject: (id: string) => void;
+  attachImported: (payload: {
+    project: DemoProject;
+    schedule: GoalSchedule;
+    extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
+  }) => void;
+  importFile: (file: File, diskFile?: DiskFile | null) => Promise<string>;
+  openWithPicker: () => Promise<string | null>;
+  stashDraft: () => Promise<void>;
+  saveProject: () => Promise<void>;
+  saveProjectAs: () => Promise<void>;
   toast: (message: string | null) => void;
 }
 
@@ -252,17 +557,208 @@ interface SampleContextValue {
 
 const SampleContext = createContext<SampleContextValue | null>(null);
 
+function browserSaveEnv(): SaveEnvironment {
+  return {
+    canPickFiles: canPickLocalFiles(),
+    targets: createBrowserTargetStore(),
+    verify: async (bytes) => {
+      await verifyExportedDatabase(bytes, async (payload) => {
+        const db = await openMemoryDb(payload);
+        try {
+          return currentSchemaVersion(db.sql);
+        } finally {
+          db.close();
+        }
+      });
+    },
+    pickSaveLocation: pickSaveFile,
+    share: (filename, bytes) => shareDatabase(filename, bytes),
+  };
+}
+
+async function snapshotManuscript(state: SampleState, project: DemoProject): Promise<{ key: string; bytes: Uint8Array }> {
+  const key = project.dbKey ?? project.id;
+  const extra = project.dbKey ? state.fileExtras[project.dbKey] : undefined;
+  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  const info: FileProjectInfo = {
+    title: project.title,
+    logline: extra?.info.logline ?? '',
+    currentTheme: extra?.info.currentTheme ?? '',
+    globalFontFamily: extra?.info.globalFontFamily ?? '',
+    globalFontSize: extra?.info.globalFontSize ?? 12,
+    editorFontFamily: extra?.info.editorFontFamily ?? '',
+    editorFontSize: extra?.info.editorFontSize ?? 16,
+    targetWordCount: project.bookGoal,
+    dailyTargetWordCount: goal,
+    categoryOrder: extra?.info.categoryOrder ?? null,
+    expandedCategories: extra?.info.expandedCategories ?? null,
+    categoriesMeta: extra?.info.categoriesMeta ?? '{}',
+    lastOpenedNodeId: extra?.info.lastOpenedNodeId ?? null,
+    lastCursorPosition: extra?.info.lastCursorPosition ?? 0,
+  };
+  const logs: FileLog[] = extra?.logs ?? state.logs.map((log) => ({
+    date: log.date,
+    duration: log.duration,
+    word_count: log.word_count,
+    ai_continuation_count: log.ai_continuation_count,
+    ai_continuation_chars: log.ai_continuation_chars,
+    ai_chat_count: log.ai_chat_count,
+    ai_details: log.ai_details ?? '{}',
+    paste_large_count: log.paste_large_count,
+    delete_large_count: log.delete_large_count,
+  }));
+  const bytes = await saveBookBytes(
+    key,
+    projectSaveFilename(project.title, project.filename),
+    project.title,
+    info,
+    project.nodes,
+    extra?.cards ?? [],
+    logs,
+  );
+  return { key, bytes };
+}
+
+function applySaveOutcome(
+  dispatch: (action: Action) => void,
+  projectId: string,
+  outcome: SaveOutcome,
+  mode: 'save' | 'save-as',
+) {
+  const text = saveNotice(outcome);
+  if (text) dispatch({ type: 'toast', message: text });
+  if (mode === 'save' && outcome.kind === 'saved') {
+    dispatch({ type: 'record-project-save', projectId, atMs: Date.now() });
+    dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+  }
+  if (mode === 'save-as' && outcome.kind === 'saved-as') {
+    dispatch({ type: 'record-export', projectId, atMs: Date.now() });
+    dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+  }
+  if (mode === 'save-as' && outcome.kind === 'handed-off') {
+    dispatch({ type: 'record-export', projectId, atMs: Date.now() });
+  }
+}
+
 export function SampleProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reduce, undefined, () => createState(new Date()));
+  const stateRef = useRef(state);
+  stateRef.current = state;
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
     try {
-      saveProjects(localStorage, state.projects);
+      saveProjects(
+        localStorage,
+        state.projects.filter((project) => project.origin !== 'file'),
+      );
+      const active = state.projects.find((project) => project.id === state.activeProjectId);
+      if (active && active.origin !== 'file') {
+        dispatch({ type: 'record-auto-save', projectId: active.id, atMs: Date.now() });
+      }
     } catch {
       // 私人瀏覽可能不准寫入，畫面仍可繼續用。
     }
-  }, [state.projects]);
+  }, [state.projects, state.activeProjectId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadStoredBooks()
+      .then((books) => {
+        if (cancelled) return;
+        const draft = typeof localStorage === 'undefined' ? null : loadLiveDraft(localStorage);
+        let appliedDraft = false;
+        for (const book of books) {
+          let tree = book.tree;
+          if (draft && draft.projectId === book.key && findNode(book.tree, draft.chapterId)) {
+            tree = updateNode(book.tree, draft.chapterId, (node) => ({ ...node, content: draft.text }));
+            appliedDraft = true;
+          }
+          dispatch({
+            type: 'attach-file',
+            quiet: true,
+            project: {
+              id: book.key,
+              title: book.title,
+              updatedLabel: '已在手機',
+              bookGoal: book.info.targetWordCount,
+              nodes: tree,
+              origin: 'file',
+              dbKey: book.key,
+              filename: book.filename,
+            },
+            schedule: book.schedule,
+            extras: { info: book.info, cards: book.cards, logs: book.logs },
+          });
+        }
+        if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
+      })
+      .catch(() => {
+        // 沒有手機儲存空間時，示範專案仍可寫。
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const project = state.projects.find((item) => item.id === state.activeProjectId);
+    if (!project || project.origin !== 'file' || !project.dbKey) return;
+    const extra = state.fileExtras[project.dbKey];
+    if (!extra) return;
+    const save = () =>
+      saveBookBytes(
+        project.dbKey!,
+        localDbFilename(project.title, project.filename),
+        project.title,
+        { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
+        project.nodes,
+        extra.cards,
+        extra.logs,
+      ).then(() => {
+        dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
+      });
+    const timer = window.setTimeout(() => void save(), 250);
+    return () => {
+      window.clearTimeout(timer);
+      void save();
+    };
+  }, [state.projects, state.fileExtras, state.activeProjectId]);
+
+  useEffect(() => {
+    const flush = () => {
+      const current = stateRef.current;
+      let projects = current.projects;
+      const live = readLiveDraftFromEditor();
+      try {
+        if (typeof localStorage !== 'undefined') {
+          projects = flushOpenDraft({ store: localStorage, projects: current.projects });
+        }
+      } catch {
+        projects = current.projects;
+      }
+      if (live) {
+        dispatch({ type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text });
+      }
+      const projectId = live?.projectId ?? current.activeProjectId;
+      const project = projects.find((item) => item.id === projectId);
+      if (!project) return;
+      const startedAt = Date.now();
+      void snapshotManuscript({ ...current, projects }, project)
+        .then((result) => {
+          if (live && typeof localStorage !== 'undefined') notePersistedDraft(localStorage, live, startedAt);
+          dispatch({ type: 'record-auto-save', projectId: project.id, atMs: startedAt });
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key: result.key,
+            filename: project.filename || projectSaveFilename(project.title, project.filename),
+          });
+        })
+        .catch(() => undefined);
+    };
+    return bindLeaveFlush(window, document, flush);
+  }, []);
 
   useEffect(() => {
     if (!state.toast) return;
@@ -290,9 +786,112 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       setBookGoal: (projectId, bookGoal) => dispatch({ type: 'set-book-goal', projectId, bookGoal }),
       addScene: (projectId, chapterId) =>
         dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
+      focusProject: (id) => dispatch({ type: 'focus-project', id }),
+      attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
+      importFile: async (file: File, diskFile?: DiskFile | null) => {
+        const bytes = new Uint8Array(await file.arrayBuffer());
+        const book = await importBook(file.name, bytes);
+        await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
+        dispatch({
+          type: 'attach-file',
+          project: {
+            id: book.key,
+            title: book.title,
+            updatedLabel: '剛剛',
+            bookGoal: book.info.targetWordCount,
+            nodes: book.tree,
+            origin: 'file',
+            dbKey: book.key,
+            filename: book.filename,
+          },
+          schedule: book.schedule,
+          extras: { info: book.info, cards: book.cards, logs: book.logs },
+        });
+        return book.key;
+      },
+      openWithPicker: async () => {
+        const picked = await pickExistingDatabase();
+        if (!picked) return null;
+        const copy = new Uint8Array(picked.bytes.byteLength);
+        copy.set(picked.bytes);
+        const book = await importBook(picked.file.name, copy);
+        await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
+        dispatch({
+          type: 'attach-file',
+          project: {
+            id: book.key,
+            title: book.title,
+            updatedLabel: '剛剛',
+            bookGoal: book.info.targetWordCount,
+            nodes: book.tree,
+            origin: 'file',
+            dbKey: book.key,
+            filename: book.filename,
+          },
+          schedule: book.schedule,
+          extras: { info: book.info, cards: book.cards, logs: book.logs },
+        });
+        return book.key;
+      },
+      stashDraft: async () => {
+        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        if (!project) return;
+        try {
+          const { key } = await snapshotManuscript(state, project);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key,
+            filename: projectSaveFilename(project.title, project.filename),
+          });
+          dispatch({ type: 'record-manual-save', projectId: project.id, atMs: Date.now() });
+          dispatch({ type: 'toast', message: '已暫存' });
+        } catch {
+          dispatch({ type: 'toast', message: STASH_FAIL });
+        }
+      },
+      saveProject: async () => {
+        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        if (!project) return;
+        try {
+          const { key, bytes } = await snapshotManuscript(state, project);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key,
+            filename: projectSaveFilename(project.title, project.filename),
+          });
+          const outcome = await saveProjectToPlace(
+            browserSaveEnv(),
+            key,
+            bytes,
+            projectSaveFilename(project.title, project.filename),
+          );
+          applySaveOutcome(dispatch, project.id, outcome, 'save');
+        } catch {
+          dispatch({ type: 'toast', message: '儲存失敗，稿子仍留在這支裝置' });
+        }
+      },
+      saveProjectAs: async () => {
+        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        if (!project) return;
+        try {
+          const { key, bytes } = await snapshotManuscript(state, project);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key,
+            filename: projectSaveFilename(project.title, project.filename),
+          });
+          const outcome = await saveProjectAsNew(browserSaveEnv(), key, bytes, exportDbFilename(project.title));
+          applySaveOutcome(dispatch, project.id, outcome, 'save-as');
+        } catch {
+          dispatch({ type: 'toast', message: '另存失敗，稿子仍留在這支裝置' });
+        }
+      },
       toast: (message) => dispatch({ type: 'toast', message }),
     }),
-    [],
+    [state],
   );
 
   const achievementCount = countAchievements(state.schedule.settled);
@@ -302,7 +901,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
     (projectId: string) => {
       const project = state.projects.find((item) => item.id === projectId);
       if (!project) return 0;
-      return collectContents(project.nodes).reduce((sum, text) => sum + countWords(text), 0);
+      return collectContents(project.nodes).reduce(
+        (sum, text) => sum + (project.origin === 'file' ? countManuscriptWords(text) : countWords(text)),
+        0,
+      );
     },
     [state.projects],
   );

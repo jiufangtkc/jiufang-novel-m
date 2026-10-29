@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { BookIcon, DownloadIcon, HomeIcon, PencilIcon } from '../components/Icons';
+import { Link, useParams } from 'react-router-dom';
+import { BookIcon, PencilIcon } from '../components/Icons';
+import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { useProject, useSample } from '../state/sampleStore';
 
@@ -8,18 +9,17 @@ export function SettingsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
   const { state, actions } = useSample();
-  const navigate = useNavigate();
   const [editing, setEditing] = useState(false);
   const goalNow = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const [daily, setDaily] = useState(String(goalNow));
   const [book, setBook] = useState(String(project?.bookGoal ?? 100000));
   const [error, setError] = useState('');
-  if (!project) return <p className="empty-note">找不到這個專案。</p>;
+  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
 
   return (
     <div className="page" data-testid="settings-screen">
       <header className="topbar">
-        <h1>專案與應用設定</h1>
+        <h1>設定</h1>
       </header>
       <div className="scroll-pane settings-page">
         <article className="setting-card">
@@ -61,17 +61,6 @@ export function SettingsScreen() {
           </select>
           <span className="hint">預設是午夜 12 點。改了只影響之後的寫作日，已經算好的日子不變。</span>
         </label>
-        <button
-          type="button"
-          className="setting-row"
-          onClick={() => actions.toast('樣品階段只存在這個畫面裡，尚未寫入檔案')}
-        >
-          <DownloadIcon />
-          <span>
-            <strong>儲存專案</strong>
-            <small>將所有修改全量寫入本機專案檔案</small>
-          </span>
-        </button>
         <Link className="setting-row" to={`/p/${project.id}/logs`}>
           <span>
             <strong>寫作過程紀錄</strong>
@@ -84,12 +73,6 @@ export function SettingsScreen() {
             <small>SIL Open Font License 1.1，作者 But Ko／Fontworks</small>
           </span>
         </a>
-        <button type="button" className="setting-row" onClick={() => navigate('/')}>
-          <HomeIcon />
-          <span>
-            <strong>關閉專案並返回首頁</strong>
-          </span>
-        </button>
       </div>
       {editing && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setEditing(false)}>

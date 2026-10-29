@@ -1,18 +1,32 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { FilePlusIcon, FolderPlusIcon } from '../components/Icons';
+import { CHAPTER_NOT_FOUND, FEATURE_PREPARING, MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { findNode } from '../data/demo';
-import { NODE_TYPE_LABELS, PROGRESS_ORDER, progressLabel } from '../domain/labels';
+import { PROGRESS_ORDER, progressLabel } from '../domain/labels';
 import { useProject, useSample } from '../state/sampleStore';
 import { ChapterTree } from './ChapterTree';
 import { EditorPane } from './EditorPane';
+import { rememberTreeScroll, type TreeScrollMemory } from './treeScroll';
 
 export function WriteScreen() {
   const { projectId = '', chapterId } = useParams();
   const project = useProject(projectId);
   const { actions } = useSample();
   const [menuId, setMenuId] = useState<string | null>(null);
-  if (!project) return <p className="empty-note">找不到這個專案。</p>;
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const memoryRef = useRef<TreeScrollMemory>({ scrollTop: 0, highlightId: null });
+  const [highlightId, setHighlightId] = useState<string | null>(chapterId ?? null);
+  useLayoutEffect(() => {
+    if (chapterId) {
+      setHighlightId(chapterId);
+      return;
+    }
+    setHighlightId(memoryRef.current.highlightId);
+    const pane = scrollRef.current;
+    if (pane) pane.scrollTop = memoryRef.current.scrollTop;
+  }, [chapterId]);
+  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
   const menuNode = menuId ? findNode(project.nodes, menuId) : null;
   const chapter = chapterId ? findNode(project.nodes, chapterId) : null;
 
@@ -25,7 +39,7 @@ export function WriteScreen() {
             type="button"
             className="icon-button"
             aria-label="新增卷"
-            onClick={() => actions.toast('新增卷會在下一階段開放')}
+            onClick={() => actions.toast(FEATURE_PREPARING)}
           >
             <FolderPlusIcon />
           </button>
@@ -33,17 +47,32 @@ export function WriteScreen() {
             type="button"
             className="icon-button"
             aria-label="新增章"
-            onClick={() => actions.toast('新增章會在下一階段開放')}
+            onClick={() => actions.toast(FEATURE_PREPARING)}
           >
             <FilePlusIcon />
           </button>
         </header>
-        <div className="scroll-pane">
+        <div
+          className="scroll-pane"
+          ref={scrollRef}
+          onScroll={() => {
+            if (chapterId || !scrollRef.current) return;
+            memoryRef.current = { ...memoryRef.current, scrollTop: scrollRef.current.scrollTop };
+          }}
+        >
           <ChapterTree
             projectId={project.id}
             nodes={project.nodes}
             depth={0}
-            selectedId={chapterId}
+            selectedId={chapterId ?? highlightId ?? undefined}
+            onOpenChapter={(id) => {
+              memoryRef.current = rememberTreeScroll(memoryRef.current, {
+                type: 'open',
+                chapterId: id,
+                scrollTop: scrollRef.current?.scrollTop ?? 0,
+              });
+              setHighlightId(id);
+            }}
             onToggle={(id) => actions.toggleNode(project.id, id)}
             onMore={setMenuId}
           />
@@ -54,7 +83,7 @@ export function WriteScreen() {
           <EditorPane projectId={project.id} chapter={chapter} />
         ) : chapterId ? (
           <div className="editor-empty">
-            <p>找不到這一章。</p>
+            <p>{CHAPTER_NOT_FOUND}</p>
           </div>
         ) : (
           <div className="editor-empty wide-hint">
@@ -72,7 +101,9 @@ export function WriteScreen() {
             onClick={(event) => event.stopPropagation()}
           >
             <h2 id="node-menu-title">{menuNode.title}</h2>
-            <p className="hint">型別：{NODE_TYPE_LABELS[menuNode.type]}</p>
+            {menuNode.type !== 'folder' ? (
+              <p className="hint menu-kind">{menuNode.type === 'file' ? '章' : '幕'}</p>
+            ) : null}
             {menuNode.type !== 'folder' && (
               <div className="menu-list">
                 {PROGRESS_ORDER.map((code) => (
@@ -95,13 +126,12 @@ export function WriteScreen() {
               className="menu-item"
               onClick={() => {
                 if (menuNode.type === 'file') actions.addScene(project.id, menuNode.id);
-                else actions.toast('調整目錄結構會在下一階段開放');
+                else actions.toast(FEATURE_PREPARING);
                 setMenuId(null);
               }}
             >
               {menuNode.type === 'file' ? '在此章新增幕' : '調整目錄結構'}
             </button>
-            <p className="hint">進度標記依九方定案顯示。存檔時仍使用原本的英文代碼。</p>
           </div>
         </div>
       )}

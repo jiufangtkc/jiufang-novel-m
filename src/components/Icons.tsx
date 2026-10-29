@@ -33,15 +33,6 @@ export function BookIcon({ size = 28 }: IconProps) {
   );
 }
 
-export function RefreshIcon(props: IconProps) {
-  return (
-    <Stroke {...props}>
-      <path d="M20 12a8 8 0 1 1-2.2-5.5" />
-      <path d="M20 4v5h-5" />
-    </Stroke>
-  );
-}
-
 export function CloseIcon(props: IconProps) {
   return (
     <Stroke {...props}>
@@ -243,6 +234,17 @@ export function DownloadIcon(props: IconProps) {
       <path d="M12 4v10" />
       <path d="M8 10l4 4 4-4" />
       <path d="M5 19h14" />
+    </Stroke>
+  );
+}
+
+export function CloudUploadIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M7 18h10" />
+      <path d="M12 14V8" />
+      <path d="M9 11l3-3 3 3" />
+      <path d="M6.5 18a4 4 0 0 1-.5-7.9A5.5 5.5 0 0 1 17 10.5a4 4 0 0 1 .5 7.5" />
     </Stroke>
   );
 }
