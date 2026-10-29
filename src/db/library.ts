@@ -128,6 +128,10 @@ export async function exportBook(key: string): Promise<{ filename: string; bytes
   return { filename: book.filename, bytes: book.bytes };
 }
 
+export function databaseSharePayload(file: File): ShareData {
+  return { files: [file] };
+}
+
 export async function shareDatabase(
   filename: string,
   bytes: Uint8Array,
@@ -139,7 +143,7 @@ export async function shareDatabase(
   });
   if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
     try {
-      await navigator.share({ files: [file], title: '另存專案' });
+      await navigator.share(databaseSharePayload(file));
       return 'shared';
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
