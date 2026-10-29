@@ -119,6 +119,7 @@ a { color: var(--accent); }
   flex: 1;
   min-height: 0;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .home-main { padding: 8px 16px 16px; }
@@ -275,7 +276,7 @@ a { color: var(--accent); }
 .write-layout.has-chapter .tree-pane { display: none; }
 .write-layout.has-chapter .editor-pane { display: flex; }
 
-.tree-list { list-style: none; margin: 0; padding: 4px 0 12px; }
+.tree-list { list-style: none; margin: 0; padding: 4px 0 44px; }
 
 .tree-row {
   display: flex;
@@ -745,6 +746,109 @@ button.save-status {
   .toast { bottom: 24px; }
 }
 
+.tree-progress, .tree-progress-spacer, .tree-handle, .icon-button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.tree-progress {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0 2px;
+  display: grid;
+  place-items: center;
+}
+.tree-handle {
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  touch-action: none;
+  flex-shrink: 0;
+}
+.tree-handle.is-hidden { display: none; }
+.tree-row.is-dragging { opacity: 0.45; }
+.tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.tree-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.tree-inline-rename { flex: 1; min-width: 0; }
+.tree-inline-rename input {
+  width: 100%;
+  min-height: 36px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+.tree-tools, .organize-actions {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+.tree-tools .button, .organize-actions button, .topbar .button {
+  flex: 1;
+  min-height: 44px;
+}
+.organize-actions button {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  border-radius: 8px;
+}
+.organize-actions button:disabled { color: var(--muted); }
+.organize-dock .hint { margin: 0; padding: 8px 12px 0; }
+.tree-desktop-hint { margin: 0; padding: 8px 12px 12px; }
+.undo-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 12px 8px;
+  padding: 8px 12px 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.undo-bar button {
+  min-height: 44px;
+  min-width: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+}
+.undo-meter {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left center;
+  animation: undo-shrink 10s linear forwards;
+}
+@keyframes undo-shrink { to { transform: scaleX(0); } }
+.menu-sep { height: 1px; background: var(--border); margin: 8px 0; }
+.menu-item { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+.menu-item.danger { color: var(--danger); }
+.menu-item small { color: var(--muted); }
+.button.danger { background: #ef476f; color: #1e1e1e; }
+.delete-actions .keep { flex: 1.6; }
+.rename-actions .button.primary { flex: 1.4; }
+.topbar .button.primary { flex: 0 0 auto; padding: 0 16px; }
+
+@media (min-width: 600px) {
+  .tree-handle { opacity: 0; }
+  .tree-row:hover .tree-handle,
+  .tree-row:focus-within .tree-handle { opacity: 1; }
+  .tree-tools, .organize-dock { display: none; }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .daily-bar-fill { transition: none; }
+  .undo-meter { animation: none; }
 }

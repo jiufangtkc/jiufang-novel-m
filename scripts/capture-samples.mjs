@@ -80,10 +80,16 @@ await shot('02-章節目錄.png');
 await page.getByRole('button', { name: '第一章　來信的更多操作' }).click();
 await page.getByTestId('node-menu').waitFor();
 const menuText = await page.getByTestId('node-menu').innerText();
-assert(menuText.includes('章') && !menuText.includes('型別'), '選單不該再顯示型別');
+assert(menuText.includes('改名') && menuText.includes('刪除'), '更多選單應有改名與刪除');
+assert(!menuText.includes('型別'), '選單不該再顯示型別');
 assert(!menuText.includes('英文代碼'), '選單不該露出開發者說明');
+assert(!menuText.includes('草稿'), '進度不該再跟更多選單混在一起');
+await page.locator('.sheet-backdrop').click({ position: { x: 10, y: 10 } });
+await page.getByRole('button', { name: '第一章　來信的進度' }).click();
+await page.getByTestId('progress-menu').waitFor();
+const progressText = await page.getByTestId('progress-menu').innerText();
 for (const label of ['草稿', '一修', '再修', '完稿', '棄稿']) {
-  assert(menuText.includes(label), `選單缺少${label}`);
+  assert(progressText.includes(label), `進度選單缺少${label}`);
 }
 await shot('08-進度標記選單.png');
 await page.locator('.sheet-backdrop').click({ position: { x: 10, y: 10 } });

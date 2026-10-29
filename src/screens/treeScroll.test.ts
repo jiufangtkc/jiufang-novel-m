@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { ChapterNode } from '../data/demo';
-import { rememberTreeScroll } from './treeScroll';
+import { loadTreePlace, saveTreePlace, scrollTopForRow, rememberTreeScroll } from './treeScroll';
 
 function fakeChapters(count: number): ChapterNode[] {
   return Array.from({ length: count }, (_, index) => ({
@@ -25,5 +25,22 @@ describe('手機章節目錄', () => {
     const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
     const mobile = css.split('@media (min-width: 600px)')[0] ?? '';
     expect(mobile).toMatch(/\.tree-pane\s*\{[^}]*flex:\s*1;[^}]*min-height:\s*0;/);
+    const cssAll = css;
+    expect(cssAll).toMatch(/overscroll-behavior:\s*contain/);
+  });
+
+  it('每本書各自記住上次開的章與離頂端的距離', () => {
+    const store = new Map<string, string>();
+    const memory = {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        store.set(key, value);
+      },
+    };
+    saveTreePlace(memory, 'fog', { nodeId: 'ch-8', prevId: 'ch-7', offset: 120 });
+    saveTreePlace(memory, 'long', { nodeId: 'long-40', prevId: 'long-39', offset: 12 });
+    expect(loadTreePlace(memory, 'fog')).toEqual({ nodeId: 'ch-8', prevId: 'ch-7', offset: 120 });
+    expect(loadTreePlace(memory, 'long')?.nodeId).toBe('long-40');
+    expect(scrollTopForRow(800, 120)).toBe(680);
   });
 });

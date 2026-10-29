@@ -94,6 +94,7 @@ type Action =
   | { type: 'set-hour'; hour: number }
   | { type: 'set-book-goal'; projectId: string; bookGoal: number }
   | { type: 'add-scene'; projectId: string; chapterId: string; sceneId: string }
+  | { type: 'set-nodes'; projectId: string; nodes: DemoProject['nodes'] }
   | { type: 'focus-project'; id: string }
   | {
       type: 'attach-file';
@@ -498,6 +499,15 @@ function reduce(state: SampleState, action: Action): SampleState {
         toast: action.quiet ? state.toast : '已匯入檔案',
       };
     }
+    case 'set-nodes':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => ({
+          ...project,
+          updatedLabel: '剛剛',
+          nodes: action.nodes,
+        })),
+      };
     case 'add-scene': {
       const project = state.projects.find((item) => item.id === action.projectId);
       const chapter = project ? findNode(project.nodes, action.chapterId) : null;
@@ -532,6 +542,7 @@ interface SampleActions {
   setHour: (hour: number) => void;
   setBookGoal: (projectId: string, bookGoal: number) => void;
   addScene: (projectId: string, chapterId: string) => void;
+  setNodes: (projectId: string, nodes: DemoProject['nodes']) => void;
   focusProject: (id: string) => void;
   attachImported: (payload: {
     project: DemoProject;
@@ -786,6 +797,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       setBookGoal: (projectId, bookGoal) => dispatch({ type: 'set-book-goal', projectId, bookGoal }),
       addScene: (projectId, chapterId) =>
         dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
+      setNodes: (projectId, nodes) => dispatch({ type: 'set-nodes', projectId, nodes }),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {

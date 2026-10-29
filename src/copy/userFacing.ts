@@ -18,3 +18,71 @@ export const SAVE_PARTIAL_FAIL = '存檔失敗。稿件目前仍在 APP 暫存�
 export const SAVE_FATAL_FAIL = '存檔失敗。稿件目前仍在 APP 暫存空間。';
 
 export const STASH_FAIL = '暫存沒成功，請再按一次「立刻暫存稿子」';
+
+/** 第 2 階段章節目錄。文字先照草案，之後再給九方審。 */
+export const TREE_ORGANIZE = '整理目錄';
+export const TREE_DONE = '完成';
+export const TREE_ADD_CHAPTER = '新增章';
+export const TREE_ADD_VOLUME = '在下方新增一卷';
+export const TREE_ADD_CHAPTER_BELOW = '在下方新增一章';
+export const TREE_ADD_SCENE = '在這章裡新增幕';
+export const TREE_RENAME = '改名';
+export const TREE_SAVE_NAME = '儲存名稱';
+export const TREE_CANCEL = '取消';
+export const TREE_MOVE_UP = '上移';
+export const TREE_MOVE_DOWN = '下移';
+export const TREE_MORE = '更多';
+export const TREE_MOVE_VOLUME = '移到別卷…';
+export const TREE_MOVE_ROOT = '移到最上層';
+export const TREE_DELETE = '刪除…';
+export const TREE_DELETE_NODE = '刪除這項…';
+export const TREE_DELETE_CHAPTER = '刪除這章…';
+export const TREE_DELETE_SCENE = '刪除這幕…';
+export const TREE_DELETE_VOLUME = '刪除這卷…';
+export const TREE_KEEP = '留著';
+export const TREE_CONFIRM_DELETE = '刪除';
+export const TREE_UNDO = '復原';
+export const TREE_PROGRESS = '改進度';
+export const TREE_NEW_CHAPTER = '新章';
+export const TREE_NEW_VOLUME = '新卷';
+export const TREE_EMPTY_NAME = '名稱不能是空白';
+export const TREE_DRAG_HINT = '只有按住 ≡ 才會拖，手指在其他地方滑就是捲動';
+export const TREE_DESKTOP_HINT =
+  '滑過任一列會出現 ≡，可直接用滑鼠拖。F2 改名、Del 刪除、Alt+↑↓ 移動、Ctrl+Z 復原';
+export const TREE_UNDO_HINT = '刪除後 10 秒內可以按「復原」。';
+export const TREE_KIND_CHAPTER = '章';
+export const TREE_KIND_SCENE = '幕';
+export const TREE_KIND_VOLUME = '卷';
+
+export function treeDeleteQuestion(title: string): string {
+  return `刪除「${title}」？`;
+}
+
+export function treeDeletedToast(title: string): string {
+  return `已刪除「${title}」`;
+}
+
+export function treeMovedToast(title: string): string {
+  return `已移動「${title}」`;
+}
+
+export function treeAddedToast(title: string): string {
+  return `已新增「${title}」`;
+}
+
+export function treeSelectedHint(title: string): string {
+  return `已選「${title}」·按住右邊 ≡ 拖曳，或用下方按鈕`;
+}
+
+export function treeDeleteImpact(chapters: number, scenes: number, words: string): string {
+  const parts: string[] = [];
+  if (chapters > 0) parts.push(`${chapters} 章`);
+  if (scenes > 0) parts.push(`${scenes} 幕`);
+  if (parts.length === 0) return `共 ${words} 字，會一起刪除。`;
+  return `裡面有 ${parts.join('、')}、共 ${words} 字，會一起刪除。`;
+}
+
+export function treeMoreSummary(kind: string, scenes: number, words: string): string {
+  if (kind === TREE_KIND_VOLUME) return `${kind} · ${scenes} 幕 · 共 ${words} 字`;
+  return `${kind} · ${scenes} 幕 · 共 ${words} 字`;
+}

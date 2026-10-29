@@ -211,6 +211,19 @@ export const DEMO_PROJECTS: DemoProject[] = [
       },
     ],
   },
+  {
+    id: 'long',
+    title: '【假資料】長目錄',
+    updatedLabel: '剛剛',
+    bookGoal: 10000,
+    nodes: Array.from({ length: 41 }, (_, index) => ({
+      id: `long-${index + 1}`,
+      type: 'file' as const,
+      title: `第${index + 1}章　【假資料】`,
+      progress: 'Draft' as const,
+      content: '【假資料】這一行是用來試捲動的假句子。\n',
+    })),
+  },
 ];
 
 export function findNode(nodes: readonly ChapterNode[], id: string): ChapterNode | null {

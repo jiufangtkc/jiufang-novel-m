@@ -16,3 +16,13 @@ describe('九方審過的文案', () => {
     expect(SAVE_PARTIAL_FAIL).toBe(SAVE_FATAL_FAIL);
   });
 });
+
+describe('章節目錄草案文案', () => {
+  it('刪除確認與復原用臺灣用詞', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.treeDeleteQuestion('第三章　地下道')).toBe('刪除「第三章　地下道」？');
+    expect(copy.treeDeleteImpact(0, 2, '3,280')).toBe('裡面有 2 幕、共 3,280 字，會一起刪除。');
+    expect(copy.TREE_KEEP).toBe('留著');
+    expect(copy.TREE_ORGANIZE).toBe('整理目錄');
+  });
+});
