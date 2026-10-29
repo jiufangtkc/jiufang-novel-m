@@ -22,6 +22,10 @@ export interface DeletedRecord {
   index: number;
   deletedAt: number;
   title: string;
+  /** 刪除當下，由近到遠的前一個鄰居。舊紀錄可能沒有。 */
+  beforeIds?: string[];
+  /** 刪除當下，由近到遠的後一個鄰居。舊紀錄可能沒有。 */
+  afterIds?: string[];
 }
 
 export interface BookArchive {
@@ -88,6 +92,14 @@ export function versionFromNode(
   };
 }
 
+/** 找回舊版只換正文。章名維持畫面上現在的名字。 */
+export function nodeAfterVersionRestore<T extends { content?: string }>(
+  node: T,
+  version: { content: string },
+): T {
+  return { ...node, content: version.content };
+}
+
 /** 最新的在最前面。內容跟最新一版一樣就略過。超過十版丟掉最舊的。 */
 export function pushVersion(existing: readonly ChapterVersion[] | undefined, next: ChapterVersion): ChapterVersion[] {
   if (existing && existing[0]?.content === next.content) return existing as ChapterVersion[];
@@ -127,6 +139,8 @@ export function deletedFromNode(
   const node = findNode(nodes, id);
   const location = locateNode(nodes, id);
   if (!node || !location) return null;
+  const siblings =
+    location.parentId == null ? nodes : (findNode(nodes, location.parentId)?.children ?? []);
   return {
     id: recordId,
     node: cloneNode(node),
@@ -134,6 +148,8 @@ export function deletedFromNode(
     index: location.index,
     deletedAt,
     title: node.title,
+    beforeIds: siblings.slice(0, location.index).map((item) => item.id).reverse(),
+    afterIds: siblings.slice(location.index + 1).map((item) => item.id),
   };
 }
 

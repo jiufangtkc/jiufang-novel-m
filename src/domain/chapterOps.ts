@@ -163,6 +163,16 @@ export function withoutNode(nodes: readonly ChapterNode[], id: string): ChapterN
   return replaceSiblings(nodes, location.parentId, list);
 }
 
+/** 剛新增、正文還是空的章，取消改名時拿掉。已有字或不是這一章就不刪。 */
+export function discardFreshChapter(
+  nodes: readonly ChapterNode[],
+  input: { id: string; freshId: string | null; content: string; childCount: number },
+): ChapterNode[] | null {
+  if (!input.freshId || input.freshId !== input.id) return null;
+  if (input.content.trim() !== '' || input.childCount > 0) return null;
+  return withoutNode(nodes, input.id);
+}
+
 export function renameNode(nodes: readonly ChapterNode[], id: string, title: string): ChapterNode[] | null {
   const trimmed = title.trim();
   if (!trimmed || !findNode(nodes, id)) return null;
@@ -326,10 +336,16 @@ function appendRecovered(nodes: readonly ChapterNode[], node: ChapterNode): Chap
   return insertNode(nodes, null, nodes.length, node) ?? [...nodes, node];
 }
 
-/** 刪掉的章放回原位置；原位置不在了，或指定放到最後，就接到目錄結尾。 */
+/** 刪掉的章放回原位置。用前後鄰居記位置；鄰居也被刪了就往外找。 */
 export function placeRecovered(
   nodes: readonly ChapterNode[],
-  record: { node: ChapterNode; parentId: string | null; index: number },
+  record: {
+    node: ChapterNode;
+    parentId: string | null;
+    index: number;
+    beforeIds?: readonly string[];
+    afterIds?: readonly string[];
+  },
   atEnd: boolean,
 ): ChapterNode[] {
   if (findNode(nodes, record.node.id)) return [...nodes];
@@ -338,11 +354,39 @@ export function placeRecovered(
     const parent = record.parentId == null ? null : findNode(nodes, record.parentId);
     const parentExists = record.parentId == null || parent != null;
     if (parentExists && parentAllows(parent, node.type)) {
-      const placed = insertNode(nodes, record.parentId, record.index, node);
+      const siblings = record.parentId == null ? nodes : (parent?.children ?? []);
+      const placed = insertNode(nodes, record.parentId, neighborIndex(siblings, record), node);
       if (placed) return placed;
     }
   }
   return appendRecovered(nodes, node);
+}
+
+function neighborIndex(
+  siblings: readonly { id: string }[],
+  record: { index: number; beforeIds?: readonly string[]; afterIds?: readonly string[] },
+): number {
+  if (!record.beforeIds?.length && !record.afterIds?.length) return record.index;
+  let beforeHit = -1;
+  for (const id of record.beforeIds ?? []) {
+    const found = siblings.findIndex((item) => item.id === id);
+    if (found >= 0) {
+      beforeHit = found;
+      break;
+    }
+  }
+  let afterHit = -1;
+  for (const id of record.afterIds ?? []) {
+    const found = siblings.findIndex((item) => item.id === id);
+    if (found >= 0) {
+      afterHit = found;
+      break;
+    }
+  }
+  if (beforeHit >= 0 && afterHit >= 0) return Math.min(beforeHit + 1, afterHit);
+  if (afterHit >= 0) return afterHit;
+  if (beforeHit >= 0) return beforeHit + 1;
+  return siblings.length;
 }
 
 /** 同層 sort_order，與 writeFileProject 寫回 chapters 的順序相同。 */

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ChapterNode } from '../data/demo';
 import { TREE_NEW_CHAPTER } from '../copy/userFacing';
-import { nextChapterTitle, parseChineseNumber, formatChineseNumber, sourceTitleForNewChapter } from './chapterTitle';
+import { nextChapterTitle, parseChineseNumber, formatChineseNumber, sourceTitleForNewChapter, titleForNewChapter } from './chapterTitle';
 
 function file(id: string, title: string, children: ChapterNode[] = []): ChapterNode {
   return { id, type: 'file', title, children };
@@ -42,5 +42,29 @@ describe('下一章章號', () => {
     expect(nextChapterTitle(sourceTitleForNewChapter(nodes, 's1'))).toBe('第二章\u3000');
     expect(nextChapterTitle(sourceTitleForNewChapter(nodes, null))).toBe('第四章\u3000');
     expect(nextChapterTitle(sourceTitleForNewChapter([file('x', '楔子')], 'x'))).toBe(TREE_NEW_CHAPTER);
+  });
+
+  it('沿用上一章的數字寫法；章號已經有人用就改叫新章', () => {
+    expect(nextChapterTitle('第01章')).toBe('第02章\u3000');
+    expect(nextChapterTitle('第01章　雨')).toBe('第02章\u3000');
+    expect(nextChapterTitle('第9章')).toBe('第10章\u3000');
+    const middle: ChapterNode[] = [
+      file('c1', '第一章　來信'),
+      file('c2', '第二章　燈塔'),
+      file('c3', '第三章　舊照片'),
+    ];
+    expect(titleForNewChapter(middle, 'c1')).toBe(TREE_NEW_CHAPTER);
+    expect(titleForNewChapter(middle, 'c2')).toBe(TREE_NEW_CHAPTER);
+    const sorted: ChapterNode[] = [
+      file('c3', '第三章　舊照片'),
+      file('c1', '第一章　來信'),
+      file('c2', '第二章　燈塔'),
+    ];
+    expect(titleForNewChapter(sorted, null)).toBe(TREE_NEW_CHAPTER);
+    const padded: ChapterNode[] = [
+      file('c1', '第01章', [{ id: 's1', type: 'scene', title: '幕 1' }]),
+    ];
+    expect(titleForNewChapter(padded, 's1')).toBe('第02章\u3000');
+    expect(titleForNewChapter([...padded, file('c2', '第02章　已有')], 's1')).toBe(TREE_NEW_CHAPTER);
   });
 });

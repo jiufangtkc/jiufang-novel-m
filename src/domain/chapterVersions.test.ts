@@ -14,6 +14,7 @@ import {
   versionFromNode,
   versionsForNode,
   withVersion,
+  nodeAfterVersionRestore,
 } from './chapterVersions';
 import { placeRecovered } from './chapterOps';
 
@@ -80,6 +81,15 @@ describe('章的舊版', () => {
     const archive = withVersion(emptyArchive(), beforeRestore[1]!);
     const restored = withVersion(archive, beforeRestore[0]!);
     expect(restored.versions.c1?.map((item) => item.content)).toEqual(['現在', '舊']);
+  });
+
+  it('找回舊版只換正文，章名留著現在的', () => {
+    const node = file('c1', '現在的章名', '現在的正文');
+    const version = versionFromNode({ id: 'c1', title: '舊章名', content: '舊正文' }, 1, 'v1');
+    const next = nodeAfterVersionRestore(node, version);
+    expect(next.title).toBe('現在的章名');
+    expect(next.content).toBe('舊正文');
+    expect(next.progress).toBeUndefined();
   });
 
   it('刪掉的章留得回來，復原後就從清單拿掉', () => {

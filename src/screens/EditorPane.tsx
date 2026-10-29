@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
@@ -13,6 +13,7 @@ import { countManuscriptWords } from '../domain/manuscriptWords';
 import { latestSaveTimestamp } from '../domain/saveClock';
 import { countWords } from '../domain/wordCount';
 import { revealCaret } from '../editor/caret';
+import { focusWritingBody } from '../editor/focusWriting';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
 import { useProject, useSample } from '../state/sampleStore';
@@ -20,6 +21,9 @@ import { editorSaveStatus } from './editorSaveStatus';
 
 export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const focusWriting = Boolean((location.state as { focusWriting?: boolean } | null)?.focusWriting);
+  const didFocusBody = useRef(false);
   const { actions, state, isGlowing } = useSample();
   const project = useProject(projectId);
   const [focused, setFocused] = useState(false);
@@ -113,6 +117,11 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   useEffect(() => {
     if (keyboardOpen && ref.current) revealCaret(ref.current);
   }, [keyboardOpen, ref]);
+
+  useEffect(() => {
+    if (!focusWriting || didFocusBody.current) return;
+    if (focusWritingBody(ref.current)) didFocusBody.current = true;
+  }, [focusWriting, chapter.id, ref]);
 
   function go(id: string | null) {
     if (!id) return;

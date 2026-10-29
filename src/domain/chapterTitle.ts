@@ -58,15 +58,24 @@ export function formatChineseNumber(value: number): string {
   return result;
 }
 
-/** 依上一章的章號給下一章。沒有章號就用「新章」。移動章節不會呼叫這裡。 */
-export function nextChapterTitle(previous: string | null | undefined): string {
-  const match = CHAPTER_NUMBER.exec(previous?.trim() ?? '');
+/** 依上一章的章號給下一章。沒有章號，或下一個號已經有章在用，就用「新章」。 */
+export function nextChapterTitle(previous: string | null | undefined, taken: readonly string[] = []): string {
+  const serial = chapterSerial(previous ?? '');
+  if (!serial) return TREE_NEW_CHAPTER;
+  const next = serial.value + 1;
+  if (taken.some((title) => chapterSerial(title)?.value === next)) return TREE_NEW_CHAPTER;
+  if (serial.style === 'arabic') return `第${String(next).padStart(serial.width, '0')}章\u3000`;
+  return `第${formatChineseNumber(next)}章\u3000`;
+}
+
+function chapterSerial(title: string): { value: number; style: 'arabic' | 'chinese'; width: number } | null {
+  const match = CHAPTER_NUMBER.exec(title.trim());
   const token = match?.[1];
-  if (!token) return TREE_NEW_CHAPTER;
-  if (/^[0-9]+$/.test(token)) return `第${Number(token) + 1}章\u3000`;
+  if (!token) return null;
+  if (/^[0-9]+$/.test(token)) return { value: Number(token), style: 'arabic', width: token.length };
   const value = parseChineseNumber(token);
-  if (value == null || value < 1) return TREE_NEW_CHAPTER;
-  return `第${formatChineseNumber(value + 1)}章\u3000`;
+  if (value == null || value < 1) return null;
+  return { value, style: 'chinese', width: token.length };
 }
 
 /** 新章跟在錨點那一章後面。錨點是幕時用它所屬的章；沒有錨點就用目錄最後一章。 */
@@ -84,4 +93,12 @@ export function sourceTitleForNewChapter(nodes: readonly ChapterNode[], anchorId
   }
   const inside = (anchor.children ?? []).filter((node) => node.type === 'file');
   return inside[inside.length - 1]?.title ?? last;
+}
+
+/** 給新章的章名：沿用上一章的數字寫法；那個號已經有章就改叫「新章」。 */
+export function titleForNewChapter(nodes: readonly ChapterNode[], anchorId: string | null): string {
+  const taken = writingOrder(nodes)
+    .filter((node) => node.type === 'file')
+    .map((node) => node.title);
+  return nextChapterTitle(sourceTitleForNewChapter(nodes, anchorId), taken);
 }

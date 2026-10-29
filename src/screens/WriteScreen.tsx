@@ -15,14 +15,17 @@ import {
   removalImpact,
   renameNode,
   resolveDrop,
+  discardFreshChapter,
   withoutNode,
 } from '../domain/chapterOps';
-import { nextChapterTitle, sourceTitleForNewChapter } from '../domain/chapterTitle';
+import { titleForNewChapter } from '../domain/chapterTitle';
+import { nodesAfterStructureUndo, type StructureChange } from '../domain/structureUndo';
 import { nodesAfterDeleteUndo } from '../domain/undoDelete';
 import {
   archiveDeletion,
   deletedFromNode,
   forgetDeleted,
+  nodeAfterVersionRestore,
   versionFromNode,
   versionsForNode,
   withVersion,
@@ -92,7 +95,7 @@ import { loadTreePlace, saveTreePlace, scrollTopForRow, type TreePlace } from '.
 import { reduceDrag, type DragState } from './dragSession';
 import { useBookArchive } from './useBookArchive';
 
-type UndoBar = { nodes: ChapterNode[]; text: string; token: number; deleted?: DeletedRecord };
+type UndoBar = { text: string; token: number; deleted?: DeletedRecord; structure?: StructureChange };
 type RenameIntent = 'stay' | 'write';
 type MenuKind = 'short' | 'full' | 'more' | 'progress' | 'volume';
 
@@ -133,6 +136,7 @@ export function WriteScreen() {
   const [preview, setPreview] = useState<ChapterVersion | null>(null);
   const [deletedOpen, setDeletedOpen] = useState(false);
   const [editorEpoch, setEditorEpoch] = useState(0);
+  const [freshChapterId, setFreshChapterId] = useState<string | null>(null);
   const [highlightId, setHighlightId] = useState<string | null>(chapterId ?? null);
   const pendingScroll = useRef<string | null>(null);
   const restoredKey = useRef<string | null>(null);
@@ -221,7 +225,14 @@ export function WriteScreen() {
       const next = moveNode(nodes, step.move.dragId, target.parentId, target.index);
       if (!next || JSON.stringify(next) === JSON.stringify(nodes)) return;
       const title = findNode(nodes, step.move.dragId)?.title ?? '';
-      setUndo({ nodes, text: treeMovedToast(title), token: Date.now() });
+      const location = locateNode(nodes, step.move.dragId);
+      setUndo({
+        text: treeMovedToast(title),
+        token: Date.now(),
+        structure: location
+          ? { kind: 'move', id: step.move.dragId, parentId: location.parentId, index: location.index }
+          : undefined,
+      });
       actions.setNodes(project.id, next);
       pendingScroll.current = step.move.dragId;
     };
@@ -297,23 +308,37 @@ export function WriteScreen() {
     setHighlightId(id);
   }
 
-  function commit(next: ChapterNode[] | null, bar: string | null, deleted?: DeletedRecord | null) {
+  function commit(
+    next: ChapterNode[] | null,
+    bar: string | null,
+    extra?: { deleted?: DeletedRecord | null; structure?: StructureChange },
+  ) {
     if (!next) return;
-    if (bar) setUndo({ nodes: book.nodes, text: bar, token: Date.now(), deleted: deleted ?? undefined });
-    else setUndo(null);
+    if (bar) {
+      setUndo({
+        text: bar,
+        token: Date.now(),
+        deleted: extra?.deleted ?? undefined,
+        structure: extra?.structure,
+      });
+    } else setUndo(null);
     actions.setNodes(book.id, next);
   }
 
   function undoNow() {
     if (!undo) return;
+    const current = liveNodes();
     if (undo.deleted) {
       const deleted = undo.deleted;
-      const next = nodesAfterDeleteUndo(liveNodes(), { snapshot: undo.nodes, deleted });
+      const next = nodesAfterDeleteUndo(current, { snapshot: [], deleted });
       actions.setNodes(book.id, expandToNode(next, deleted.node.id));
-      updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, deleted.id) }));
+      updateArchive((archiveNow) => ({ ...archiveNow, deleted: forgetDeleted(archiveNow.deleted, deleted.id) }));
       pendingScroll.current = deleted.node.id;
-    } else {
-      actions.setNodes(book.id, undo.nodes);
+    } else if (undo.structure) {
+      actions.setNodes(book.id, nodesAfterStructureUndo(current, undo.structure));
+      if (undo.structure.kind === 'move' || undo.structure.kind === 'rename' || undo.structure.kind === 'progress') {
+        pendingScroll.current = undo.structure.id;
+      }
     }
     setUndo(null);
   }
@@ -333,7 +358,7 @@ export function WriteScreen() {
     const when = Date.now();
     const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
     if (record) updateArchive((current) => archiveDeletion(current, record, versionsForNode(record.node, when)));
-    commit(next, treeDeletedToast(node.title), record);
+    commit(next, treeDeletedToast(node.title), { deleted: record });
     if (pickedId === id) setPickedId(null);
     setConfirmId(null);
     setMenu(null);
@@ -350,7 +375,29 @@ export function WriteScreen() {
     setInlineId(null);
     setNameError(false);
     setRenameIntent('stay');
-    if (intent === 'write') navigate(`/p/${book.id}/write/${id}`);
+    if (id === freshChapterId) setFreshChapterId(null);
+    if (intent === 'write') navigate(`/p/${book.id}/write/${id}`, { state: { focusWriting: true } });
+  }
+
+  function cancelFresh(id: string | null) {
+    if (id && id === freshChapterId) {
+      const node = findNode(book.nodes, id);
+      const next = discardFreshChapter(book.nodes, {
+        id,
+        freshId: freshChapterId,
+        content: node?.content ?? '',
+        childCount: node?.children?.length ?? 0,
+      });
+      if (next) {
+        actions.setNodes(book.id, next);
+        setUndo(null);
+      }
+    }
+    setFreshChapterId(null);
+    setRenameId(null);
+    setInlineId(null);
+    setNameError(false);
+    setRenameIntent('stay');
   }
 
   function whenLabel(savedAt: number): string {
@@ -381,7 +428,7 @@ export function WriteScreen() {
     );
     actions.setNodes(
       book.id,
-      updateNode(book.nodes, node.id, (item) => ({ ...item, title: version.title, content: version.content })),
+      updateNode(book.nodes, node.id, (item) => nodeAfterVersionRestore(item, version)),
     );
     if (chapterId === node.id) setEditorEpoch((value) => value + 1);
     setPreview(null);
@@ -389,10 +436,13 @@ export function WriteScreen() {
   }
 
   function shift(id: string, delta: -1 | 1) {
+    const location = locateNode(book.nodes, id);
     const next = moveBy(book.nodes, id, delta);
     const title = findNode(book.nodes, id)?.title ?? '';
-    if (next) {
-      commit(next, treeMovedToast(title));
+    if (next && location) {
+      commit(next, treeMovedToast(title), {
+        structure: { kind: 'move', id, parentId: location.parentId, index: location.index },
+      });
       pendingScroll.current = id;
     }
   }
@@ -410,7 +460,7 @@ export function WriteScreen() {
 
   function addChapter(anchorId: string | null) {
     const id = `ch-${Date.now()}`;
-    const title = nextChapterTitle(sourceTitleForNewChapter(book.nodes, anchorId));
+    const title = titleForNewChapter(book.nodes, anchorId);
     const node: ChapterNode = {
       id,
       type: 'file',
@@ -420,9 +470,10 @@ export function WriteScreen() {
       expanded: true,
     };
     const next = insertBelowAnchor(book.nodes, anchorId, node);
-    commit(next, treeAddedToast(title));
+    commit(next, treeAddedToast(title), { structure: { kind: 'add', id } });
     pendingScroll.current = id;
     setPickedId(id);
+    setFreshChapterId(id);
     setRenameIntent('write');
     if (desktop) setInlineId(id);
     else setRenameId(id);
@@ -445,7 +496,7 @@ export function WriteScreen() {
     }
     const next = book.nodes.slice();
     next.splice(rootIndex, 0, node);
-    commit(next, treeAddedToast(TREE_NEW_VOLUME));
+    commit(next, treeAddedToast(TREE_NEW_VOLUME), { structure: { kind: 'add', id } });
     pendingScroll.current = id;
     setRenameId(id);
     setMenu(null);
@@ -464,7 +515,7 @@ export function WriteScreen() {
         }
         return { ...node, expanded: true, children: [...(node.children ?? []), scene] };
       });
-    commit(walk(book.nodes), treeAddedToast(scene.title));
+    commit(walk(book.nodes), treeAddedToast(scene.title), { structure: { kind: 'add', id: scene.id } });
     setMenu(null);
   }
 
@@ -506,10 +557,7 @@ export function WriteScreen() {
               setPickedId(id);
             }}
             onRename={(id, title) => finishRename(id, title, renameIntent)}
-            onCancelRename={() => {
-              setInlineId(null);
-              setRenameIntent('stay');
-            }}
+            onCancelRename={() => cancelFresh(inlineId)}
             onInlineRename={(id) => {
               setPickedId(id);
               setInlineId(id);
@@ -686,7 +734,15 @@ export function WriteScreen() {
             type="button"
             className="menu-item"
             onClick={() => {
-              commit(moveChapterToVolume(book.nodes, menuNode.id, null), treeMovedToast(menuNode.title));
+              const location = locateNode(book.nodes, menuNode.id);
+              const next = moveChapterToVolume(book.nodes, menuNode.id, null);
+              commit(
+                next,
+                treeMovedToast(menuNode.title),
+                location
+                  ? { structure: { kind: 'move', id: menuNode.id, parentId: location.parentId, index: location.index } }
+                  : undefined,
+              );
               setMenu(null);
             }}
           >
@@ -698,7 +754,15 @@ export function WriteScreen() {
               type="button"
               className="menu-item"
               onClick={() => {
-                commit(moveChapterToVolume(book.nodes, menuNode.id, volume.id), treeMovedToast(menuNode.title));
+                const location = locateNode(book.nodes, menuNode.id);
+                const next = moveChapterToVolume(book.nodes, menuNode.id, volume.id);
+                commit(
+                  next,
+                  treeMovedToast(menuNode.title),
+                  location
+                    ? { structure: { kind: 'move', id: menuNode.id, parentId: location.parentId, index: location.index } }
+                    : undefined,
+                );
                 setMenu(null);
               }}
             >
@@ -709,7 +773,7 @@ export function WriteScreen() {
       ) : null}
 
       {renameNodeNow ? (
-        <div className="sheet-backdrop" role="presentation" onClick={() => { setRenameId(null); setRenameIntent('stay'); }}>
+        <div className="sheet-backdrop" role="presentation" onClick={() => cancelFresh(renameId)}>
           <form
             className="dialog"
             role="dialog"
@@ -732,7 +796,7 @@ export function WriteScreen() {
             />
             {nameError ? <p className="hint">{TREE_EMPTY_NAME}</p> : null}
             <div className="dialog-actions rename-actions">
-              <button type="button" className="button secondary" onClick={() => { setRenameId(null); setRenameIntent('stay'); }}>
+              <button type="button" className="button secondary" onClick={() => cancelFresh(renameNodeNow.id)}>
                 {TREE_CANCEL}
               </button>
               <button type="submit" className="button primary">
