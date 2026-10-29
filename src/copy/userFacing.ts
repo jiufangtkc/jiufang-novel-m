@@ -47,6 +47,13 @@ export const TREE_DESKTOP_HINT =
   '滑過任一列會出現 ≡，可直接用滑鼠拖。F2 改名、Del 刪除、Alt+↑↓ 移動、Ctrl+Z 復原';
 export const TREE_UNDO_HINT = '刪除後 10 秒內可以按「復原」。';
 export const TREE_DELETE_RECOVERABLE = '之後仍可從目錄最下方的「找回刪掉的章」放回來。';
+/** 舊版或刪除紀錄寫入 IndexedDB 失敗時的提示（草案，待九方審）。 */
+export const ARCHIVE_KEEP_FAIL = '這次沒留下舊版。';
+
+/** 刪除確認是否顯示「之後找得回」那句。 */
+export function deleteConfirmShowsRecoverable(archivePersistOk: boolean): boolean {
+  return archivePersistOk;
+}
 export const TREE_FIND_VERSION = '找回之前的版本';
 export const TREE_FIND_DELETED = '找回刪掉的章';
 export const TREE_VERSION_EMPTY = '這一章還沒有舊版。';

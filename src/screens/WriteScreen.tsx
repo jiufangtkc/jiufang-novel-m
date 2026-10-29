@@ -49,6 +49,7 @@ import {
   TREE_DONE,
   TREE_DRAG_HINT,
   TREE_DELETE_RECOVERABLE,
+  deleteConfirmShowsRecoverable,
   TREE_EMPTY_NAME,
   TREE_FIND_DELETED,
   TREE_FIND_VERSION,
@@ -113,7 +114,7 @@ export function WriteScreen() {
   const navigate = useNavigate();
   const project = useProject(projectId);
   const { actions } = useSample();
-  const { archive, update: updateArchive } = useBookArchive(projectId);
+  const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
   const desktop = useDesktop();
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<ChapterNode[]>(project?.nodes ?? []);
@@ -748,7 +749,9 @@ export function WriteScreen() {
             <h2>{treeDeleteQuestion(confirmNode.title)}</h2>
             <p>{treeDeleteImpact(impact.chapters, impact.scenes, formatInteger(impact.words))}</p>
             <p className="hint">{TREE_UNDO_HINT}</p>
-            <p className="hint">{TREE_DELETE_RECOVERABLE}</p>
+            {deleteConfirmShowsRecoverable(archivePersistOk) ? (
+              <p className="hint">{TREE_DELETE_RECOVERABLE}</p>
+            ) : null}
             <div className="dialog-actions delete-actions">
               <button
                 type="button"

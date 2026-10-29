@@ -30,6 +30,9 @@ describe('章節目錄草案文案', () => {
 
   it('舊版、單篇與上下章的句子先照草案', async () => {
     const copy = await import('./userFacing');
+    expect(copy.ARCHIVE_KEEP_FAIL).toBe('這次沒留下舊版。');
+    expect(copy.deleteConfirmShowsRecoverable(true)).toBe(true);
+    expect(copy.deleteConfirmShowsRecoverable(false)).toBe(false);
     expect(copy.TREE_FIND_VERSION).toBe('找回之前的版本');
     expect(copy.TREE_FIND_DELETED).toBe('找回刪掉的章');
     expect(copy.TREE_DELETE_RECOVERABLE).toBe('之後仍可從目錄最下方的「找回刪掉的章」放回來。');

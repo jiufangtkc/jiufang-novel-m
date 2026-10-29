@@ -20,6 +20,8 @@ export interface ArchiveClient {
   read(bookId: string): Promise<BookArchive>;
   update(bookId: string, recipe: (current: BookArchive) => BookArchive): Promise<BookArchive>;
   subscribe(listener: (bookId: string, archive: BookArchive) => void): () => void;
+  isPersistOk(bookId: string): boolean;
+  subscribePersist(listener: (bookId: string, ok: boolean) => void): () => void;
 }
 
 function normalize(value: unknown): BookArchive {
@@ -35,6 +37,13 @@ export function createArchiveClient(backing: ArchiveBacking): ArchiveClient {
   const cache = new Map<string, BookArchive>();
   const tails = new Map<string, Promise<unknown>>();
   const listeners = new Set<(bookId: string, archive: BookArchive) => void>();
+  const persistOk = new Map<string, boolean>();
+  const persistListeners = new Set<(bookId: string, ok: boolean) => void>();
+
+  function notifyPersist(bookId: string, ok: boolean) {
+    persistOk.set(bookId, ok);
+    for (const listener of persistListeners) listener(bookId, ok);
+  }
 
   function enqueue<T>(bookId: string, job: () => Promise<T>): Promise<T> {
     const prev = tails.get(bookId) ?? Promise.resolve();
@@ -63,14 +72,29 @@ export function createArchiveClient(backing: ArchiveBacking): ArchiveClient {
         const current = cache.get(bookId) ?? normalize(await backing.read(bookId));
         const next = recipe(current);
         cache.set(bookId, next);
-        await backing.write(bookId, next);
-        for (const listener of listeners) listener(bookId, next);
-        return next;
+        try {
+          await backing.write(bookId, next);
+          notifyPersist(bookId, true);
+          for (const listener of listeners) listener(bookId, next);
+          return next;
+        } catch (error) {
+          cache.set(bookId, current);
+          notifyPersist(bookId, false);
+          for (const listener of listeners) listener(bookId, current);
+          throw error;
+        }
       });
     },
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
+    },
+    isPersistOk(bookId) {
+      return persistOk.get(bookId) ?? true;
+    },
+    subscribePersist(listener) {
+      persistListeners.add(listener);
+      return () => persistListeners.delete(listener);
     },
   };
 }

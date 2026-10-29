@@ -9,6 +9,31 @@ function record(id: string): DeletedRecord {
 }
 
 describe('舊版儲存排隊', () => {
+  it('寫入失敗時還原內容並標記無法保存', async () => {
+    let stored = emptyArchive();
+    const backing: ArchiveBacking = {
+      async read() {
+        return structuredClone(stored);
+      },
+      async write(_bookId, _archive) {
+        throw new Error('舊版沒寫入');
+      },
+    };
+    const client = createArchiveClient(backing);
+    const persist: boolean[] = [];
+    client.subscribePersist((_id, ok) => persist.push(ok));
+    await client.read('book');
+    await expect(
+      client.update('book', (current) => ({
+        ...current,
+        deleted: rememberDeleted(current.deleted, record('lost')),
+      })),
+    ).rejects.toThrow('舊版沒寫入');
+    expect(await client.read('book')).toEqual(emptyArchive());
+    expect(client.isPersistOk('book')).toBe(false);
+    expect(persist).toEqual([false]);
+  });
+
   it('兩次更新接連寫入時，兩筆都會留下', async () => {
     let stored = emptyArchive();
     let release = () => {};
