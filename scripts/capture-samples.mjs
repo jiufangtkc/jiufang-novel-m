@@ -70,14 +70,14 @@ const treeText = await page.getByTestId('chapter-tree').innerText();
 for (const word of ['Draft', 'Final', '1st Edit', '2nd Edit', 'Discarded', 'Scene']) {
   assert(!treeText.includes(word), `目錄仍出現英文：${word}`);
 }
-assert(treeText.includes('定稿') && treeText.includes('草稿') && treeText.includes('捨棄'), '目錄缺少中文標記');
+assert(treeText.includes('完稿') && treeText.includes('草稿') && treeText.includes('棄稿'), '目錄缺少中文標記');
 await shot('02-章節目錄.png');
 
 await page.getByRole('button', { name: '第一章　來信的更多操作' }).click();
 await page.getByTestId('node-menu').waitFor();
 const menuText = await page.getByTestId('node-menu').innerText();
 assert(menuText.includes('型別：章'), '選單沒有把 file 顯示成章');
-for (const label of ['草稿', '初修', '二修', '定稿', '捨棄']) {
+for (const label of ['草稿', '一修', '再修', '完稿', '棄稿']) {
   assert(menuText.includes(label), `選單缺少${label}`);
 }
 await shot('08-進度標記選單.png');

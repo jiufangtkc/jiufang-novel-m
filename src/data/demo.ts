@@ -131,7 +131,7 @@ export const DEMO_PROJECTS: DemoProject[] = [
             type: 'file',
             title: '第四章　（刪去的岔路）',
             progress: 'Discarded',
-            content: '【示範假資料】這一章是故意標成捨棄的岔路，不是真實書稿。\n',
+            content: '【示範假資料】這一章是故意標成棄稿的岔路，不是真實書稿。\n',
           },
         ],
       },

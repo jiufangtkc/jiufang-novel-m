@@ -1,13 +1,13 @@
 /**
- * 進度標記與節點種類的顯示名稱。
- * 待九方確認。資料仍存英文代碼，只有畫面上的字改成中文。
+ * 進度標記的顯示名稱。九方已定案。
+ * 資料仍存英文代碼，只有畫面上的字用中文。
  */
 export const PROGRESS_LABELS = {
   Draft: '草稿',
-  '1st Edit': '初修',
-  '2nd Edit': '二修',
-  Final: '定稿',
-  Discarded: '捨棄',
+  '1st Edit': '一修',
+  '2nd Edit': '再修',
+  Final: '完稿',
+  Discarded: '棄稿',
 } as const;
 
 export type ProgressCode = keyof typeof PROGRESS_LABELS;

@@ -102,7 +102,7 @@ export function WriteScreen() {
             >
               {menuNode.type === 'file' ? '在此章新增幕' : '調整目錄結構'}
             </button>
-            <p className="hint">標記的中文名稱待九方確認。存檔時仍使用原本的英文代碼。</p>
+            <p className="hint">進度標記依九方定案顯示。存檔時仍使用原本的英文代碼。</p>
           </div>
         </div>
       )}
