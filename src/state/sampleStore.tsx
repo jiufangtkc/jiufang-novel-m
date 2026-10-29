@@ -16,6 +16,7 @@ import {
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
+import { exportDbFilename, localDbFilename } from '../domain/exportFilename';
 import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
@@ -51,7 +52,7 @@ interface SampleState {
   logs: WritingLogRow[];
   demoLogs: WritingLogRow[];
   toast: string | null;
-  /** 匯入檔的卡片與寫作紀錄，用來原樣交回。 */
+  /** 匯入檔的卡片與寫作紀錄，另存時原樣帶出。 */
   fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
   saveMeta: Record<
     string,
@@ -533,7 +534,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
     const save = () =>
       saveBookBytes(
         project.dbKey!,
-        project.filename ?? '交回.db',
+        localDbFilename(project.title, project.filename),
         project.title,
         { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
         project.nodes,
@@ -557,7 +558,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       if (!extra) return;
       void saveBookBytes(
         project.dbKey,
-        project.filename ?? '交回.db',
+        localDbFilename(project.title, project.filename),
         project.title,
         { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
         project.nodes,
@@ -639,7 +640,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (!extra) return;
         await saveBookBytes(
           project.dbKey,
-          project.filename ?? '交回.db',
+          localDbFilename(project.title, project.filename),
           project.title,
           { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
           project.nodes,
@@ -658,7 +659,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (extra) {
           await saveBookBytes(
             project.dbKey,
-            project.filename ?? '交回.db',
+            localDbFilename(project.title, project.filename),
             project.title,
             { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
             project.nodes,
@@ -672,7 +673,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'toast', message: '找不到可匯出的檔案' });
           return;
         }
-        const mode = await shareDatabase(packed.filename, packed.bytes);
+        const mode = await shareDatabase(exportDbFilename(project.title), packed.bytes);
         if (mode === 'cancelled') return;
         dispatch({ type: 'record-export', projectId: project.id, atMs: Date.now() });
         dispatch({ type: 'toast', message: '已另存' });

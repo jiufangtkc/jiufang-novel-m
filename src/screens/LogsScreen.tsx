@@ -21,7 +21,7 @@ export function LogsScreen() {
       </header>
       <div className="scroll-pane logs-page">
         <p className="hint">
-          以下是示範假資料，加上你在這個樣品裡實際打字的變化。一天一列。若以後從電腦版匯入，AI 相關欄位會原樣留著、交回時不會少；這個樣品不做 AI，所以這裡不顯示那些數字。
+          以下是示範假資料，加上你在這個樣品裡實際打字的變化。一天一列。若以後從電腦版匯入，AI 相關欄位會原樣留著、另存時不會少；這個樣品不做 AI，所以這裡不顯示那些數字。
         </p>
         <ul className="log-list">
           {rows.map((row) => (

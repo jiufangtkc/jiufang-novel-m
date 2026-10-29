@@ -454,7 +454,7 @@ html.keyboard-open .bottom-nav { display: none; }
   background: var(--accent);
 }
 
-.stats-page, .settings-page, .logs-page { padding: 16px; }
+.stats-page, .settings-page, .logs-page, .files-page { padding: 16px; }
 
 .stat-grid {
   display: grid;
@@ -527,7 +527,6 @@ html.keyboard-open .bottom-nav { display: none; }
 .text-link { display: inline-block; margin-top: 8px; }
 
 .setting-card { margin-bottom: 8px; padding-right: 4px; }
-.files-page { padding-top: 4px; }
 .files-status-card {
   margin: 8px 0 16px;
   padding: 14px 14px 12px;

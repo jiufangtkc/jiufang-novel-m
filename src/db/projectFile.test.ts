@@ -20,13 +20,13 @@ describe('舊檔升級', () => {
   });
 });
 
-describe('交回時保留沒改到的表', () => {
+describe('另存時保留沒改到的表', () => {
   it('改了正文再寫回，快照與校對列不變', () => {
     const { sql } = openNodeSql();
     createVersion14Shell(sql);
     sql.run(
       'INSERT INTO project_info (title, target_word_count, daily_target_word_count, categories_meta) VALUES (?, ?, ?, ?)',
-      ['【示範】交回測試', 1000, 300, '{}'],
+      ['【示範】另存測試', 1000, 300, '{}'],
     );
     sql.run(
       `INSERT INTO chapters (id, parent_id, name, node_type, content, mark, sort_order, scene_summary, is_expanded)

@@ -2,7 +2,7 @@ import { countWords } from './wordCount';
 
 /**
  * 與電腦版 writing_logs 同一列的欄位。
- * 網頁版不做 AI，但這幾個欄位要留著，日後匯入與交回才不會把電腦版的紀錄弄丟。
+ * 網頁版不做 AI，但這幾個欄位要留著，日後匯入與另存才不會把電腦版的紀錄弄丟。
  */
 export interface WritingLogRow {
   id: number;
