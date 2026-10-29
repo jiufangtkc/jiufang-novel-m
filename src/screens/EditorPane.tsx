@@ -27,7 +27,8 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   const { actions, state, isGlowing } = useSample();
   const project = useProject(projectId);
   const [focused, setFocused] = useState(false);
-  const keyboardOpen = useWritingKeyboard(focused);
+  const keyboard = useWritingKeyboard(focused);
+  const keyboardOpen = keyboard.compact;
   const { ref } = useWritingSurface({
     bookId: projectId,
     chapterId: chapter.id,
@@ -114,9 +115,9 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     };
   }, [chapter.id, projectId, ref]);
 
-  useEffect(() => {
-    if (keyboardOpen && ref.current) revealCaret(ref.current);
-  }, [keyboardOpen, ref]);
+  useLayoutEffect(() => {
+    if ((keyboardOpen || keyboard.landscape) && ref.current) revealCaret(ref.current);
+  }, [keyboardOpen, keyboard.landscape, ref]);
 
   useEffect(() => {
     if (!focusWriting || didFocusBody.current) return;

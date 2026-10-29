@@ -933,6 +933,26 @@ button.save-status {
   .tree-tools, .organize-dock { display: none; }
 }
 
+/* 手機橫放且鍵盤開著：只留正文。平板與電腦不會加上這個 class。 */
+html.landscape-writing .nav-rail,
+html.landscape-writing .bottom-nav,
+html.landscape-writing .write-layout .tree-pane,
+html.landscape-writing .editor .topbar,
+html.landscape-writing .editor-status {
+  display: none;
+}
+html.landscape-writing .workspace { flex-direction: column; }
+html.landscape-writing .write-layout {
+  display: flex;
+  flex-direction: column;
+}
+html.landscape-writing .write-layout .editor-pane {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .daily-bar-fill { transition: none; }
   .undo-meter { animation: none; }
