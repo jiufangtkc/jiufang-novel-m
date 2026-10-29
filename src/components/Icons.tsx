@@ -246,3 +246,14 @@ export function DownloadIcon(props: IconProps) {
     </Stroke>
   );
 }
+
+export function CloudUploadIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M7 18h10" />
+      <path d="M12 14V8" />
+      <path d="M9 11l3-3 3 3" />
+      <path d="M6.5 18a4 4 0 0 1-.5-7.9A5.5 5.5 0 0 1 17 10.5a4 4 0 0 1 .5 7.5" />
+    </Stroke>
+  );
+}

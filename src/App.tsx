@@ -3,6 +3,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toast } from './components/Toast';
 import { HomeScreen } from './screens/HomeScreen';
 import { CardsScreen } from './screens/CardsScreen';
+import { FilesScreen } from './screens/FilesScreen';
 import { LogsScreen } from './screens/LogsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
@@ -39,6 +40,7 @@ export function App() {
               <Route index element={<Navigate to="write" replace />} />
               <Route path="write/:chapterId?" element={<WriteScreen />} />
               <Route path="cards" element={<CardsScreen />} />
+              <Route path="files" element={<FilesScreen />} />
               <Route path="stats" element={<StatsScreen />} />
               <Route path="settings" element={<SettingsScreen />} />
               <Route path="logs" element={<LogsScreen />} />

@@ -98,6 +98,10 @@ await shot('05-統計.png');
 
 await page.getByTestId('bottom-nav').getByTestId('nav-settings').click();
 await page.getByTestId('settings-screen').waitFor();
+const settingsText = await page.getByTestId('settings-screen').innerText();
+assert(!settingsText.includes('另存專案'), '設定頁不該有另存專案');
+assert(!settingsText.includes('儲存專案'), '設定頁不該再有儲存專案');
+assert(!settingsText.includes('關閉專案'), '設定頁不該再有關閉專案');
 await shot('06-設定.png');
 
 await page.getByRole('link', { name: '寫作過程紀錄' }).click();
@@ -106,6 +110,15 @@ const logsText = await page.getByTestId('logs-screen').innerText();
 assert(logsText.includes('大量貼上') && logsText.includes('寫作時間'), '紀錄頁缺少欄位');
 assert(!logsText.includes('Draft'), '紀錄頁不該出現英文標記');
 await shot('07-寫作過程紀錄.png');
+
+await page.getByTestId('bottom-nav').getByTestId('nav-files').click();
+await page.getByTestId('files-screen').waitFor();
+const filesText = await page.getByTestId('files-screen').innerText();
+assert(filesText.includes('另存專案'), '檔案頁缺少主按鈕');
+assert(filesText.includes('將稿子存到各類雲端或其他位置'), '另存專案說明應為定案文案');
+assert(filesText.includes('儲存專案'), '檔案頁缺少儲存專案');
+assert(filesText.includes('立刻儲存專案至手機'), '儲存專案說明應為定案文案');
+await shot('14-檔案.png');
 
 await page.getByTestId('bottom-nav').getByTestId('nav-cards').click();
 await page.getByTestId('cards-screen').waitFor();
@@ -135,7 +148,7 @@ await input.pressSequentially('加一句。', { delay: 20 });
 await page.waitForTimeout(900);
 const afterTyping = await page.getByTestId('status-bar').innerText();
 assert(afterTyping !== beforeCount, '停筆後字數沒有更新');
-assert((await page.getByTestId('save-button').getAttribute('data-dirty')) === 'false', '停筆後仍顯示未儲存');
+assert((await page.getByTestId('save-button').count()) === 0, '寫作畫面不該有磁碟片按鈕');
 
 const pasteResult = await page.evaluate(async () => {
   const wait = () => new Promise((resolve) => setTimeout(resolve, 20));
@@ -178,7 +191,8 @@ await input.press('Enter');
 const afterEnter = await input.inputValue();
 assert(afterEnter === `${beforeEnter}\n`, '一般 Enter 應該可以換行');
 
-await page.getByTestId('bottom-nav').getByTestId('nav-stats').click();
+await page.goto(`${base}/p/fog/stats`, { waitUntil: 'networkidle' });
+await page.getByTestId('stats-screen').waitFor();
 assert((await page.getByTestId('achievement-count').innerText()).includes('5'), '改今日目標後，已結算次數不該變');
 
 assert(pageErrors.length === 0, `頁面錯誤：${pageErrors.join('；')}`);

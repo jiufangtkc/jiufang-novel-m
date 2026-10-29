@@ -53,6 +53,14 @@ interface SampleState {
   toast: string | null;
   /** 匯入檔的卡片與寫作紀錄，用來原樣交回。 */
   fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
+  saveMeta: Record<
+    string,
+    {
+      lastAutoSaveMs: number | null;
+      lastManualSaveMs: number | null;
+      lastExportMs: number | null;
+    }
+  >;
 }
 
 type Action =
@@ -75,7 +83,10 @@ type Action =
       extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
       quiet?: boolean;
     }
-  | { type: 'toast'; message: string | null };
+  | { type: 'toast'; message: string | null }
+  | { type: 'record-auto-save'; projectId: string; atMs: number }
+  | { type: 'record-manual-save'; projectId: string; atMs: number }
+  | { type: 'record-export'; projectId: string; atMs: number };
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
   if (!schedule.open) return logs;
@@ -124,6 +135,23 @@ function createState(now: Date): SampleState {
     demoLogs: logs,
     toast: null,
     fileExtras: {},
+    saveMeta: {},
+  };
+}
+
+function patchSaveMeta(
+  state: SampleState,
+  projectId: string,
+  patch: Partial<SampleState['saveMeta'][string]>,
+): SampleState {
+  const prev = state.saveMeta[projectId] ?? {
+    lastAutoSaveMs: null,
+    lastManualSaveMs: null,
+    lastExportMs: null,
+  };
+  return {
+    ...state,
+    saveMeta: { ...state.saveMeta, [projectId]: { ...prev, ...patch } },
   };
 }
 
@@ -241,6 +269,12 @@ function reduce(state: SampleState, action: Action): SampleState {
   switch (action.type) {
     case 'toast':
       return { ...state, toast: action.message };
+    case 'record-auto-save':
+      return patchSaveMeta(state, action.projectId, { lastAutoSaveMs: action.atMs });
+    case 'record-manual-save':
+      return patchSaveMeta(state, action.projectId, { lastManualSaveMs: action.atMs });
+    case 'record-export':
+      return patchSaveMeta(state, action.projectId, { lastExportMs: action.atMs });
     case 'dismiss-recent':
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
     case 'add-project': {
@@ -425,7 +459,7 @@ interface SampleActions {
   }) => void;
   importFile: (file: File) => Promise<string>;
   saveNow: () => Promise<void>;
-  handBack: () => Promise<void>;
+  saveToCloud: () => Promise<void>;
   toast: (message: string | null) => void;
 }
 
@@ -450,10 +484,14 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         localStorage,
         state.projects.filter((project) => project.origin !== 'file'),
       );
+      const active = state.projects.find((project) => project.id === state.activeProjectId);
+      if (active && active.origin !== 'file') {
+        dispatch({ type: 'record-auto-save', projectId: active.id, atMs: Date.now() });
+      }
     } catch {
       // 私人瀏覽可能不准寫入，畫面仍可繼續用。
     }
-  }, [state.projects]);
+  }, [state.projects, state.activeProjectId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -501,7 +539,9 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         project.nodes,
         extra.cards,
         extra.logs,
-      );
+      ).then(() => {
+        dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
+      });
     const timer = window.setTimeout(() => void save(), 250);
     return () => {
       window.clearTimeout(timer);
@@ -523,7 +563,9 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         project.nodes,
         extra.cards,
         extra.logs,
-      );
+      ).then(() => {
+        dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
+      });
     };
     const onHide = () => {
       if (document.visibilityState === 'hidden') flush();
@@ -587,8 +629,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       },
       saveNow: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
-        if (!project?.dbKey || project.origin !== 'file') {
-          dispatch({ type: 'toast', message: '示範專案只留在這個畫面。請先開啟自己的 .db。' });
+        if (!project) return;
+        const atMs = Date.now();
+        if (project.origin !== 'file' || !project.dbKey) {
+          dispatch({ type: 'record-manual-save', projectId: project.id, atMs });
           return;
         }
         const extra = state.fileExtras[project.dbKey];
@@ -602,12 +646,12 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           extra.cards,
           extra.logs,
         );
-        dispatch({ type: 'toast', message: '已寫入手機' });
+        dispatch({ type: 'record-manual-save', projectId: project.id, atMs });
       },
-      handBack: async () => {
+      saveToCloud: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
         if (!project?.dbKey || project.origin !== 'file') {
-          dispatch({ type: 'toast', message: '示範專案不能交回。請先開啟自己的 .db。' });
+          dispatch({ type: 'toast', message: '示範專案無法另存。請先開啟自己的 .db。' });
           return;
         }
         const extra = state.fileExtras[project.dbKey];
@@ -621,17 +665,17 @@ export function SampleProvider({ children }: { children: ReactNode }) {
             extra.cards,
             extra.logs,
           );
+          dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
         }
         const packed = await exportBook(project.dbKey);
         if (!packed) {
-          dispatch({ type: 'toast', message: '找不到可交回的檔案' });
+          dispatch({ type: 'toast', message: '找不到可匯出的檔案' });
           return;
         }
         const mode = await shareDatabase(packed.filename, packed.bytes);
-        dispatch({
-          type: 'toast',
-          message: mode === 'shared' ? '請在分享選單選 OneDrive 或其他位置' : '已下載檔案，可再存到電腦',
-        });
+        if (mode === 'cancelled') return;
+        dispatch({ type: 'record-export', projectId: project.id, atMs: Date.now() });
+        dispatch({ type: 'toast', message: '已另存' });
       },
       toast: (message) => dispatch({ type: 'toast', message }),
     }),

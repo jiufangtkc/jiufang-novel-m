@@ -162,15 +162,23 @@ export async function exportBook(key: string): Promise<{ filename: string; bytes
   return { filename: book.filename, bytes: book.bytes };
 }
 
-export async function shareDatabase(filename: string, bytes: Uint8Array): Promise<'shared' | 'downloaded'> {
+export async function shareDatabase(
+  filename: string,
+  bytes: Uint8Array,
+): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   const file = new File([copy], filename.endsWith('.db') ? filename : `${filename}.db`, {
     type: 'application/octet-stream',
   });
   if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
-    await navigator.share({ files: [file], title: '交回電腦' });
-    return 'shared';
+    try {
+      await navigator.share({ files: [file], title: '另存專案' });
+      return 'shared';
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
+      throw error;
+    }
   }
   const url = URL.createObjectURL(file);
   const link = document.createElement('a');

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
-import { BackIcon, SaveIcon } from '../components/Icons';
+import { BackIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
 import type { ChapterNode } from '../data/demo';
 import { countManuscriptWords } from '../domain/manuscriptWords';
@@ -17,7 +17,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   const project = useProject(projectId);
   const [focused, setFocused] = useState(false);
   const keyboardOpen = useWritingKeyboard(focused);
-  const { ref, dirty } = useWritingSurface({
+  const { ref } = useWritingSurface({
     chapterId: chapter.id,
     onCommit: (text) => actions.commitText(projectId, chapter.id, text),
     onLarge: actions.noteLarge,
@@ -43,16 +43,6 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
           <BackIcon />
         </button>
         <h1>{chapter.title}</h1>
-        <button
-          type="button"
-          className="icon-button save-button"
-          aria-label={dirty ? '有修改，停筆後會記下' : '已記下'}
-          data-dirty={dirty ? 'true' : 'false'}
-          data-testid="save-button"
-        >
-          <SaveIcon />
-          {dirty && <span className="save-dot" />}
-        </button>
       </header>
       <textarea
         ref={ref}
