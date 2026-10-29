@@ -113,6 +113,7 @@ describe('儲存專案', () => {
     await box.store.save('book-1', { filename: '原稿.db', file });
     const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
     expect(outcome).toEqual({ kind: 'write-failed', restored: true });
+    expect(saveNotice(outcome)).toBe('存檔失敗。稿件目前仍在 APP 暫存空間。');
     expect(Array.from(file.bytes)).toEqual(Array.from(ORIGINAL));
   });
 

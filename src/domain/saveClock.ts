@@ -1,3 +1,5 @@
+import { formatCalendarDateFromDate } from './formatCalendarDate';
+
 /** 顯示存檔時間（臺灣習慣，24 小時制）。 */
 export function formatClockTime(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
@@ -12,8 +14,7 @@ export function formatLastExportLabel(timestampMs: number | null, now = new Date
   if (startOfWhen.getTime() === startOfToday.getTime()) {
     return `今天 ${formatClockTime(when)}`;
   }
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${when.getFullYear()}/${pad(when.getMonth() + 1)}/${pad(when.getDate())} ${formatClockTime(when)}`;
+  return `${formatCalendarDateFromDate(when, now)} ${formatClockTime(when)}`;
 }
 
 export function formatLastProjectSave(timestampMs: number | null, now = new Date()): string {
@@ -24,8 +25,7 @@ export function formatLastProjectSave(timestampMs: number | null, now = new Date
     when.getMonth() === now.getMonth() &&
     when.getDate() === now.getDate();
   if (sameDay) return formatClockTime(when);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  return `${when.getFullYear()}/${pad(when.getMonth() + 1)}/${pad(when.getDate())} ${formatClockTime(when)}`;
+  return `${formatCalendarDateFromDate(when, now)} ${formatClockTime(when)}`;
 }
 
 export function latestSaveTimestamp(meta: {

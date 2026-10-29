@@ -62,6 +62,9 @@ const fontReady = await page.evaluate(async () => {
   return document.fonts.check('18px Iansui');
 });
 assert(fontReady, '芫荽沒有載入');
+const homeText = await page.getByTestId('home-screen').innerText();
+assert(homeText.includes('7月2日（四）'), '首頁舊稿日期應為月日星期');
+assert(!homeText.includes('2026-07-02'), '首頁不該再顯示 ISO 日期');
 await shot('01-首頁.png');
 
 await page.getByRole('link', { name: /霧港紀事/ }).click();
@@ -113,6 +116,8 @@ await page.getByRole('link', { name: '寫作過程紀錄' }).click();
 await page.getByTestId('logs-screen').waitFor();
 const logsText = await page.getByTestId('logs-screen').innerText();
 assert(logsText.includes('視覺化的寫作記錄'), '紀錄頁說明應為九方定案文案');
+assert(logsText.includes('10月') && logsText.includes('日（'), '紀錄列日期應為月日星期');
+assert(!/\d{4}-\d{2}-\d{2}/.test(logsText), '紀錄頁不該顯示 ISO 日期');
 assert(logsText.includes('大量貼上') && logsText.includes('寫作時間'), '紀錄頁缺少欄位');
 assert(!logsText.includes('Draft'), '紀錄頁不該出現英文標記');
 await shot('07-寫作過程紀錄.png');

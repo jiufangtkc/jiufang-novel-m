@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon, RefreshIcon } from '../components/Icons';
 import { OPEN_DB_FAIL } from '../copy/userFacing';
+import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { useSample } from '../state/sampleStore';
 
@@ -44,7 +45,7 @@ export function HomeScreen() {
                   <span>
                     <strong>{project.title}</strong>
                     <small>
-                      上次編輯：{project.updatedLabel}　·　字數：{bookWords(project.id)}
+                      上次編輯：{formatProjectUpdatedLabel(project.updatedLabel)}　·　字數：{bookWords(project.id)}
                     </small>
                   </span>
                 </Link>

@@ -13,7 +13,7 @@ export const FEATURE_PREPARING = '功能還在準備中。';
 
 export const SAVE_PERMISSION_DENIED = '沒有寫入權限，請再按一次並選「允許」。';
 
-export const SAVE_PARTIAL_FAIL = '沒存進原檔，原檔沒動。稿子還在 App 暫存空間。';
+export const SAVE_PARTIAL_FAIL = '存檔失敗。稿件目前仍在 APP 暫存空間。';
 
 export const SAVE_FATAL_FAIL = '存檔失敗。稿件目前仍在 APP 暫存空間。';
 

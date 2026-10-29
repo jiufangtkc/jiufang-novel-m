@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { BackIcon } from '../components/Icons';
 import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
+import { formatCalendarDate } from '../domain/formatCalendarDate';
 import { formatDuration } from '../domain/writingLog';
 import { useProject, useSample } from '../state/sampleStore';
 
@@ -25,7 +26,7 @@ export function LogsScreen() {
         <ul className="log-list">
           {rows.map((row) => (
             <li key={row.id} className="log-card">
-              <strong>{row.date}</strong>
+              <strong>{formatCalendarDate(row.date)}</strong>
               <span>字數 {row.word_count}</span>
               <span>寫作時間 {formatDuration(row.duration)}</span>
               <span>大量貼上 {row.paste_large_count} 次</span>
