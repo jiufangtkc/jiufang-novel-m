@@ -19,14 +19,16 @@ export function DailyProgressBar({
       aria-valuemin={0}
       aria-valuemax={goal}
       aria-valuenow={Math.min(words, goal)}
-      aria-label={met ? '今日目標已達成' : '今日目標進度'}
+      aria-label={
+        met ? `今日已寫 ${words} 字，已達到目標 ${goal} 字` : `今日已寫 ${words} 字，目標 ${goal} 字`
+      }
     >
-      <span className="daily-bar-caption">{met ? '✦ 今日已達標' : '今日目標'}</span>
+      <div className="daily-bar-heading">
+        <span>{met ? '✦ 今日已寫' : '今日已寫'} {words} 字{met ? '，已達標' : ''}</span>
+        <span>目標 {goal} 字</span>
+      </div>
       <span className="daily-bar-track">
         <span className="daily-bar-fill" style={{ width: `${ratio}%` }} />
-      </span>
-      <span className="daily-bar-count">
-        {words} / {goal}
       </span>
     </div>
   );

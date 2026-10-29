@@ -31,9 +31,11 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,txt}'],
-        globIgnores: ['**/iansui-*.woff2'],
+        // 字型小塊也放進預先快取。否則第一次打開時，字型往往在服務程式接手之前就下載完，
+        // 斷網後重新載入寫作畫面會退回系統字型。
+        globPatterns: ['**/*.{js,css,html,svg,png,ico,webmanifest,txt,woff2}'],
         navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/fonts\//],
         runtimeCaching: [
           {
             urlPattern: /\/fonts\/iansui\/.*\.woff2$/,

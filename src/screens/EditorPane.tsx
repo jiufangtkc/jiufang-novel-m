@@ -57,7 +57,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       <footer className="editor-status" data-testid="status-bar">
         <DailyProgressBar words={todayWords} goal={goal} met={isGlowing} />
         <div className="status-row">
-          <span>字數：{countWords(chapter.content ?? '')}</span>
+          <span data-testid="chapter-word-count">本章字數：{countWords(chapter.content ?? '')}</span>
           {chapter.progress && <StatusBadge code={chapter.progress} />}
         </div>
       </footer>

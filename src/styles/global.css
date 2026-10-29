@@ -362,18 +362,19 @@ a { color: var(--accent); }
 }
 
 .daily-bar {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   min-height: 28px;
 }
 
-.daily-bar-caption, .daily-bar-count {
+.daily-bar-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   font-weight: 500;
   color: var(--muted);
-  white-space: nowrap;
 }
 
 .daily-bar-track {
@@ -391,8 +392,7 @@ a { color: var(--accent); }
   transition: width 0.35s ease;
 }
 
-.daily-bar.is-met .daily-bar-caption,
-.daily-bar.is-met .daily-bar-count { color: var(--final); }
+.daily-bar.is-met .daily-bar-heading { color: var(--final); }
 
 .daily-bar.is-met .daily-bar-fill {
   background: var(--final);

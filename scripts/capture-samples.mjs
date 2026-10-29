@@ -181,30 +181,7 @@ assert(afterEnter === `${beforeEnter}\n`, '一般 Enter 應該可以換行');
 await page.getByTestId('bottom-nav').getByTestId('nav-stats').click();
 assert((await page.getByTestId('achievement-count').innerText()).includes('5'), '改今日目標後，已結算次數不該變');
 
-let offlineOk = false;
-let offlineNote = '';
-try {
-  await page.goto(base, { waitUntil: 'networkidle' });
-  await page.waitForFunction(async () => {
-    const registration = await navigator.serviceWorker?.ready;
-    return registration?.active?.state === 'activated';
-  });
-  await page.reload({ waitUntil: 'networkidle' });
-  const controlled = await page.evaluate(() => Boolean(navigator.serviceWorker.controller));
-  await context.setOffline(true);
-  const fetched = await page.evaluate(async () => {
-    const response = await fetch('/', { cache: 'no-store' });
-    const text = await response.text();
-    return { status: response.status, hasTitle: text.includes('九方小說編輯器M') };
-  });
-  offlineOk = controlled && fetched.status === 200 && fetched.hasTitle;
-  offlineNote = JSON.stringify({ controlled, fetched });
-} catch (error) {
-  offlineNote = error instanceof Error ? error.message : String(error);
-} finally {
-  await context.setOffline(false).catch(() => {});
-}
-
 assert(pageErrors.length === 0, `頁面錯誤：${pageErrors.join('；')}`);
-console.log(JSON.stringify({ fontReady, shots, pasteResult, pageErrors, offlineOk, offlineNote }, null, 2));
+console.log(JSON.stringify({ fontReady, shots, pasteResult, pageErrors }, null, 2));
+console.log('離線請另跑 scripts/offline-webkit.mjs。這個 WebKit 的模擬斷線會內部錯誤，不能拿來證明。');
 await browser.close();
