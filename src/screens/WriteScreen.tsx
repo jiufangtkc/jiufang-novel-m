@@ -94,9 +94,8 @@ export function WriteScreen() {
               type="button"
               className="menu-item"
               onClick={() => {
-                actions.toast(
-                  menuNode.type === 'file' ? '在此章新增幕會在下一階段開放' : '調整目錄結構會在下一階段開放',
-                );
+                if (menuNode.type === 'file') actions.addScene(project.id, menuNode.id);
+                else actions.toast('調整目錄結構會在下一階段開放');
                 setMenuId(null);
               }}
             >

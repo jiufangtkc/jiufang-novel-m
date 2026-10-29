@@ -305,7 +305,20 @@ a { color: var(--accent); }
   white-space: nowrap;
 }
 
-.chevron-spacer { width: 18px; flex-shrink: 0; }
+.tree-chevron,
+.tree-chevron-spacer {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+.tree-chevron {
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--muted);
+}
 .tree-main > svg { color: var(--muted); flex-shrink: 0; }
 .tree-icon { display: grid; color: var(--muted); flex-shrink: 0; }
 .tree-icon.type-folder { color: var(--warning); }
@@ -392,7 +405,25 @@ a { color: var(--accent); }
   transition: width 0.35s ease;
 }
 
-.daily-bar.is-met .daily-bar-heading { color: var(--final); }
+.daily-bar.is-met .daily-bar-heading,
+.daily-bar.is-met .daily-bar-compact { color: var(--final); }
+
+.daily-bar.is-compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 28px;
+}
+.daily-bar.is-compact .daily-bar-track { flex: 1; height: 6px; }
+.daily-bar-compact {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.editor.is-keyboard .editor-status { padding: 6px 16px 8px; }
+.editor.is-keyboard .status-row { display: none; }
+html.keyboard-open .bottom-nav { display: none; }
 
 .daily-bar.is-met .daily-bar-fill {
   background: var(--final);

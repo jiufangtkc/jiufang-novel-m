@@ -23,12 +23,26 @@ export function ChapterTree({
     <ul className="tree-list">
       {nodes.map((node) => {
         const hasChildren = Boolean(node.children?.length);
+        const canToggle = node.type === 'folder' || node.type === 'file';
         return (
           <li key={node.id}>
             <div
               className={node.id === selectedId ? 'tree-row is-selected' : 'tree-row'}
-              style={{ paddingLeft: 12 + depth * 16 }}
+              style={{ paddingLeft: 4 + depth * 16 }}
             >
+              {canToggle ? (
+                <button
+                  type="button"
+                  className="tree-chevron"
+                  aria-expanded={Boolean(node.expanded)}
+                  aria-label={node.expanded ? `收合${node.title}` : `展開${node.title}`}
+                  onClick={() => onToggle(node.id)}
+                >
+                  <ChevronIcon expanded={Boolean(node.expanded)} />
+                </button>
+              ) : (
+                <span className="tree-chevron-spacer" />
+              )}
               <button
                 type="button"
                 className="tree-main"
@@ -37,11 +51,6 @@ export function ChapterTree({
                   else navigate(`/p/${projectId}/write/${node.id}`);
                 }}
               >
-                {hasChildren ? (
-                  <ChevronIcon expanded={Boolean(node.expanded)} />
-                ) : (
-                  <span className="chevron-spacer" />
-                )}
                 <span className={`tree-icon type-${node.type}`}>
                   {node.type === 'folder' ? (
                     <FolderIcon size={20} />

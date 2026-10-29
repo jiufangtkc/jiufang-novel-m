@@ -36,6 +36,7 @@ import {
   type ChapterNode,
   type DemoProject,
 } from '../data/demo';
+import { addSceneUnderChapter, createScene, loadProjects, saveProjects } from '../domain/outline';
 
 interface SampleState {
   projects: DemoProject[];
@@ -56,6 +57,7 @@ type Action =
   | { type: 'set-goal'; goal: number }
   | { type: 'set-hour'; hour: number }
   | { type: 'set-book-goal'; projectId: string; bookGoal: number }
+  | { type: 'add-scene'; projectId: string; chapterId: string; sceneId: string }
   | { type: 'toast'; message: string | null };
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
@@ -78,11 +80,21 @@ function mapProject(
   return projects.map((project) => (project.id === projectId ? updater(project) : project));
 }
 
+function savedProjects(): DemoProject[] | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    return loadProjects(localStorage);
+  } catch {
+    return null;
+  }
+}
+
 function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
+  const projects = savedProjects() ?? DEMO_PROJECTS;
   return {
-    projects: DEMO_PROJECTS,
-    recentIds: DEMO_PROJECTS.map((project) => project.id),
+    projects,
+    recentIds: projects.map((project) => project.id),
     schedule,
     logs: alignToday(demoLogs(), schedule),
     toast: null,
@@ -192,6 +204,23 @@ function reduce(state: SampleState, action: Action): SampleState {
         schedule: changeDayEndHour(state.schedule, action.hour, now),
         toast: '已記下結束時刻，從下一個寫作日開始用',
       };
+    case 'add-scene': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      const chapter = project ? findNode(project.nodes, action.chapterId) : null;
+      if (!project || !chapter) return state;
+      const scene = createScene(chapter, action.sceneId);
+      const nodes = addSceneUnderChapter(project.nodes, action.chapterId, scene);
+      if (!nodes) return state;
+      return {
+        ...state,
+        toast: '已在此章新增幕',
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          updatedLabel: '剛剛',
+          nodes,
+        })),
+      };
+    }
     default:
       return state;
   }
@@ -208,6 +237,7 @@ interface SampleActions {
   setGoal: (goal: number) => void;
   setHour: (hour: number) => void;
   setBookGoal: (projectId: string, bookGoal: number) => void;
+  addScene: (projectId: string, chapterId: string) => void;
   toast: (message: string | null) => void;
 }
 
@@ -224,6 +254,15 @@ const SampleContext = createContext<SampleContextValue | null>(null);
 
 export function SampleProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reduce, undefined, () => createState(new Date()));
+
+  useEffect(() => {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      saveProjects(localStorage, state.projects);
+    } catch {
+      // 私人瀏覽可能不准寫入，畫面仍可繼續用。
+    }
+  }, [state.projects]);
 
   useEffect(() => {
     if (!state.toast) return;
@@ -249,6 +288,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       setGoal: (goal) => dispatch({ type: 'set-goal', goal }),
       setHour: (hour) => dispatch({ type: 'set-hour', hour }),
       setBookGoal: (projectId, bookGoal) => dispatch({ type: 'set-book-goal', projectId, bookGoal }),
+      addScene: (projectId, chapterId) =>
+        dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
       toast: (message) => dispatch({ type: 'toast', message }),
     }),
     [],
