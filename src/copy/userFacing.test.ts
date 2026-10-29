@@ -28,6 +28,21 @@ describe('章節目錄草案文案', () => {
     expect(copy.TREE_ORGANIZE).toBe('整理目錄');
   });
 
+  it('舊版、單篇與上下章的句子先照草案', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.TREE_FIND_VERSION).toBe('找回之前的版本');
+    expect(copy.TREE_FIND_DELETED).toBe('找回刪掉的章');
+    expect(copy.TREE_DELETE_RECOVERABLE).toBe('之後仍可從目錄最下方的「找回刪掉的章」放回來。');
+    expect(copy.TREE_PREV_CHAPTER).toBe('上一章');
+    expect(copy.TREE_NEXT_CHAPTER).toBe('下一章');
+    expect(copy.NEW_BOOK_NOVEL).toBe('長篇（卷章幕）');
+    expect(copy.NEW_BOOK_SINGLE).toBe('單篇（短篇、散文）');
+    expect(copy.TREE_RESTORE_VERSION).toBe('用這一版');
+    expect(copy.TREE_PUT_BACK).toBe('放回原位置');
+    expect(copy.TREE_PUT_END).toBe('放到最後面');
+    expect(copy.versionRowLabel('10月29日（四） 19:57', '120')).toBe('10月29日（四） 19:57 · 120 字');
+  });
+
   it('更多摘要：幕不寫幕數，卷要寫章數', () => {
     expect(treeMoreSummary(TREE_KIND_SCENE, 0, 0, '12')).toBe('幕 · 共 12 字');
     expect(treeMoreSummary(TREE_KIND_CHAPTER, 0, 2, '3,280')).toBe('章 · 2 幕 · 共 3,280 字');

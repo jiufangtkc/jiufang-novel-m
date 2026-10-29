@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { BookmarkIcon, ChevronIcon, FileIcon, FolderIcon, GripIcon, MoreIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
 import { TREE_SAVE_NAME } from '../copy/userFacing';
+import { focusTitleInput } from './titleCaret';
 import type { ChapterNode } from '../data/demo';
 
 export function ChapterTree({
@@ -201,8 +202,7 @@ function InlineRename({
 }) {
   const ref = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    ref.current?.focus();
-    ref.current?.select();
+    if (ref.current) focusTitleInput(ref.current);
   }, []);
   return (
     <form

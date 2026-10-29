@@ -31,6 +31,10 @@ export interface DemoProject {
   origin?: 'demo' | 'file';
   dbKey?: string;
   filename?: string;
+  /** 只留在 App。單篇進檔時仍是一章，不寫進 .db 的新欄位。 */
+  shape?: 'novel' | 'single';
+  lastOpenedNodeId?: string | null;
+  lastCursor?: number;
 }
 
 export function demoParagraph(label: string, index: number): string {

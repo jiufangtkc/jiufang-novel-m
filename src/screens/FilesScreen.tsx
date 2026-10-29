@@ -7,6 +7,7 @@ import {
   OPEN_DB_HINT,
 } from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
+import { writePath } from '../domain/openManuscript';
 import { formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
 import { useProject, useSample } from '../state/sampleStore';
 import { appSpaceStatusLine, isComputerLayout } from './filesStatus';
@@ -51,8 +52,8 @@ export function FilesScreen() {
   const openAnother = async () => {
     if (canPickLocalFiles()) {
       try {
-        const id = await actions.openWithPicker();
-        if (id) navigate(`/p/${id}/write`);
+        const opened = await actions.openWithPicker();
+        if (opened) navigate(writePath(opened.id, opened.chapterId));
       } catch {
         actions.toast(OPEN_DB_FAIL);
       }
@@ -157,7 +158,7 @@ export function FilesScreen() {
             if (!file) return;
             void actions
               .importFile(file)
-              .then((id) => navigate(`/p/${id}/write`))
+              .then((opened) => navigate(writePath(opened.id, opened.chapterId)))
               .catch(() => actions.toast(OPEN_DB_FAIL));
           }}
         />

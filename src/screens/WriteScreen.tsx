@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { useParams } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { formatInteger } from '../domain/formatNumber';
+import { formatCalendarDateFromDate } from '../domain/formatCalendarDate';
+import { formatClockTime } from '../domain/saveClock';
 import {
   canMoveBy,
   expandToNode,
@@ -9,14 +11,27 @@ import {
   moveBy,
   moveChapterToVolume,
   moveNode,
+  placeRecovered,
   removalImpact,
   renameNode,
   resolveDrop,
   withoutNode,
 } from '../domain/chapterOps';
+import { nextChapterTitle, sourceTitleForNewChapter } from '../domain/chapterTitle';
+import {
+  archiveDeletion,
+  deletedFromNode,
+  forgetDeleted,
+  versionFromNode,
+  versionsForNode,
+  withVersion,
+  type ChapterVersion,
+  type DeletedRecord,
+} from '../domain/chapterVersions';
 import { createScene } from '../domain/outline';
 import { PROGRESS_ORDER, progressLabel } from '../domain/labels';
-import { findNode, type ChapterNode } from '../data/demo';
+import { findNode, updateNode, type ChapterNode } from '../data/demo';
+import { readLiveDraftFromEditor } from '../editor/liveDraft';
 import {
   CHAPTER_NOT_FOUND,
   MANUSCRIPT_NOT_FOUND,
@@ -32,7 +47,16 @@ import {
   TREE_DESKTOP_HINT,
   TREE_DONE,
   TREE_DRAG_HINT,
+  TREE_DELETE_RECOVERABLE,
   TREE_EMPTY_NAME,
+  TREE_FIND_DELETED,
+  TREE_FIND_VERSION,
+  TREE_PUT_BACK,
+  TREE_PUT_END,
+  TREE_RESTORE_VERSION,
+  TREE_VERSION_EMPTY,
+  TREE_VERSION_PREVIEW,
+  TREE_VERSION_READONLY,
   TREE_KEEP,
   TREE_KIND_CHAPTER,
   TREE_KIND_SCENE,
@@ -42,7 +66,6 @@ import {
   TREE_MOVE_ROOT,
   TREE_MOVE_UP,
   TREE_MOVE_VOLUME,
-  TREE_NEW_CHAPTER,
   TREE_NEW_VOLUME,
   TREE_ORGANIZE,
   TREE_PROGRESS,
@@ -55,15 +78,19 @@ import {
   treeDeleteImpact,
   treeDeleteQuestion,
   treeMoreSummary,
+  versionRowLabel,
   treeMovedToast,
   treeSelectedHint,
 } from '../copy/userFacing';
 import { useProject, useSample } from '../state/sampleStore';
 import { ChapterTree } from './ChapterTree';
 import { EditorPane } from './EditorPane';
+import { focusTitleInput } from './titleCaret';
 import { loadTreePlace, saveTreePlace, scrollTopForRow, type TreePlace } from './treeScroll';
+import { useBookArchive } from './useBookArchive';
 
-type UndoBar = { nodes: ChapterNode[]; text: string; token: number };
+type UndoBar = { nodes: ChapterNode[]; text: string; token: number; deletedId?: string };
+type RenameIntent = 'stay' | 'write';
 type MenuKind = 'short' | 'full' | 'more' | 'progress' | 'volume';
 
 function useDesktop(): boolean {
@@ -81,8 +108,10 @@ function useDesktop(): boolean {
 
 export function WriteScreen() {
   const { projectId = '', chapterId } = useParams();
+  const navigate = useNavigate();
   const project = useProject(projectId);
   const { actions } = useSample();
+  const { archive, update: updateArchive } = useBookArchive(projectId);
   const desktop = useDesktop();
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<ChapterNode[]>(project?.nodes ?? []);
@@ -96,6 +125,11 @@ export function WriteScreen() {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
   const [nameError, setNameError] = useState(false);
+  const [renameIntent, setRenameIntent] = useState<RenameIntent>('stay');
+  const [versionFor, setVersionFor] = useState<string | null>(null);
+  const [preview, setPreview] = useState<ChapterVersion | null>(null);
+  const [deletedOpen, setDeletedOpen] = useState(false);
+  const [editorEpoch, setEditorEpoch] = useState(0);
   const [highlightId, setHighlightId] = useState<string | null>(chapterId ?? null);
   const pendingScroll = useRef<string | null>(null);
   const restoredKey = useRef<string | null>(null);
@@ -199,6 +233,13 @@ export function WriteScreen() {
       const id = pickedId ?? highlightId;
       if ((event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey) && undo) {
         event.preventDefault();
+        if (undo.deletedId) {
+          const deletedId = undo.deletedId;
+          updateArchive((currentArchive) => ({
+            ...currentArchive,
+            deleted: forgetDeleted(currentArchive.deleted, deletedId),
+          }));
+        }
         actions.setNodes(current.id, undo.nodes);
         setUndo(null);
         return;
@@ -249,11 +290,90 @@ export function WriteScreen() {
     setHighlightId(id);
   }
 
-  function commit(next: ChapterNode[] | null, bar: string | null) {
+  function commit(next: ChapterNode[] | null, bar: string | null, deletedId?: string) {
     if (!next) return;
-    if (bar) setUndo({ nodes: book.nodes, text: bar, token: Date.now() });
+    if (bar) setUndo({ nodes: book.nodes, text: bar, token: Date.now(), deletedId });
     else setUndo(null);
     actions.setNodes(book.id, next);
+  }
+
+  function undoNow() {
+    if (!undo) return;
+    if (undo.deletedId) {
+      const deletedId = undo.deletedId;
+      updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, deletedId) }));
+    }
+    actions.setNodes(book.id, undo.nodes);
+    setUndo(null);
+  }
+
+  function liveNodes(): ChapterNode[] {
+    const live = readLiveDraftFromEditor();
+    if (!live || live.projectId !== book.id || !findNode(book.nodes, live.chapterId)) return book.nodes;
+    return updateNode(book.nodes, live.chapterId, (item) => ({ ...item, content: live.text }));
+  }
+
+  function removeNode(id: string) {
+    const node = findNode(book.nodes, id);
+    const next = withoutNode(book.nodes, id);
+    if (!node || !next) return;
+    const stamped = liveNodes();
+    const when = Date.now();
+    const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
+    if (record) updateArchive((current) => archiveDeletion(current, record, versionsForNode(record.node, when)));
+    commit(next, treeDeletedToast(node.title), record?.id);
+    if (pickedId === id) setPickedId(null);
+    setConfirmId(null);
+    setMenu(null);
+  }
+
+  function finishRename(id: string, title: string, intent: RenameIntent) {
+    const next = renameNode(book.nodes, id, title);
+    if (!next) {
+      setNameError(true);
+      return;
+    }
+    commit(next, null);
+    setRenameId(null);
+    setInlineId(null);
+    setNameError(false);
+    setRenameIntent('stay');
+    if (intent === 'write') navigate(`/p/${book.id}/write/${id}`);
+  }
+
+  function whenLabel(savedAt: number): string {
+    const date = new Date(savedAt);
+    return `${formatCalendarDateFromDate(date)} ${formatClockTime(date)}`;
+  }
+
+  function recover(record: DeletedRecord, atEnd: boolean) {
+    const placed = placeRecovered(book.nodes, record, atEnd);
+    actions.setNodes(book.id, expandToNode(placed, record.node.id));
+    updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, record.id) }));
+    setDeletedOpen(false);
+    setUndo(null);
+    pendingScroll.current = record.node.id;
+  }
+
+  function restoreVersion(version: ChapterVersion) {
+    const node = findNode(book.nodes, version.nodeId);
+    if (!node || node.type === 'folder') return;
+    const live = readLiveDraftFromEditor();
+    const content = live && live.projectId === book.id && live.chapterId === node.id ? live.text : (node.content ?? '');
+    const savedAt = Date.now();
+    updateArchive((current) =>
+      withVersion(
+        current,
+        versionFromNode({ id: node.id, title: node.title, content }, savedAt, `v-${savedAt}-${node.id}`),
+      ),
+    );
+    actions.setNodes(
+      book.id,
+      updateNode(book.nodes, node.id, (item) => ({ ...item, title: version.title, content: version.content })),
+    );
+    if (chapterId === node.id) setEditorEpoch((value) => value + 1);
+    setPreview(null);
+    setVersionFor(null);
   }
 
   function shift(id: string, delta: -1 | 1) {
@@ -268,28 +388,30 @@ export function WriteScreen() {
   function requestDelete(id: string) {
     const node = findNode(book.nodes, id);
     if (!node) return;
-    if (removalImpact(node).needsConfirm) setConfirmId(id);
-    else {
-      commit(withoutNode(book.nodes, id), treeDeletedToast(node.title));
-      if (pickedId === id) setPickedId(null);
+    if (removalImpact(node).needsConfirm) {
+      setConfirmId(id);
+      setMenu(null);
+      return;
     }
-    setMenu(null);
+    removeNode(id);
   }
 
   function addChapter(anchorId: string | null) {
     const id = `ch-${Date.now()}`;
+    const title = nextChapterTitle(sourceTitleForNewChapter(book.nodes, anchorId));
     const node: ChapterNode = {
       id,
       type: 'file',
-      title: TREE_NEW_CHAPTER,
+      title,
       progress: 'Draft',
       content: '',
       expanded: true,
     };
     const next = insertBelowAnchor(book.nodes, anchorId, node);
-    commit(next, treeAddedToast(TREE_NEW_CHAPTER));
+    commit(next, treeAddedToast(title));
     pendingScroll.current = id;
     setPickedId(id);
+    setRenameIntent('write');
     if (desktop) setInlineId(id);
     else setRenameId(id);
     setMenu(null);
@@ -371,28 +493,28 @@ export function WriteScreen() {
               setDraggingId(id);
               setPickedId(id);
             }}
-            onRename={(id, title) => {
-              const next = renameNode(book.nodes, id, title);
-              if (!next) return;
-              commit(next, null);
+            onRename={(id, title) => finishRename(id, title, renameIntent)}
+            onCancelRename={() => {
               setInlineId(null);
+              setRenameIntent('stay');
             }}
-            onCancelRename={() => setInlineId(null)}
             onInlineRename={(id) => {
               setPickedId(id);
               setInlineId(id);
             }}
           />
+          {archive.deleted.length > 0 ? (
+            <button type="button" className="recover-deleted" data-testid="find-deleted" onClick={() => setDeletedOpen(true)}>
+              {TREE_FIND_DELETED}
+            </button>
+          ) : null}
         </div>
         {undo ? (
           <div className="undo-bar" data-testid="tree-undo" key={undo.token}>
             <span>{undo.text}</span>
             <button
               type="button"
-              onClick={() => {
-                actions.setNodes(book.id, undo.nodes);
-                setUndo(null);
-              }}
+              onClick={undoNow}
             >
               {TREE_UNDO}
             </button>
@@ -409,7 +531,11 @@ export function WriteScreen() {
               <button type="button" disabled={!picked || !canMoveBy(book.nodes, picked.id, 1)} onClick={() => picked && shift(picked.id, 1)}>
                 {TREE_MOVE_DOWN}
               </button>
-              <button type="button" disabled={!picked} onClick={() => picked && setRenameId(picked.id)}>
+              <button type="button" disabled={!picked} onClick={() => {
+                if (!picked) return;
+                setRenameIntent('stay');
+                setRenameId(picked.id);
+              }}>
                 {TREE_RENAME}
               </button>
               <button type="button" disabled={!picked} onClick={() => picked && setMenu({ id: picked.id, kind: 'more' })}>
@@ -436,7 +562,7 @@ export function WriteScreen() {
       </section>
       <section className="editor-pane">
         {chapter ? (
-          <EditorPane projectId={book.id} chapter={chapter} />
+          <EditorPane key={`${chapter.id}:${editorEpoch}`} projectId={book.id} chapter={chapter} />
         ) : chapterId ? (
           <div className="editor-empty">
             <p>{CHAPTER_NOT_FOUND}</p>
@@ -481,7 +607,12 @@ export function WriteScreen() {
               )}
             </p>
           ) : null}
-          <button type="button" className="menu-item" onClick={() => { setMenu(null); desktop ? setInlineId(menuNode.id) : setRenameId(menuNode.id); }}>
+          <button type="button" className="menu-item" onClick={() => {
+            setMenu(null);
+            setRenameIntent('stay');
+            if (desktop) setInlineId(menuNode.id);
+            else setRenameId(menuNode.id);
+          }}>
             {TREE_RENAME}
             {desktop ? <small>F2</small> : null}
           </button>
@@ -516,6 +647,18 @@ export function WriteScreen() {
                 </button>
               ) : null}
             </>
+          ) : null}
+          {menuNode.type !== 'folder' ? (
+            <button
+              type="button"
+              className="menu-item"
+              onClick={() => {
+                setVersionFor(menuNode.id);
+                setMenu(null);
+              }}
+            >
+              {TREE_FIND_VERSION}
+            </button>
           ) : null}
           <div className="menu-sep" />
           <button type="button" className="menu-item danger" onClick={() => requestDelete(menuNode.id)}>
@@ -554,7 +697,7 @@ export function WriteScreen() {
       ) : null}
 
       {renameNodeNow ? (
-        <div className="sheet-backdrop" role="presentation" onClick={() => setRenameId(null)}>
+        <div className="sheet-backdrop" role="presentation" onClick={() => { setRenameId(null); setRenameIntent('stay'); }}>
           <form
             className="dialog"
             role="dialog"
@@ -564,26 +707,20 @@ export function WriteScreen() {
               event.preventDefault();
               const input = event.currentTarget.elements.namedItem('title');
               const value = input instanceof HTMLInputElement ? input.value : '';
-              const next = renameNode(book.nodes, renameNodeNow.id, value);
-              if (!next) {
-                setNameError(true);
-                return;
-              }
-              commit(next, null);
-              setRenameId(null);
-              setNameError(false);
+              finishRename(renameNodeNow.id, value, renameIntent);
             }}
           >
             <h2>{TREE_RENAME}</h2>
             <input
               name="title"
+              data-testid="rename-title"
               defaultValue={renameNodeNow.title}
               autoFocus
-              onFocus={(event) => event.currentTarget.select()}
+              onFocus={(event) => focusTitleInput(event.currentTarget)}
             />
             {nameError ? <p className="hint">{TREE_EMPTY_NAME}</p> : null}
             <div className="dialog-actions rename-actions">
-              <button type="button" className="button secondary" onClick={() => setRenameId(null)}>
+              <button type="button" className="button secondary" onClick={() => { setRenameId(null); setRenameIntent('stay'); }}>
                 {TREE_CANCEL}
               </button>
               <button type="submit" className="button primary">
@@ -600,15 +737,12 @@ export function WriteScreen() {
             <h2>{treeDeleteQuestion(confirmNode.title)}</h2>
             <p>{treeDeleteImpact(impact.chapters, impact.scenes, formatInteger(impact.words))}</p>
             <p className="hint">{TREE_UNDO_HINT}</p>
+            <p className="hint">{TREE_DELETE_RECOVERABLE}</p>
             <div className="dialog-actions delete-actions">
               <button
                 type="button"
                 className="button danger"
-                onClick={() => {
-                  commit(withoutNode(book.nodes, confirmNode.id), treeDeletedToast(confirmNode.title));
-                  setConfirmId(null);
-                  if (pickedId === confirmNode.id) setPickedId(null);
-                }}
+                onClick={() => removeNode(confirmNode.id)}
               >
                 {TREE_CONFIRM_DELETE}
               </button>
@@ -618,6 +752,64 @@ export function WriteScreen() {
             </div>
           </div>
         </div>
+      ) : null}
+
+      {versionFor ? (
+        <Sheet title={TREE_FIND_VERSION} testId="version-sheet" onClose={() => { setVersionFor(null); setPreview(null); }}>
+          {(archive.versions[versionFor] ?? []).length === 0 ? (
+            <p className="hint">{TREE_VERSION_EMPTY}</p>
+          ) : (
+            <div className="version-list">
+              {(archive.versions[versionFor] ?? []).map((version) => (
+                <div key={version.id} className="version-row">
+                  <span>{versionRowLabel(whenLabel(version.savedAt), formatInteger(version.wordCount))}</span>
+                  <button type="button" onClick={() => setPreview(version)}>
+                    {TREE_VERSION_PREVIEW}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </Sheet>
+      ) : null}
+
+      {preview ? (
+        <div className="sheet-backdrop" role="presentation" onClick={() => setPreview(null)}>
+          <div className="dialog" role="dialog" data-testid="version-preview" onClick={(event) => event.stopPropagation()}>
+            <h2>{preview.title}</h2>
+            <p className="hint">{TREE_VERSION_READONLY}</p>
+            <textarea className="version-preview" readOnly value={preview.content} aria-label={TREE_VERSION_PREVIEW} />
+            <div className="dialog-actions">
+              <button type="button" className="button secondary" onClick={() => setPreview(null)}>
+                {TREE_CANCEL}
+              </button>
+              <button type="button" className="button primary" onClick={() => restoreVersion(preview)}>
+                {TREE_RESTORE_VERSION}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deletedOpen ? (
+        <Sheet title={TREE_FIND_DELETED} testId="deleted-sheet" onClose={() => setDeletedOpen(false)}>
+          <div className="version-list">
+            {archive.deleted.map((record) => (
+              <div key={record.id} className="deleted-row">
+                <strong>{record.title}</strong>
+                <p className="hint">{versionRowLabel(whenLabel(record.deletedAt), formatInteger(removalImpact(record.node).words))}</p>
+                <div className="dialog-actions">
+                  <button type="button" className="button secondary" onClick={() => recover(record, false)}>
+                    {TREE_PUT_BACK}
+                  </button>
+                  <button type="button" className="button secondary" onClick={() => recover(record, true)}>
+                    {TREE_PUT_END}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Sheet>
       ) : null}
     </div>
   );

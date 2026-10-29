@@ -278,6 +278,73 @@ export function resolveDrop(
   return null;
 }
 
+export function cloneNode(node: ChapterNode): ChapterNode {
+  return { ...node, children: node.children?.map((child) => cloneNode(child)) };
+}
+
+export function countNodes(nodes: readonly ChapterNode[], type: ChapterNode['type']): number {
+  return nodes.reduce(
+    (sum, node) => sum + (node.type === type ? 1 : 0) + countNodes(node.children ?? [], type),
+    0,
+  );
+}
+
+/** 目錄由上到下的章與幕，收合的卷裡面也算。 */
+export function writingOrder(nodes: readonly ChapterNode[]): ChapterNode[] {
+  const rows: ChapterNode[] = [];
+  const walk = (list: readonly ChapterNode[]) => {
+    for (const node of list) {
+      if (node.type === 'file' || node.type === 'scene') rows.push(node);
+      if (node.children?.length) walk(node.children);
+    }
+  };
+  walk(nodes);
+  return rows;
+}
+
+/** 上一章／下一章只在章之間移動，順序跟目錄一樣。 */
+export function neighborChapterId(nodes: readonly ChapterNode[], id: string, delta: -1 | 1): string | null {
+  const files = writingOrder(nodes).filter((node) => node.type === 'file');
+  const current = findNode(nodes, id);
+  const chapterId = current?.type === 'scene' ? (locateNode(nodes, id)?.parentId ?? id) : id;
+  const index = files.findIndex((node) => node.id === chapterId);
+  if (index < 0) return null;
+  return files[index + delta]?.id ?? null;
+}
+
+function appendRecovered(nodes: readonly ChapterNode[], node: ChapterNode): ChapterNode[] {
+  if (node.type === 'scene') {
+    const files = writingOrder(nodes).filter((item) => item.type === 'file');
+    const last = files[files.length - 1];
+    if (last) {
+      const placed = insertNode(nodes, last.id, last.children?.length ?? 0, node);
+      if (placed) return placed;
+    }
+    const asChapter: ChapterNode = { ...node, type: 'file' };
+    return insertNode(nodes, null, nodes.length, asChapter) ?? [...nodes, asChapter];
+  }
+  return insertNode(nodes, null, nodes.length, node) ?? [...nodes, node];
+}
+
+/** 刪掉的章放回原位置；原位置不在了，或指定放到最後，就接到目錄結尾。 */
+export function placeRecovered(
+  nodes: readonly ChapterNode[],
+  record: { node: ChapterNode; parentId: string | null; index: number },
+  atEnd: boolean,
+): ChapterNode[] {
+  if (findNode(nodes, record.node.id)) return [...nodes];
+  const node = cloneNode(record.node);
+  if (!atEnd) {
+    const parent = record.parentId == null ? null : findNode(nodes, record.parentId);
+    const parentExists = record.parentId == null || parent != null;
+    if (parentExists && parentAllows(parent, node.type)) {
+      const placed = insertNode(nodes, record.parentId, record.index, node);
+      if (placed) return placed;
+    }
+  }
+  return appendRecovered(nodes, node);
+}
+
 /** 同層 sort_order，與 writeFileProject 寫回 chapters 的順序相同。 */
 export function siblingOrders(nodes: readonly ChapterNode[], parentId: string | null = null): { id: string; parentId: string | null; sortOrder: number }[] {
   const rows: { id: string; parentId: string | null; sortOrder: number }[] = [];

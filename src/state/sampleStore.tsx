@@ -57,6 +57,7 @@ import {
   type ChapterNode,
   type DemoProject,
 } from '../data/demo';
+import { newChapterId, shapeAfterEdit } from '../domain/openManuscript';
 import { addSceneUnderChapter, createScene, loadProjects, saveProjects } from '../domain/outline';
 
 interface SampleState {
@@ -84,7 +85,8 @@ interface SampleState {
 
 type Action =
   | { type: 'dismiss-recent'; id: string }
-  | { type: 'add-project'; id: string; title: string }
+  | { type: 'add-project'; id: string; title: string; shape: 'novel' | 'single' }
+  | { type: 'remember-place'; projectId: string; nodeId: string; cursor: number }
   | { type: 'toggle'; projectId: string; nodeId: string }
   | { type: 'set-progress'; projectId: string; nodeId: string; progress: ProgressCode }
   | { type: 'commit-text'; projectId: string; nodeId: string; text: string }
@@ -235,6 +237,25 @@ function fileLogsToRows(logs: readonly FileLog[]): WritingLogRow[] {
   }));
 }
 
+function rememberFilePlace(
+  state: SampleState,
+  projectId: string,
+  nodeId: string,
+  cursor: number,
+): SampleState['fileExtras'] {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project?.dbKey || project.origin !== 'file') return state.fileExtras;
+  const extra = state.fileExtras[project.dbKey];
+  if (!extra) return state.fileExtras;
+  return {
+    ...state.fileExtras,
+    [project.dbKey]: {
+      ...extra,
+      info: { ...extra.info, lastOpenedNodeId: nodeId, lastCursorPosition: cursor },
+    },
+  };
+}
+
 function syncFileLog(
   extras: SampleState['fileExtras'],
   project: DemoProject,
@@ -329,8 +350,8 @@ function reduce(state: SampleState, action: Action): SampleState {
           categoryOrder: null,
           expandedCategories: null,
           categoriesMeta: '{}',
-          lastOpenedNodeId: null,
-          lastCursorPosition: 0,
+          lastOpenedNodeId: project.lastOpenedNodeId ?? null,
+          lastCursorPosition: project.lastCursor ?? 0,
         },
         cards: [],
         logs: state.logs.map((log) => ({
@@ -361,18 +382,23 @@ function reduce(state: SampleState, action: Action): SampleState {
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
     case 'add-project': {
       const title = action.title.trim() || '【示範】未命名專案';
+      const chapterId = newChapterId(action.id);
+      const single = action.shape === 'single';
       const project: DemoProject = {
         id: action.id,
         title,
         updatedLabel: '剛剛',
         bookGoal: 100000,
+        shape: action.shape,
+        lastOpenedNodeId: single ? chapterId : null,
+        lastCursor: 0,
         nodes: [
           {
-            id: `${action.id}-ch`,
+            id: chapterId,
             type: 'file',
-            title: '第一章　起筆',
+            title: single ? title : '第一章　起筆',
             progress: 'Draft',
-            content: '【示範】在這裡寫作。這段是假資料。\n',
+            content: single ? '' : '【示範】在這裡寫作。這段是假資料。\n',
           },
         ],
       };
@@ -484,16 +510,31 @@ function reduce(state: SampleState, action: Action): SampleState {
         logs: state.demoLogs,
       };
     }
+    case 'remember-place':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => ({
+          ...project,
+          lastOpenedNodeId: action.nodeId,
+          lastCursor: action.cursor,
+        })),
+        fileExtras: rememberFilePlace(state, action.projectId, action.nodeId, action.cursor),
+      };
     case 'attach-file': {
       if (action.quiet && state.projects.some((item) => item.id === action.project.id)) return state;
-      const projects = [action.project, ...state.projects.filter((item) => item.id !== action.project.id)];
+      const project: DemoProject = {
+        ...action.project,
+        lastOpenedNodeId: action.project.lastOpenedNodeId ?? action.extras.info.lastOpenedNodeId,
+        lastCursor: action.project.lastCursor ?? action.extras.info.lastCursorPosition,
+      };
+      const projects = [project, ...state.projects.filter((item) => item.id !== project.id)];
       return {
         ...state,
         projects,
         recentIds: [action.project.id, ...state.recentIds.filter((id) => id !== action.project.id)],
         goalById: { ...state.goalById, [action.project.id]: action.schedule },
-        fileExtras: { ...state.fileExtras, [action.project.dbKey ?? action.project.id]: action.extras },
-        activeProjectId: action.quiet ? state.activeProjectId : action.project.id,
+        fileExtras: { ...state.fileExtras, [project.dbKey ?? project.id]: action.extras },
+        activeProjectId: action.quiet ? state.activeProjectId : project.id,
         schedule: action.quiet ? state.schedule : action.schedule,
         logs: action.quiet ? state.logs : fileLogsToRows(action.extras.logs),
         toast: action.quiet ? state.toast : '已匯入檔案',
@@ -505,6 +546,7 @@ function reduce(state: SampleState, action: Action): SampleState {
         projects: mapProject(state.projects, action.projectId, (project) => ({
           ...project,
           updatedLabel: '剛剛',
+          shape: shapeAfterEdit(project.shape, action.nodes),
           nodes: action.nodes,
         })),
       };
@@ -532,7 +574,8 @@ function reduce(state: SampleState, action: Action): SampleState {
 
 interface SampleActions {
   dismissRecent: (id: string) => void;
-  addProject: (title: string) => string;
+  addProject: (title: string, shape?: 'novel' | 'single') => string;
+  rememberPlace: (projectId: string, nodeId: string, cursor: number) => void;
   toggleNode: (projectId: string, nodeId: string) => void;
   setProgress: (projectId: string, nodeId: string, progress: ProgressCode) => void;
   commitText: (projectId: string, nodeId: string, text: string) => void;
@@ -549,8 +592,8 @@ interface SampleActions {
     schedule: GoalSchedule;
     extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
   }) => void;
-  importFile: (file: File, diskFile?: DiskFile | null) => Promise<string>;
-  openWithPicker: () => Promise<string | null>;
+  importFile: (file: File, diskFile?: DiskFile | null) => Promise<{ id: string; chapterId: string | null }>;
+  openWithPicker: () => Promise<{ id: string; chapterId: string | null } | null>;
   stashDraft: () => Promise<void>;
   saveProject: () => Promise<void>;
   saveProjectAs: () => Promise<void>;
@@ -604,8 +647,8 @@ async function snapshotManuscript(state: SampleState, project: DemoProject): Pro
     categoryOrder: extra?.info.categoryOrder ?? null,
     expandedCategories: extra?.info.expandedCategories ?? null,
     categoriesMeta: extra?.info.categoriesMeta ?? '{}',
-    lastOpenedNodeId: extra?.info.lastOpenedNodeId ?? null,
-    lastCursorPosition: extra?.info.lastCursorPosition ?? 0,
+    lastOpenedNodeId: extra?.info.lastOpenedNodeId ?? project.lastOpenedNodeId ?? null,
+    lastCursorPosition: extra?.info.lastCursorPosition ?? project.lastCursor ?? 0,
   };
   const logs: FileLog[] = extra?.logs ?? state.logs.map((log) => ({
     date: log.date,
@@ -780,11 +823,13 @@ export function SampleProvider({ children }: { children: ReactNode }) {
   const actions = useMemo<SampleActions>(
     () => ({
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
-      addProject: (title) => {
+      addProject: (title, shape = 'novel') => {
         const id = `p-${Date.now()}`;
-        dispatch({ type: 'add-project', id, title });
+        dispatch({ type: 'add-project', id, title, shape });
         return id;
       },
+      rememberPlace: (projectId, nodeId, cursor) =>
+        dispatch({ type: 'remember-place', projectId, nodeId, cursor }),
       toggleNode: (projectId, nodeId) => dispatch({ type: 'toggle', projectId, nodeId }),
       setProgress: (projectId, nodeId, progress) =>
         dispatch({ type: 'set-progress', projectId, nodeId, progress }),
@@ -819,7 +864,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
-        return book.key;
+        return { id: book.key, chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null };
       },
       openWithPicker: async () => {
         const picked = await pickExistingDatabase();
@@ -843,7 +888,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
-        return book.key;
+        return {
+          id: book.key,
+          chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null,
+        };
       },
       stashDraft: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
