@@ -80,10 +80,16 @@ await shot('02-章節目錄.png');
 await page.getByRole('button', { name: '第一章　來信的更多操作' }).click();
 await page.getByTestId('node-menu').waitFor();
 const menuText = await page.getByTestId('node-menu').innerText();
-assert(menuText.includes('章') && !menuText.includes('型別'), '選單不該再顯示型別');
+assert(menuText.includes('改名') && menuText.includes('刪除'), '更多選單應有改名與刪除');
+assert(!menuText.includes('型別'), '選單不該再顯示型別');
 assert(!menuText.includes('英文代碼'), '選單不該露出開發者說明');
+assert(!menuText.includes('草稿'), '進度不該再跟更多選單混在一起');
+await page.locator('.sheet-backdrop').click({ position: { x: 10, y: 10 } });
+await page.getByRole('button', { name: '第一章　來信的進度' }).click();
+await page.getByTestId('progress-menu').waitFor();
+const progressText = await page.getByTestId('progress-menu').innerText();
 for (const label of ['草稿', '一修', '再修', '完稿', '棄稿']) {
-  assert(menuText.includes(label), `選單缺少${label}`);
+  assert(progressText.includes(label), `進度選單缺少${label}`);
 }
 await shot('08-進度標記選單.png');
 await page.locator('.sheet-backdrop').click({ position: { x: 10, y: 10 } });
@@ -128,7 +134,7 @@ await page.getByTestId('files-screen').waitFor();
 const filesText = await page.getByTestId('files-screen').innerText();
 assert(!filesText.includes('儲存專案'), 'iPhone 檔案頁不該顯示儲存專案');
 assert(!filesText.includes('上次儲存'), 'iPhone 檔案頁不該顯示上次儲存');
-assert(filesText.includes('還沒存進這支手機的 App 空間'), '示範專案不該假裝已經存進 App 空間');
+assert(filesText.includes('還沒存進這支手機的 App 空間'), '範例專案不該顯示已經存進 App 空間');
 assert(filesText.includes('另存專案'), '檔案頁缺少另存專案');
 assert(filesText.includes('將稿子存到各類雲端或其他位置'), '另存專案說明應為定案文案');
 assert(filesText.includes('立刻暫存稿子'), '檔案頁缺少立刻暫存');

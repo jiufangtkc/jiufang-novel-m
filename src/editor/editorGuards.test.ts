@@ -97,10 +97,10 @@ describe('只能在編輯器內貼上', () => {
   it('同一本書跨章可以貼，換書就不行', () => {
     clearBookClip();
     const marker = createClipMarker();
-    rememberBookClip('book-a', { text: '【示範】跨章的句子', marker });
+    rememberBookClip('book-a', { text: '【範例】跨章的句子', marker });
     expect(decidePaste(marker, clipForBook('book-a'), false)).toEqual({
       action: 'insert',
-      text: '【示範】跨章的句子',
+      text: '【範例】跨章的句子',
     });
     expect(decidePaste('從備忘錄貼來的', clipForBook('book-a'), false).action).toBe('block');
     expect(clipForBook('book-b')).toBeNull();

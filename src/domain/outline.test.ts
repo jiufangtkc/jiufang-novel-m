@@ -60,7 +60,7 @@ describe('在章底下新增幕', () => {
     };
     const scene = createScene(chapter(), 'sc-keep');
     const nodes = addSceneUnderChapter([chapter()], 'ch-3', scene) ?? [];
-    saveProjects(store, [{ id: 'fog', title: '【示範】霧港紀事', updatedLabel: '剛剛', bookGoal: 1000, nodes }]);
+    saveProjects(store, [{ id: 'fog', title: '【範例】霧港紀事', updatedLabel: '剛剛', bookGoal: 1000, nodes }]);
     const loaded = loadProjects(store);
     const row = outlineRows(loaded?.[0].nodes ?? []).find((item) => item.id === 'sc-keep');
     expect(row).toMatchObject({ parent_id: 'ch-3', node_type: 'scene' });

@@ -33,6 +33,14 @@ export function BookIcon({ size = 28 }: IconProps) {
   );
 }
 
+export function GripIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M5 7h14M5 12h14M5 17h14" />
+    </Stroke>
+  );
+}
+
 export function CloseIcon(props: IconProps) {
   return (
     <Stroke {...props}>

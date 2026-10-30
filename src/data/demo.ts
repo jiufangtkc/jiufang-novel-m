@@ -27,21 +27,25 @@ export interface DemoProject {
   updatedLabel: string;
   bookGoal: number;
   nodes: ChapterNode[];
-  /** 從電腦版檔案匯入的專案。示範專案沒有這個欄位。 */
+  /** 從電腦版檔案匯入的專案。範例專案沒有這個欄位。 */
   origin?: 'demo' | 'file';
   dbKey?: string;
   filename?: string;
+  /** 只留在 App。單篇進檔時仍是一章，不寫進 .db 的新欄位。 */
+  shape?: 'novel' | 'single';
+  lastOpenedNodeId?: string | null;
+  lastCursor?: number;
 }
 
 export function demoParagraph(label: string, index: number): string {
-  return `【示範假資料】${label} 第 ${index} 段：霧氣自港口緩緩爬上石階，路燈一盞接一盞亮起。她把信紙摺成四折，塞進大衣口袋，想著明天要不要再去一趟燈塔。`;
+  return `【範例】${label} 第 ${index} 段：霧氣自港口緩緩爬上石階，路燈一盞接一盞亮起。她把信紙摺成四折，塞進大衣口袋，想著明天要不要再去一趟燈塔。`;
 }
 
 function chapterBody(label: string, count: number): string {
   return Array.from({ length: count }, (_, index) => demoParagraph(label, index + 1)).join('\n\n');
 }
 
-/** 已經結束、不再改動的示範日子。待九方看樣品時，這些數字都是假的。 */
+/** 已經結束、不再改動的範例日子。樣品用的固定數字。 */
 export const DEMO_SETTLED: SettledWritingDay[] = [
   { dayKey: '2026-10-18', dayEndHour: 0, wordCount: 400, finalGoal: 300, achieved: true },
   { dayKey: '2026-10-19', dayEndHour: 0, wordCount: 520, finalGoal: 300, achieved: true },
@@ -85,14 +89,14 @@ export function createDemoSchedule(now: Date): GoalSchedule {
 export const DEMO_PROJECTS: DemoProject[] = [
   {
     id: 'fog',
-    title: '【示範】霧港紀事',
+    title: '【範例】霧港紀事',
     updatedLabel: '12 分鐘前',
     bookGoal: 100000,
     nodes: [
       {
         id: 'vol-1',
         type: 'folder',
-        title: '第一卷　霧港（示範）',
+        title: '第一卷　霧港（範例）',
         expanded: true,
         children: [
           {
@@ -138,14 +142,14 @@ export const DEMO_PROJECTS: DemoProject[] = [
             type: 'file',
             title: '第四章　（刪去的岔路）',
             progress: 'Discarded',
-            content: '【示範假資料】這一章是故意標成棄稿的岔路，不是真實書稿。\n',
+            content: '【範例】這一章標成棄稿。\n',
           },
         ],
       },
       {
         id: 'vol-2',
         type: 'folder',
-        title: '第二卷　潮間帶（示範）',
+        title: '第二卷　潮間帶（範例）',
         expanded: true,
         children: [
           {
@@ -158,16 +162,16 @@ export const DEMO_PROJECTS: DemoProject[] = [
           {
             id: 'ch-6',
             type: 'file',
-            title: '第六章　（未動示範）',
+            title: '第六章　（範例，未動）',
             progress: 'Draft',
-            content: '【示範】這一章還沒有正文。\n',
+            content: '【範例】這一章還沒有正文。\n',
           },
         ],
       },
       {
         id: 'vol-3',
         type: 'folder',
-        title: '第三卷　（收合示範）',
+        title: '第三卷　（收合）',
         expanded: false,
         children: [
           {
@@ -175,7 +179,7 @@ export const DEMO_PROJECTS: DemoProject[] = [
             type: 'file',
             title: '第七章　封存',
             progress: 'Draft',
-            content: '【示範假資料】收合的卷裡也只有假句子。\n',
+            content: '【範例】收合的卷裡的章節。\n',
           },
         ],
       },
@@ -183,7 +187,7 @@ export const DEMO_PROJECTS: DemoProject[] = [
   },
   {
     id: 'second',
-    title: '【示範】第二本假專案',
+    title: '【範例】第二本專案',
     updatedLabel: '3 天前',
     bookGoal: 50000,
     nodes: [
@@ -192,13 +196,13 @@ export const DEMO_PROJECTS: DemoProject[] = [
         type: 'file',
         title: '第一章　空白的碼頭',
         progress: 'Draft',
-        content: '【示範假資料】這是第二本假專案，用來試試專案列表，不是真實作品。\n',
+        content: '【範例】這是第二本範例專案，用來試試專案列表。\n',
       },
     ],
   },
   {
     id: 'old',
-    title: '【示範】很久以前的短篇',
+    title: '【範例】很久以前的短篇',
     updatedLabel: '2026-07-02',
     bookGoal: 8000,
     nodes: [
@@ -207,9 +211,22 @@ export const DEMO_PROJECTS: DemoProject[] = [
         type: 'file',
         title: '短篇　雨停之前',
         progress: '1st Edit',
-        content: '【示範假資料】短篇只有這一段假文字。\n',
+        content: '【範例】短篇只有這一段。\n',
       },
     ],
+  },
+  {
+    id: 'long',
+    title: '【範例】長目錄',
+    updatedLabel: '剛剛',
+    bookGoal: 10000,
+    nodes: Array.from({ length: 41 }, (_, index) => ({
+      id: `long-${index + 1}`,
+      type: 'file' as const,
+      title: `第${index + 1}章　【範例】`,
+      progress: 'Draft' as const,
+      content: '【範例】這一行用來試捲動。\n',
+    })),
   },
 ];
 

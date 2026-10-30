@@ -149,12 +149,12 @@ describe('儲存專案', () => {
 
 describe('另存專案', () => {
   it('分享選單成功後提示已另存', () => {
-    expect(saveNotice({ kind: 'handed-off', via: 'share', filename: '【示範】假書_20260315-0905.db' })).toBe('已另存');
+    expect(saveNotice({ kind: 'handed-off', via: 'share', filename: '【範例】測試書_20260315-0905.db' })).toBe('已另存');
   });
 
   it('分享選單取消時不顯示成功', async () => {
     const box = env({ share: async () => 'cancelled' });
-    const outcome = await saveProjectAsNew(box.env, 'book-1', NEXT, '【示範】假書_20260315-0905.db');
+    const outcome = await saveProjectAsNew(box.env, 'book-1', NEXT, '【範例】測試書_20260315-0905.db');
     expect(outcome.kind).toBe('cancelled');
     expect(saveNotice(outcome)).toBeNull();
   });
@@ -197,10 +197,10 @@ describe('另存專案', () => {
 describe('App 空間', () => {
   it('寫進空間後可以原樣讀回', async () => {
     const space = createMemoryAppSpace();
-    await space.put({ key: 'book-1', filename: '原稿.db', title: '【示範】假書', bytes: NEXT });
+    await space.put({ key: 'book-1', filename: '原稿.db', title: '【範例】測試書', bytes: NEXT });
     const loaded = await space.get('book-1');
     expect(loaded?.filename).toBe('原稿.db');
-    expect(loaded?.title).toBe('【示範】假書');
+    expect(loaded?.title).toBe('【範例】測試書');
     expect(Array.from(loaded?.bytes ?? [])).toEqual(Array.from(NEXT));
   });
 });

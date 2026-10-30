@@ -3,7 +3,7 @@ import { databaseSharePayload } from './library';
 
 describe('分享資料庫檔', () => {
   it('分享參數只有 files，不帶 title、text、url', () => {
-    const file = new File([new Uint8Array([1, 2, 3])], '【示範】假書.db', {
+    const file = new File([new Uint8Array([1, 2, 3])], '【範例】測試書.db', {
       type: 'application/octet-stream',
     });
     const payload = databaseSharePayload(file);

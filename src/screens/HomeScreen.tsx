@@ -1,8 +1,15 @@
 import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon } from '../components/Icons';
-import { OPEN_DB_FAIL } from '../copy/userFacing';
+import {
+  NEW_BOOK_DEFAULT_TITLE,
+  NEW_BOOK_NOVEL,
+  NEW_BOOK_SHAPE,
+  NEW_BOOK_SINGLE,
+  OPEN_DB_FAIL,
+} from '../copy/userFacing';
 import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
+import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { useSample } from '../state/sampleStore';
 
@@ -12,7 +19,8 @@ export function HomeScreen() {
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
   const openInputRef = useRef<HTMLInputElement>(null);
-  const [title, setTitle] = useState('【示範】未命名專案');
+  const [title, setTitle] = useState(NEW_BOOK_DEFAULT_TITLE);
+  const [shape, setShape] = useState<'novel' | 'single'>('novel');
   const recent = state.recentIds
     .map((id) => state.projects.find((project) => project.id === id))
     .filter((project) => project !== undefined);
@@ -30,7 +38,7 @@ export function HomeScreen() {
           <ul className="project-list">
             {recent.map((project) => (
               <li key={project.id} className="project-card" data-testid="project-card">
-                <Link to={`/p/${project.id}/write`} className="project-main">
+                <Link to={manuscriptWritePath(project)} className="project-main">
                   <span className="project-icon">
                     <BookIcon />
                   </span>
@@ -68,8 +76,8 @@ export function HomeScreen() {
               setBusy(true);
               void actions
                 .openWithPicker()
-                .then((id) => {
-                  if (id) navigate(`/p/${id}/write`);
+                .then((opened) => {
+                  if (opened) navigate(writePath(opened.id, opened.chapterId));
                 })
                 .catch(() => actions.toast(OPEN_DB_FAIL))
                 .finally(() => setBusy(false));
@@ -94,7 +102,7 @@ export function HomeScreen() {
             setBusy(true);
             void actions
               .importFile(file)
-              .then((id) => navigate(`/p/${id}/write`))
+              .then((opened) => navigate(writePath(opened.id, opened.chapterId)))
               .catch(() => actions.toast(OPEN_DB_FAIL))
               .finally(() => setBusy(false));
           }}
@@ -109,9 +117,9 @@ export function HomeScreen() {
             onClick={(event) => event.stopPropagation()}
             onSubmit={(event) => {
               event.preventDefault();
-              const id = actions.addProject(title);
+              const id = actions.addProject(title, shape);
               setCreating(false);
-              navigate(`/p/${id}/write`);
+              navigate(shape === 'single' ? writePath(id, newChapterId(id)) : writePath(id));
             }}
           >
             <h2 id="new-project-title">開新稿子</h2>
@@ -123,7 +131,25 @@ export function HomeScreen() {
                 maxLength={40}
               />
             </label>
-            <p className="hint">只會留在這個畫面裡，不會寫進檔案，也不會上傳。</p>
+            <p className="hint">{NEW_BOOK_SHAPE}</p>
+            <div className="shape-choice">
+              <button
+                type="button"
+                data-testid="shape-novel"
+                className={shape === 'novel' ? 'is-current' : undefined}
+                onClick={() => setShape('novel')}
+              >
+                {NEW_BOOK_NOVEL}
+              </button>
+              <button
+                type="button"
+                data-testid="shape-single"
+                className={shape === 'single' ? 'is-current' : undefined}
+                onClick={() => setShape('single')}
+              >
+                {NEW_BOOK_SINGLE}
+              </button>
+            </div>
             <div className="dialog-actions">
               <button type="button" className="button secondary" onClick={() => setCreating(false)}>
                 取消

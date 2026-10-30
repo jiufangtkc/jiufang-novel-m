@@ -50,9 +50,9 @@ assert(navText.includes('檔案'), '底部分頁應有檔案');
 assert((await page.getByTestId('bottom-nav').locator('a').count()) === 5, '底部分頁應有五格');
 await shot('11-章展開.png');
 
-await page.getByRole('button', { name: '收合第一卷　霧港（示範）' }).click();
+await page.getByRole('button', { name: '收合第一卷　霧港（範例）' }).click();
 await page.getByRole('button', { name: '第一章　來信', exact: true }).waitFor({ state: 'hidden' });
-await page.getByRole('button', { name: '展開第一卷　霧港（示範）' }).click();
+await page.getByRole('button', { name: '展開第一卷　霧港（範例）' }).click();
 await page.getByRole('button', { name: '第一章　來信', exact: true }).waitFor();
 
 await page.getByRole('button', { name: '收合第二章　燈塔' }).click();
