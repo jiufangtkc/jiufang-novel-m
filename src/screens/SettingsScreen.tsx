@@ -44,14 +44,15 @@ export function SettingsScreen() {
           title={project.title}
           onClick={() => rename.open(wide ? 'center' : 'sheet')}
         />
-        <article className="setting-card">
+        <article className="setting-card goal-card">
           <span className="project-icon">
             <BookIcon size={22} />
           </span>
-          <span>
+          <span className="goal-copy">
             <strong>{BOOK_GOAL_LABEL}</strong>
-            <small>
-              目標字數：{project.bookGoal} 字　·　每日目標：{goalNow} 字
+            <small className="goal-lines">
+              <span>全書 {project.bookGoal}{'\u00A0'}字</span>
+              <span>每天 {goalNow}{'\u00A0'}字</span>
             </small>
           </span>
           <button

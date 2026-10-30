@@ -34,12 +34,21 @@ export interface BookFileMemory {
   titleSavePending?: TitleSavePending;
 }
 
+/** 一個完整字元算 1。家庭這種組合表情不要從中間切開。 */
+function textUnits(value: string): string[] {
+  if (typeof Intl !== 'undefined' && 'Segmenter' in Intl) {
+    const segmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+    return [...segmenter.segment(value)].map((part) => part.segment);
+  }
+  return Array.from(value);
+}
+
 export function countBookTitle(value: string): number {
-  return Array.from(value).length;
+  return textUnits(value).length;
 }
 
 export function clipBookTitle(value: string): { text: string; truncated: boolean } {
-  const chars = Array.from(value);
+  const chars = textUnits(value);
   if (chars.length <= BOOK_TITLE_MAX) return { text: value, truncated: false };
   return { text: chars.slice(0, BOOK_TITLE_MAX).join(''), truncated: true };
 }
@@ -52,8 +61,17 @@ export function resolvedBookTitle(raw: string): string {
 }
 
 function limitFilenameChars(value: string, max: number): string {
-  const chars = Array.from(value);
+  const chars = textUnits(value);
   return chars.length <= max ? value : chars.slice(0, max).join('');
+}
+
+/** Windows 不允許的裝置名稱。COM1、LPT1 這類含 1 到 9。 */
+function avoidReservedBasename(base: string): string {
+  const dot = base.indexOf('.');
+  const head = dot === -1 ? base : base.slice(0, dot);
+  if (!/^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i.test(head)) return base;
+  const rest = dot === -1 ? '' : base.slice(dot);
+  return `${head}_${rest}`;
 }
 
 function stripFilenameEdges(value: string): string {
@@ -63,12 +81,16 @@ function stripFilenameEdges(value: string): string {
 
 /**
  * 產生檔名時，不能用的字改成全形，並去掉控制字元與結尾的句點、空白。
- * 書名裡的全形空白、表情符號留著。
+ * 書名裡的全形空白、表情符號留著。只剩標點時改成全形句點，避免檔名變成未命名稿子。
+ * Windows 保留名稱後面加底線，畫面上的書名不改。
  */
 export function sanitizeDbBasename(title: string): string {
   const replaced = title.replace(ILLEGAL_FILENAME, (char) => FULLWIDTH_FILENAME[char] ?? '');
-  const cleaned = stripFilenameEdges(replaced.replace(/[\u0000-\u001f\u007f]/g, ''));
-  return limitFilenameChars(cleaned, 80) || '未命名稿子';
+  const noControls = replaced.replace(/[\u0000-\u001f\u007f]/g, '');
+  let cleaned = stripFilenameEdges(noControls);
+  if (!cleaned) cleaned = stripFilenameEdges(noControls.replace(/\./g, '．'));
+  const limited = limitFilenameChars(cleaned, 80) || '未命名稿子';
+  return limitFilenameChars(avoidReservedBasename(limited), 80);
 }
 
 /** 舊版檔名是把不能用的字直接刪掉。比對時要認得，避免舊檔被誤判成書名不同。 */
@@ -91,7 +113,10 @@ export function filenameStem(filename: string): string {
 export function titleMatchesFilename(title: string, filename: string): boolean {
   const stem = filenameStem(filename);
   if (!stem) return false;
-  return stem === sanitizeDbBasename(title) || stem === legacySanitizeDbBasename(title);
+  const sanitized = sanitizeDbBasename(title);
+  if (stem === sanitized || stem === legacySanitizeDbBasename(title)) return true;
+  const reserved = avoidReservedBasename(stem);
+  return reserved !== stem && reserved === sanitized;
 }
 
 export function shouldSaveUnderNewName(input: {

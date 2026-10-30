@@ -394,10 +394,16 @@ export function useBookRename(project: DemoProject | null) {
   const [prompt, setPrompt] = useState(false);
   const [exportName, setExportName] = useState('');
   const timer = useRef<number | null>(null);
+  const projectIdRef = useRef<string | null>(null);
+  const discardRef = useRef(actions.discardPreparedShare);
   const canWriteBack = canPickLocalFiles();
+  projectIdRef.current = project?.id ?? null;
+  discardRef.current = actions.discardPreparedShare;
 
   useEffect(() => () => {
     if (timer.current != null) window.clearTimeout(timer.current);
+    const id = projectIdRef.current;
+    if (id) discardRef.current(id);
   }, []);
 
   function finish(raw: string, via: TitleEditVia) {
@@ -416,7 +422,10 @@ export function useBookRename(project: DemoProject | null) {
   }
 
   function later() {
-    if (project) actions.deferTitleSave(project.id);
+    if (project) {
+      actions.discardPreparedShare(project.id);
+      actions.deferTitleSave(project.id);
+    }
     setPrompt(false);
   }
 

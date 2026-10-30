@@ -575,6 +575,17 @@ button.save-status {
 }
 
 .setting-card { margin-bottom: 8px; padding-right: 4px; }
+.goal-card .goal-copy { flex: 1; min-width: 0; }
+.goal-card .goal-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.goal-card .goal-lines span {
+  display: block;
+  white-space: nowrap;
+}
+.goal-card .icon-button { margin-left: auto; flex-shrink: 0; }
 .files-status-card {
   margin: 8px 0 16px;
   padding: 14px 14px 12px;

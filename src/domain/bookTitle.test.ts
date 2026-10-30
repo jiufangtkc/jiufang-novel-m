@@ -32,6 +32,16 @@ describe('書名長度與留白', () => {
     expect(countBookTitle(clipped.text)).toBe(40);
     expect(resolvedBookTitle(`${'狐'.repeat(45)}`)).toHaveLength(40);
   });
+
+  it('接近上限時組合表情要整組留下或整組拿掉', () => {
+    const family = '👨\u200d👩\u200d👧\u200d👦';
+    expect(countBookTitle(family)).toBe(1);
+    expect(clipBookTitle(family.repeat(41)).text).toBe(family.repeat(40));
+    const fitted = clipBookTitle(`${'狐'.repeat(39)}${family}尾`);
+    expect(fitted.text.endsWith(family)).toBe(true);
+    expect(countBookTitle(fitted.text)).toBe(40);
+    expect(clipBookTitle(`${'狐'.repeat(40)}${family}`).text).toBe('狐'.repeat(40));
+  });
 });
 
 describe('點外面', () => {
@@ -101,6 +111,21 @@ describe('檔名', () => {
     expect(sanitizeDbBasename(`月台${'\u3000'}白狐`)).toBe(`月台${'\u3000'}白狐`);
     expect(sanitizeDbBasename('月台🦊白狐')).toBe('月台🦊白狐');
     expect(projectSaveFilename('   ')).toBe('未命名稿子.db');
+  });
+
+  it('只有標點時檔名仍看得出書名，Windows 保留名稱要能存', () => {
+    expect(resolvedBookTitle('...')).toBe('...');
+    expect(sanitizeDbBasename('...')).toBe('．．．');
+    expect(projectSaveFilename('...')).toBe('．．．.db');
+    expect(sanitizeDbBasename('...')).not.toBe('未命名稿子');
+    for (const name of ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT1']) {
+      expect(resolvedBookTitle(name)).toBe(name);
+      const base = sanitizeDbBasename(name);
+      expect(base.toLowerCase()).toBe(`${name.toLowerCase()}_`);
+      expect(`${base}.db`.toLowerCase().startsWith(`${name.toLowerCase()}.`)).toBe(false);
+    }
+    expect(titleMatchesFilename('CON', 'CON.db')).toBe(true);
+    expect(titleMatchesFilename('CON', 'CON_.db')).toBe(true);
   });
 
   it('舊規則刪掉的字也認得，時間戳結尾要拿掉再比', () => {
