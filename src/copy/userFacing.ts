@@ -118,6 +118,65 @@ export const NEW_BOOK_SINGLE = '單篇（短篇、散文）';
 export const NEW_BOOK_DEFAULT_TITLE = '未命名稿子';
 export const TOAST_NEW_BOOK = '已開新稿子';
 export const EDITOR_PLACEHOLDER = '從這裡開始寫';
+
+/** 改書名（第 117～150 列）。 */
+export const BOOK_RENAME_TITLE = '改書名';
+export const BOOK_TITLE_PLACEHOLDER = '輸入書名';
+export const BOOK_TITLE_BLANK_HINT = '留白會用「未命名稿子」';
+export const BOOK_RENAMED_TOAST = '已改書名';
+export const BOOK_RENAME_FAIL = '書名沒改成，請再改一次';
+export const BOOK_TITLE_LIMIT_HINT = '最多 40 個字，多的字沒有貼上';
+export const BOOK_SAVE_HINT_EXPORT = '下次另存時，檔名也會換成新書名';
+export const BOOK_SAVE_HINT_RESAVE = '下次按「儲存專案」，會用新書名另存一份';
+export const BOOK_SECTION = '這份稿子';
+export const BOOK_TITLE_LABEL = '書名';
+export const BOOK_GOAL_LABEL = '寫作目標';
+export const SETTINGS_EDIT_GOAL_ARIA = '修改寫作目標';
+export const ASK_SAVE_AS_TITLE = '要不要現在另存？';
+export const ASK_SAVE_LATER = '等一下';
+export const ASK_SAVE_NOW = '現在另存';
+export const TITLE_PENDING_EXPORT = '書名改過了，還沒另存。原本的檔案裡還是舊書名';
+export const TITLE_PENDING_RESAVE = '書名改過了，下次按「儲存專案」會用新書名另存一份，舊檔留著';
+export const TOAST_SAVED_UNDER_NEW_TITLE = '已用新書名另存一份';
+export const STATS_HEADING = '寫作統計';
+export const BOOK_TITLE_HOVER_HINT = '點一下可以改書名';
+export const DB_FILE_TYPE_LABEL = '九方編輯器稿件檔';
+export const UNTITLED_MANUSCRIPT = '未命名稿子';
+
+export function bookTitleAria(title: string): string {
+  return `書名：${title}，可以改`;
+}
+
+export function bookTitleCount(length: number): string {
+  return `${length}／40`;
+}
+
+/** 設定頁目標卡兩行。標題與數字之間用全形空白，數字與「字」不拆行。 */
+export function settingsBookGoalLine(formattedCount: string): string {
+  return `全書目標\u3000${formattedCount}\u00A0字`;
+}
+
+export function settingsDailyGoalLine(formattedCount: string): string {
+  return `每日目標\u3000${formattedCount}\u00A0字`;
+}
+
+export function askSaveAsBody(title: string): string {
+  return `書名改成《${title}》了。原本的檔案裡還是舊書名，另存一份新檔才會用新書名。`;
+}
+
+export function askSaveAsFilename(name: string): string {
+  return `新檔名：${name}`;
+}
+
+export function titlePendingNotice(pending: 'export' | 'resave' | null | undefined): string | null {
+  if (pending === 'export') return TITLE_PENDING_EXPORT;
+  if (pending === 'resave') return TITLE_PENDING_RESAVE;
+  return null;
+}
+
+export function currentFileLine(filename: string): string {
+  return `檔案：${filename}`;
+}
 export const TREE_KIND_CHAPTER = '章';
 export const TREE_KIND_SCENE = '幕';
 export const TREE_KIND_VOLUME = '卷';

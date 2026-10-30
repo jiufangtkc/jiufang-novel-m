@@ -3,6 +3,10 @@ export interface StoredBook {
   filename: string;
   title: string;
   bytes: Uint8Array;
+  /** 上次寫進外部檔案時的書名。沒有外部檔案時不記。 */
+  titleInFile?: string | null;
+  hasExternalFile?: boolean;
+  titleSavePending?: 'export' | 'resave' | null;
 }
 
 export interface AppSpace {
@@ -48,18 +52,35 @@ export function createDirectoryAppSpace(dir: ByteDirectory): AppSpace {
       await dir.write(metaName(book.key), new TextEncoder().encode(JSON.stringify({
         filename: book.filename,
         title: book.title,
+        titleInFile: book.titleInFile ?? null,
+        hasExternalFile: book.hasExternalFile,
+        titleSavePending: book.titleSavePending ?? null,
       })));
     },
     async get(key) {
       const bytes = await dir.read(dataName(key));
       if (!bytes) return null;
       const metaBytes = await dir.read(metaName(key));
-      const meta = metaBytes ? JSON.parse(new TextDecoder().decode(metaBytes)) as { filename?: string; title?: string } : {};
+      const meta = metaBytes
+        ? JSON.parse(new TextDecoder().decode(metaBytes)) as {
+          filename?: string;
+          title?: string;
+          titleInFile?: string | null;
+          hasExternalFile?: boolean;
+          titleSavePending?: 'export' | 'resave' | null;
+        }
+        : {};
+      const pending = meta.titleSavePending === 'export' || meta.titleSavePending === 'resave'
+        ? meta.titleSavePending
+        : null;
       return {
         key,
         filename: meta.filename || '未命名.db',
         title: meta.title || '未命名',
         bytes,
+        titleInFile: meta.titleInFile ?? null,
+        hasExternalFile: typeof meta.hasExternalFile === 'boolean' ? meta.hasExternalFile : undefined,
+        titleSavePending: pending,
       };
     },
     async list() {

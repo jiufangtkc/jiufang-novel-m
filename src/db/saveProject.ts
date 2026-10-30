@@ -2,23 +2,27 @@ import {
   SAVE_FATAL_FAIL,
   SAVE_PARTIAL_FAIL,
   SAVE_PERMISSION_DENIED,
+  TOAST_SAVED_UNDER_NEW_TITLE,
 } from '../copy/userFacing';
 import type { DiskFile, TargetStore } from './fileTarget';
 
 export type SaveOutcome =
   | { kind: 'saved'; filename: string }
   | { kind: 'saved-as'; filename: string }
+  | { kind: 'saved-under-new-title'; filename: string }
   | { kind: 'handed-off'; via: 'share' | 'download'; filename: string }
   | { kind: 'cancelled' }
   | { kind: 'permission-denied' }
   | { kind: 'write-failed'; restored: boolean }
   | { kind: 'invalid-database' };
 
+export type ProjectSavePlan = 'write-back' | 'pick-new-name' | 'pick-first-save';
+
 export interface SaveEnvironment {
   canPickFiles: boolean;
   targets: TargetStore;
   verify(bytes: Uint8Array): Promise<void>;
-  pickSaveLocation(suggestedName: string): Promise<DiskFile | null>;
+  pickSaveLocation(suggestedName: string, startIn?: DiskFile | null): Promise<DiskFile | null>;
   share(filename: string, bytes: Uint8Array): Promise<'shared' | 'downloaded' | 'cancelled'>;
 }
 
@@ -28,6 +32,8 @@ export function saveNotice(outcome: SaveOutcome): string | null {
       return '已儲存';
     case 'saved-as':
       return '已另存';
+    case 'saved-under-new-title':
+      return TOAST_SAVED_UNDER_NEW_TITLE;
     case 'handed-off':
       return outcome.via === 'share' ? '已另存' : '已下載，請自行放到想放的位置';
     case 'cancelled':
@@ -139,4 +145,80 @@ export async function saveProjectAsNew(
   const via = await env.share(suggestedName, bytes);
   if (via === 'cancelled') return { kind: 'cancelled' };
   return { kind: 'handed-off', via: via === 'shared' ? 'share' : 'download', filename: suggestedName };
+}
+
+/**
+ * 要跳出存檔視窗時，必須在按下的這一刻先拿到檔案把手，再整理稿子。
+ * 已經有把手、而且這次要寫回原檔，就不跳視窗。
+ */
+export function shouldPickBeforeBuild(input: {
+  canPick: boolean;
+  needsNewName: boolean;
+  remembered: DiskFile | null | undefined;
+  hasExternalFile: boolean;
+}): boolean {
+  if (!input.canPick) return false;
+  if (input.needsNewName) return true;
+  if (input.remembered) return false;
+  if (input.remembered === undefined && input.hasExternalFile) return false;
+  return true;
+}
+
+/** 分享選單要由手指按下直接叫出。內容事先備好，這裡不再整理。 */
+export async function handOffPrepared(
+  env: SaveEnvironment,
+  filename: string,
+  bytes: Uint8Array,
+): Promise<SaveOutcome> {
+  const via = await env.share(filename, bytes);
+  if (via === 'cancelled') return { kind: 'cancelled' };
+  return { kind: 'handed-off', via: via === 'shared' ? 'share' : 'download', filename };
+}
+
+/**
+ * 儲存專案。需要選位置時先跳視窗，使用者取消就完全不整理、不寫入。
+ * 用新書名另存時只寫新檔，呼叫端傳入的舊檔不會被寫到。
+ */
+export async function saveProjectFromClick(input: {
+  env: SaveEnvironment;
+  bookKey: string;
+  plan: ProjectSavePlan;
+  writeBackName: string;
+  newTitleName: string;
+  startIn: DiskFile | null;
+  buildBytes: () => Promise<Uint8Array>;
+  onRemember?: (file: DiskFile) => void;
+}): Promise<SaveOutcome> {
+  if (input.plan === 'write-back') {
+    let bytes: Uint8Array;
+    try {
+      bytes = await input.buildBytes();
+    } catch {
+      return { kind: 'invalid-database' };
+    }
+    return saveProjectToPlace(input.env, input.bookKey, bytes, input.writeBackName);
+  }
+  const suggested = input.plan === 'pick-new-name' ? input.newTitleName : input.writeBackName;
+  const startIn = input.plan === 'pick-new-name' ? input.startIn : null;
+  const picked = await input.env.pickSaveLocation(suggested, startIn);
+  if (!picked) return { kind: 'cancelled' };
+  let bytes: Uint8Array;
+  try {
+    bytes = await input.buildBytes();
+  } catch {
+    return { kind: 'invalid-database' };
+  }
+  try {
+    await input.env.verify(bytes);
+  } catch {
+    return { kind: 'invalid-database' };
+  }
+  const wrote = await writeGranted(picked, bytes);
+  if (wrote !== 'ready') return wrote;
+  await input.env.targets.save(input.bookKey, { filename: picked.name, file: picked });
+  input.onRemember?.(picked);
+  if (input.plan === 'pick-new-name') {
+    return { kind: 'saved-under-new-title', filename: picked.name };
+  }
+  return { kind: 'saved', filename: picked.name };
 }

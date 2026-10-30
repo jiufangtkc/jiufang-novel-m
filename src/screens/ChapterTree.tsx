@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { BookmarkIcon, ChevronIcon, FileIcon, FolderIcon, GripIcon, MoreIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
 import { TREE_SAVE_NAME } from '../copy/userFacing';
+import { commitInlineChapterTitle, type TitleEditVia } from '../domain/bookTitle';
+import { decideEnterKey } from '../editor/enterGuard';
 import { focusTitleInput } from './titleCaret';
 import type { ChapterNode } from '../data/demo';
 
@@ -24,6 +26,7 @@ export function ChapterTree({
   onDragStart,
   onRename,
   onCancelRename,
+  onDismissInline,
   onInlineRename,
 }: {
   projectId: string;
@@ -43,6 +46,7 @@ export function ChapterTree({
   onDragStart: (id: string, pointerId: number) => void;
   onRename: (id: string, title: string) => void;
   onCancelRename: () => void;
+  onDismissInline: () => void;
   onInlineRename: (id: string) => void;
 }) {
   const navigate = useNavigate();
@@ -91,6 +95,7 @@ export function ChapterTree({
                   title={node.title}
                   onSave={(title) => onRename(node.id, title)}
                   onCancel={onCancelRename}
+                  onDismiss={onDismissInline}
                 />
               ) : (
                 <button
@@ -181,6 +186,7 @@ export function ChapterTree({
                 onDragStart={onDragStart}
                 onRename={onRename}
                 onCancelRename={onCancelRename}
+                onDismissInline={onDismissInline}
                 onInlineRename={onInlineRename}
               />
             )}
@@ -195,33 +201,89 @@ function InlineRename({
   title,
   onSave,
   onCancel,
+  onDismiss,
 }: {
   title: string;
   onSave: (title: string) => void;
   onCancel: () => void;
+  onDismiss: () => void;
 }) {
   const ref = useRef<HTMLInputElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const saveRef = useRef(onSave);
+  const cancelRef = useRef(onCancel);
+  const dismissRef = useRef(onDismiss);
+  const composing = useRef(false);
+  const lastEnd = useRef<number | null>(null);
+  saveRef.current = onSave;
+  cancelRef.current = onCancel;
+  dismissRef.current = onDismiss;
+
+  function commit(via: TitleEditVia) {
+    const raw = ref.current?.value ?? '';
+    const decision = commitInlineChapterTitle(via, raw);
+    if (decision === 'blank') return;
+    if (decision === 'apply') {
+      saveRef.current(raw);
+      return;
+    }
+    if (via === 'outside') dismissRef.current();
+    else cancelRef.current();
+  }
+
   useEffect(() => {
     if (ref.current) focusTitleInput(ref.current);
   }, []);
+
+  useEffect(() => {
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const form = formRef.current;
+      if (!form || (event.target instanceof Node && form.contains(event.target))) return;
+      commit('outside');
+    };
+    document.addEventListener('pointerdown', onPointerDown, true);
+    return () => document.removeEventListener('pointerdown', onPointerDown, true);
+  }, []);
+
   return (
     <form
+      ref={formRef}
       className="tree-inline-rename"
       onSubmit={(event) => {
         event.preventDefault();
-        const next = ref.current?.value ?? '';
-        if (!next.trim()) return;
-        onSave(next);
+        if (composing.current) return;
+        commit('confirm');
       }}
     >
       <input
         ref={ref}
         defaultValue={title}
         aria-label={TREE_SAVE_NAME}
+        enterKeyHint="done"
+        onCompositionStart={() => {
+          composing.current = true;
+        }}
+        onCompositionEnd={(event) => {
+          composing.current = false;
+          lastEnd.current = event.timeStamp;
+        }}
         onKeyDown={(event) => {
           if (event.key === 'Escape') {
             event.preventDefault();
-            onCancel();
+            commit('cancel');
+            return;
+          }
+          const decision = decideEnterKey({
+            key: event.key,
+            isComposing: event.nativeEvent.isComposing,
+            keyCode: event.keyCode,
+            timeStamp: event.timeStamp,
+            lastCompositionEndTimeStamp: lastEnd.current,
+            composingFlag: composing.current,
+          });
+          if (event.key === 'Enter' && decision.suppressActions && !event.nativeEvent.isComposing && !composing.current) {
+            event.preventDefault();
           }
         }}
       />

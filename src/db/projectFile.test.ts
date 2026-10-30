@@ -22,6 +22,20 @@ describe('舊檔升級', () => {
   });
 });
 
+describe('讀不到書名', () => {
+  it('空白或沒有書名時顯示未命名稿子', () => {
+    const { sql } = openNodeSql();
+    createVersion14Shell(sql);
+    sql.run(
+      'INSERT INTO project_info (title, target_word_count, daily_target_word_count, categories_meta) VALUES (?, ?, ?, ?)',
+      [null, 1000, 300, '{}'],
+    );
+    expect(readFileProject(sql).info.title).toBe('未命名稿子');
+    sql.run('UPDATE project_info SET title = ?', ['   ']);
+    expect(readFileProject(sql).info.title).toBe('未命名稿子');
+  });
+});
+
 describe('空白書檔', () => {
   it('沒有底層資料庫時先建表，寫入後可以再開', async () => {
     const info: FileProjectInfo = {

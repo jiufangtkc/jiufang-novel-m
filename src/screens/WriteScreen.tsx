@@ -93,6 +93,7 @@ import {
   treeSelectedHint,
 } from '../copy/userFacing';
 import { useProject, useSample } from '../state/sampleStore';
+import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
 import { ChapterTree } from './ChapterTree';
 import { EditorPane } from './EditorPane';
 import { focusTitleInput } from './titleCaret';
@@ -124,6 +125,7 @@ export function WriteScreen() {
   const { actions } = useSample();
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
   const desktop = useDesktop();
+  const rename = useBookRename(project);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<ChapterNode[]>(project?.nodes ?? []);
   const [organizing, setOrganizing] = useState(false);
@@ -542,7 +544,13 @@ export function WriteScreen() {
     <div className={chapterId ? 'write-layout has-chapter' : 'write-layout'} data-testid="write-screen">
       <section className={showOrganize ? 'tree-pane is-organizing' : 'tree-pane'} data-testid="chapter-tree">
         <header className="topbar">
-          <h1>{showOrganize ? TREE_ORGANIZE : book.title}</h1>
+          {showOrganize ? (
+            <h1>{TREE_ORGANIZE}</h1>
+          ) : rename.inline ? (
+            <InlineBookTitle title={book.title} onCommit={rename.finish} />
+          ) : (
+            <BookTitleButton title={book.title} onClick={() => rename.open(desktop ? 'inline' : 'sheet')} />
+          )}
           {showOrganize ? (
             <button type="button" className="button primary" data-testid="organize-done" onClick={() => setOrganizing(false)}>
               {TREE_DONE}
@@ -572,6 +580,10 @@ export function WriteScreen() {
             }}
             onRename={(id, title) => finishRename(id, title, renameIntent)}
             onCancelRename={() => cancelFresh(inlineId)}
+            onDismissInline={() => {
+              setInlineId(null);
+              setNameError(false);
+            }}
             onInlineRename={(id) => {
               setPickedId(id);
               setInlineId(id);
@@ -903,6 +915,7 @@ export function WriteScreen() {
           </div>
         </Sheet>
       ) : null}
+      {rename.dialogs}
     </div>
   );
 }

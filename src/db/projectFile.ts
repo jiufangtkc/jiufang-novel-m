@@ -58,6 +58,12 @@ function text(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
+/** 舊檔讀不到書名時，跟開新稿子、書名刪光用同一個名稱。 */
+function manuscriptTitle(value: unknown): string {
+  if (typeof value !== 'string' || value.trim() === '') return '未命名稿子';
+  return value;
+}
+
 function num(value: unknown, fallback = 0): number {
   return typeof value === 'number' ? value : fallback;
 }
@@ -70,7 +76,7 @@ export function readFileProject(sql: Sql): LoadedFile {
   applyMigrations(sql);
   const infoRow = sql.select('SELECT * FROM project_info ORDER BY id LIMIT 1')[0];
   const info: FileProjectInfo = {
-    title: text(infoRow?.title, '未命名'),
+    title: manuscriptTitle(infoRow?.title),
     logline: text(infoRow?.logline),
     currentTheme: text(infoRow?.current_theme),
     globalFontFamily: text(infoRow?.global_font_family),

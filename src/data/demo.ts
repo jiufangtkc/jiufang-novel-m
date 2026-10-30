@@ -35,6 +35,12 @@ export interface DemoProject {
   shape?: 'novel' | 'single';
   lastOpenedNodeId?: string | null;
   lastCursor?: number;
+  /** 這份稿子有沒有對應到已經存過的 .db。新稿子在另存或儲存之前沒有。 */
+  hasExternalFile?: boolean;
+  /** 上次寫進那個檔案時的書名。用來判斷要不要另存新檔。 */
+  titleInFile?: string | null;
+  /** export：只能另存，選了等一下。resave：電腦下次儲存專案會用新書名另存。 */
+  titleSavePending?: 'export' | 'resave' | null;
 }
 
 export function demoParagraph(label: string, index: number): string {

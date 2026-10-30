@@ -5,6 +5,8 @@ import {
   MANUSCRIPT_NOT_FOUND,
   OPEN_DB_FAIL,
   OPEN_DB_HINT,
+  currentFileLine,
+  titlePendingNotice,
 } from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { writePath } from '../domain/openManuscript';
@@ -48,6 +50,7 @@ export function FilesScreen() {
   const lastSaveMs = latestSaveTimestamp(meta);
   const exportLabel = formatLastExportLabel(meta.lastExportMs);
   const projectSaveLabel = formatLastProjectSave(meta.lastProjectSaveMs);
+  const pendingTitle = titlePendingNotice(project.titleSavePending);
 
   const openAnother = async () => {
     if (canPickLocalFiles()) {
@@ -70,8 +73,18 @@ export function FilesScreen() {
       <div className="scroll-pane files-page">
         <article className="files-status-card" data-testid="files-status">
           <p className="files-status-title">
-            目前的稿子：<strong>《{project.title}》</strong>
+            目前的稿子：<strong>{project.title}</strong>
           </p>
+          {pendingTitle ? (
+            <p className="files-status-line is-warning" data-testid="title-pending-notice">
+              {pendingTitle}
+            </p>
+          ) : null}
+          {computer && project.hasExternalFile && project.filename ? (
+            <p className="files-status-line" data-testid="current-file-line">
+              {currentFileLine(project.filename)}
+            </p>
+          ) : null}
           <p className="files-status-line" data-testid="app-space-status">
             {appSpaceStatusLine({
               stored: project.origin === 'file',

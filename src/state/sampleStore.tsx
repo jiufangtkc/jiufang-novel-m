@@ -17,15 +17,35 @@ import {
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
-import { exportDbFilename, localDbFilename, projectSaveFilename } from '../domain/exportFilename';
+import {
+  bookAfterRename,
+  shouldSaveUnderNewName,
+  type BookFileMark,
+} from '../domain/bookTitle';
+import { exportDbFilename, localDbFilename, projectSaveFilename, sanitizeDbBasename } from '../domain/exportFilename';
 import { canPickLocalFiles, pickExistingDatabase, pickSaveFile } from '../db/browserDisk';
 import { createBrowserTargetStore } from '../db/browserTargetStore';
 import type { DiskFile } from '../db/fileTarget';
 import { currentSchemaVersion } from '../db/migrations';
+import { recallOpenFile, rememberOpenFile } from '../db/openFileMemory';
+import {
+  currentShareGeneration,
+  dismissRenameSavePrompt,
+  peekPreparedShare,
+  rememberPreparedShare,
+  shareBytesForSaveAs,
+} from '../db/preparedShare';
 import { openMemoryDb } from '../db/wasmDb';
-import { saveNotice, saveProjectAsNew, saveProjectToPlace, type SaveEnvironment, type SaveOutcome } from '../db/saveProject';
+import {
+  saveNotice,
+  saveProjectAsNew,
+  saveProjectFromClick,
+  shouldPickBeforeBuild,
+  type SaveEnvironment,
+  type SaveOutcome,
+} from '../db/saveProject';
 import { verifyExportedDatabase } from '../db/verifyDatabase';
-import { STASH_FAIL } from '../copy/userFacing';
+import { BOOK_RENAME_FAIL, BOOK_RENAMED_TOAST, STASH_FAIL } from '../copy/userFacing';
 import { countManuscriptWords } from '../domain/manuscriptWords';
 import { countWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
@@ -111,7 +131,23 @@ type Action =
   | { type: 'record-export'; projectId: string; atMs: number }
   | { type: 'record-project-save'; projectId: string; atMs: number }
   | { type: 'set-filename'; projectId: string; filename: string }
+  | { type: 'rename-book'; projectId: string; title: string; titleSavePending: BookFileMark['titleSavePending'] }
+  | { type: 'defer-title-save'; projectId: string }
+  | { type: 'note-title-in-file'; projectId: string }
   | { type: 'promote-stored'; projectId: string; key: string; filename: string };
+
+
+function bookkeepingOf(project: DemoProject): BookFileMark {
+  return {
+    titleInFile: project.titleInFile ?? null,
+    hasExternalFile: Boolean(project.hasExternalFile),
+    titleSavePending: project.titleSavePending ?? null,
+  };
+}
+
+function withFileMark(project: DemoProject, mark: Pick<DemoProject, 'hasExternalFile' | 'titleInFile' | 'titleSavePending'>): DemoProject {
+  return { ...project, ...mark };
+}
 
 function alignToday(logs: WritingLogRow[], schedule: GoalSchedule): WritingLogRow[] {
   if (!schedule.open) return logs;
@@ -131,6 +167,17 @@ function mapProject(
   updater: (project: DemoProject) => DemoProject,
 ): DemoProject[] {
   return projects.map((project) => (project.id === projectId ? updater(project) : project));
+}
+
+function retitleFileExtra(state: SampleState, projectId: string, title: string): SampleState['fileExtras'] {
+  const project = state.projects.find((item) => item.id === projectId);
+  const key = project?.dbKey;
+  if (!key || !state.fileExtras[key]) return state.fileExtras;
+  const extra = state.fileExtras[key];
+  return {
+    ...state.fileExtras,
+    [key]: { ...extra, info: { ...extra.info, title } },
+  };
 }
 
 function savedProjects(): DemoProject[] | null {
@@ -328,6 +375,34 @@ function reduce(state: SampleState, action: Action): SampleState {
         projects: mapProject(state.projects, action.projectId, (project) => ({
           ...project,
           filename: action.filename,
+        })),
+      };
+    case 'rename-book':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => ({
+          ...project,
+          title: action.title,
+          titleSavePending: action.titleSavePending,
+          updatedLabel: '剛剛',
+        })),
+        fileExtras: retitleFileExtra(state, action.projectId, action.title),
+      };
+    case 'defer-title-save':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => ({
+          ...project,
+          titleSavePending: 'export',
+        })),
+      };
+    case 'note-title-in-file':
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (project) => withFileMark(project, {
+          hasExternalFile: true,
+          titleInFile: project.title,
+          titleSavePending: null,
         })),
       };
     case 'promote-stored': {
@@ -595,8 +670,17 @@ interface SampleActions {
   importFile: (file: File, diskFile?: DiskFile | null) => Promise<{ id: string; chapterId: string | null }>;
   openWithPicker: () => Promise<{ id: string; chapterId: string | null } | null>;
   stashDraft: () => Promise<void>;
-  saveProject: () => Promise<void>;
-  saveProjectAs: () => Promise<void>;
+  renameBook: (projectId: string, rawTitle: string) => {
+    ok: boolean;
+    unchanged: boolean;
+    askSaveAs: boolean;
+    title: string;
+  };
+  deferTitleSave: (projectId: string) => void;
+  discardPreparedShare: (projectId: string) => void;
+  prepareShare: (projectId: string, title: string) => Promise<void>;
+  saveProject: () => Promise<SaveOutcome | null>;
+  saveProjectAs: () => Promise<SaveOutcome | null>;
   toast: (message: string | null) => void;
 }
 
@@ -625,12 +709,16 @@ function browserSaveEnv(): SaveEnvironment {
         }
       });
     },
-    pickSaveLocation: pickSaveFile,
+    pickSaveLocation: (suggestedName, startIn) => pickSaveFile(suggestedName, startIn?.directoryHint),
     share: (filename, bytes) => shareDatabase(filename, bytes),
   };
 }
 
-async function snapshotManuscript(state: SampleState, project: DemoProject): Promise<{ key: string; bytes: Uint8Array }> {
+async function snapshotManuscript(
+  state: SampleState,
+  project: DemoProject,
+  persist = true,
+): Promise<{ key: string; bytes: Uint8Array }> {
   const key = project.dbKey ?? project.id;
   const extra = project.dbKey ? state.fileExtras[project.dbKey] : undefined;
   const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
@@ -669,6 +757,8 @@ async function snapshotManuscript(state: SampleState, project: DemoProject): Pro
     project.nodes,
     extra?.cards ?? [],
     logs,
+    bookkeepingOf(project),
+    persist,
   );
   return { key, bytes };
 }
@@ -681,16 +771,19 @@ function applySaveOutcome(
 ) {
   const text = saveNotice(outcome);
   if (text) dispatch({ type: 'toast', message: text });
-  if (mode === 'save' && outcome.kind === 'saved') {
+  if (outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title') {
     dispatch({ type: 'record-project-save', projectId, atMs: Date.now() });
     dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+    dispatch({ type: 'note-title-in-file', projectId });
   }
   if (mode === 'save-as' && outcome.kind === 'saved-as') {
     dispatch({ type: 'record-export', projectId, atMs: Date.now() });
     dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+    dispatch({ type: 'note-title-in-file', projectId });
   }
   if (mode === 'save-as' && outcome.kind === 'handed-off') {
     dispatch({ type: 'record-export', projectId, atMs: Date.now() });
+    dispatch({ type: 'note-title-in-file', projectId });
   }
 }
 
@@ -740,12 +833,23 @@ export function SampleProvider({ children }: { children: ReactNode }) {
               origin: 'file',
               dbKey: book.key,
               filename: book.filename,
+              hasExternalFile: book.hasExternalFile,
+              titleInFile: book.titleInFile,
+              titleSavePending: book.titleSavePending,
             },
             schedule: book.schedule,
             extras: { info: book.info, cards: book.cards, logs: book.logs },
           });
         }
         if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
+        for (const book of books) {
+          void createBrowserTargetStore()
+            .load(book.key)
+            .then((target) => {
+              if (recallOpenFile(book.key) === undefined) rememberOpenFile(book.key, target?.file ?? null);
+            })
+            .catch(() => undefined);
+        }
       })
       .catch(() => {
         // 沒有手機儲存空間時，範例專案仍可寫。
@@ -769,6 +873,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         project.nodes,
         extra.cards,
         extra.logs,
+        bookkeepingOf(project),
       ).then(() => {
         dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
       });
@@ -849,6 +954,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const book = await importBook(file.name, bytes);
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
+        rememberOpenFile(book.key, diskFile ?? null);
         dispatch({
           type: 'attach-file',
           project: {
@@ -860,6 +966,9 @@ export function SampleProvider({ children }: { children: ReactNode }) {
             origin: 'file',
             dbKey: book.key,
             filename: book.filename,
+            hasExternalFile: book.hasExternalFile,
+            titleInFile: book.titleInFile,
+            titleSavePending: book.titleSavePending,
           },
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
@@ -873,6 +982,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         copy.set(picked.bytes);
         const book = await importBook(picked.file.name, copy);
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
+        rememberOpenFile(book.key, picked.file);
         dispatch({
           type: 'attach-file',
           project: {
@@ -884,6 +994,9 @@ export function SampleProvider({ children }: { children: ReactNode }) {
             origin: 'file',
             dbKey: book.key,
             filename: book.filename,
+            hasExternalFile: book.hasExternalFile,
+            titleInFile: book.titleInFile,
+            titleSavePending: book.titleSavePending,
           },
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
@@ -910,43 +1023,128 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           dispatch({ type: 'toast', message: STASH_FAIL });
         }
       },
+      renameBook: (projectId, rawTitle) => {
+        const project = state.projects.find((item) => item.id === projectId);
+        if (!project) {
+          dispatch({ type: 'toast', message: BOOK_RENAME_FAIL });
+          return { ok: false, unchanged: true, askSaveAs: false, title: '' };
+        }
+        const next = bookAfterRename(project, rawTitle, canPickLocalFiles());
+        if (next.followUp.kind === 'unchanged') {
+          return { ok: true, unchanged: true, askSaveAs: false, title: project.title };
+        }
+        dispatch({
+          type: 'rename-book',
+          projectId,
+          title: next.book.title,
+          titleSavePending: next.followUp.pending,
+        });
+        if (next.followUp.askSaveAs) {
+          return { ok: true, unchanged: false, askSaveAs: true, title: next.followUp.title };
+        }
+        dispatch({ type: 'toast', message: BOOK_RENAMED_TOAST });
+        return { ok: true, unchanged: false, askSaveAs: false, title: next.followUp.title };
+      },
+      deferTitleSave: (projectId) => dispatch({ type: 'defer-title-save', projectId }),
+      discardPreparedShare: (projectId) => {
+        dismissRenameSavePrompt(projectId);
+      },
+      prepareShare: async (projectId, title) => {
+        const project = state.projects.find((item) => item.id === projectId);
+        if (!project) return;
+        const generation = currentShareGeneration(projectId);
+        try {
+          const snap = await snapshotManuscript(state, { ...project, title }, false);
+          await browserSaveEnv().verify(snap.bytes);
+          rememberPreparedShare(projectId, {
+            key: snap.key,
+            filename: exportDbFilename(title),
+            bytes: snap.bytes,
+          }, generation);
+        } catch {
+          // 準備失敗就不要留下半套檔。世代已經往前時，不要把別人的預備檔清掉。
+          if (currentShareGeneration(projectId) === generation) dismissRenameSavePrompt(projectId);
+        }
+      },
       saveProject: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
-        if (!project) return;
+        if (!project) return null;
+        const key = project.dbKey ?? project.id;
+        const remembered = recallOpenFile(key);
+        const needsNewName = shouldSaveUnderNewName({
+          hasExternalFile: Boolean(project.hasExternalFile),
+          titleInFile: project.titleInFile ?? null,
+          title: project.title,
+          filename: project.filename ?? null,
+        });
+        const pickFirst = shouldPickBeforeBuild({
+          canPick: canPickLocalFiles(),
+          needsNewName,
+          remembered,
+          hasExternalFile: Boolean(project.hasExternalFile),
+        });
+        const plan = needsNewName ? 'pick-new-name' : pickFirst ? 'pick-first-save' : 'write-back';
         try {
-          const { key, bytes } = await snapshotManuscript(state, project);
-          dispatch({
-            type: 'promote-stored',
-            projectId: project.id,
-            key,
-            filename: projectSaveFilename(project.title, project.filename),
+          const outcome = await saveProjectFromClick({
+            env: browserSaveEnv(),
+            bookKey: key,
+            plan,
+            writeBackName: projectSaveFilename(project.title, project.filename),
+            newTitleName: `${sanitizeDbBasename(project.title)}.db`,
+            startIn: needsNewName && remembered ? remembered : null,
+            onRemember: (file) => rememberOpenFile(key, file),
+            buildBytes: async () => {
+              const snap = await snapshotManuscript(state, project);
+              dispatch({
+                type: 'promote-stored',
+                projectId: project.id,
+                key: snap.key,
+                filename: project.filename || projectSaveFilename(project.title, project.filename),
+              });
+              return snap.bytes;
+            },
           });
-          const outcome = await saveProjectToPlace(
-            browserSaveEnv(),
-            key,
-            bytes,
-            projectSaveFilename(project.title, project.filename),
-          );
           applySaveOutcome(dispatch, project.id, outcome, 'save');
+          if (
+            (outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title')
+            && recallOpenFile(key) == null
+          ) {
+            const target = await createBrowserTargetStore().load(key);
+            if (target?.file) rememberOpenFile(key, target.file);
+          }
+          return outcome;
         } catch {
           dispatch({ type: 'toast', message: '儲存失敗，稿子仍留在這支裝置' });
+          return null;
         }
       },
       saveProjectAs: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
-        if (!project) return;
+        if (!project) return null;
+        const prepared = peekPreparedShare(project.id);
+        dismissRenameSavePrompt(project.id);
         try {
-          const { key, bytes } = await snapshotManuscript(state, project);
+          const snap = await snapshotManuscript(state, project);
+          const bytes = shareBytesForSaveAs({
+            prepared: prepared?.bytes ?? null,
+            latest: snap.bytes,
+          });
           dispatch({
             type: 'promote-stored',
             projectId: project.id,
-            key,
+            key: snap.key,
             filename: projectSaveFilename(project.title, project.filename),
           });
-          const outcome = await saveProjectAsNew(browserSaveEnv(), key, bytes, exportDbFilename(project.title));
+          const outcome = await saveProjectAsNew(browserSaveEnv(), snap.key, bytes, exportDbFilename(project.title));
           applySaveOutcome(dispatch, project.id, outcome, 'save-as');
+          if (outcome.kind === 'saved-as') {
+            const target = await createBrowserTargetStore().load(snap.key);
+            if (target?.file) rememberOpenFile(snap.key, target.file);
+          }
+          return outcome;
         } catch {
           dispatch({ type: 'toast', message: '另存失敗，稿子仍留在這支裝置' });
+          return null;
         }
       },
       toast: (message) => dispatch({ type: 'toast', message }),
