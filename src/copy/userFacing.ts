@@ -130,7 +130,8 @@ export const BOOK_SAVE_HINT_EXPORT = '下次另存時，檔名也會換成新書
 export const BOOK_SAVE_HINT_RESAVE = '下次按「儲存專案」，會用新書名另存一份';
 export const BOOK_SECTION = '這份稿子';
 export const BOOK_TITLE_LABEL = '書名';
-export const BOOK_GOAL_LABEL = '目標';
+export const BOOK_GOAL_LABEL = '寫作目標';
+export const SETTINGS_EDIT_GOAL_ARIA = '修改寫作目標';
 export const ASK_SAVE_AS_TITLE = '要不要現在另存？';
 export const ASK_SAVE_LATER = '等一下';
 export const ASK_SAVE_NOW = '現在另存';
@@ -148,6 +149,15 @@ export function bookTitleAria(title: string): string {
 
 export function bookTitleCount(length: number): string {
   return `${length}／40`;
+}
+
+/** 設定頁目標卡兩行。標題與數字之間用全形空白，數字與「字」不拆行。 */
+export function settingsBookGoalLine(formattedCount: string): string {
+  return `全書目標\u3000${formattedCount}\u00A0字`;
+}
+
+export function settingsDailyGoalLine(formattedCount: string): string {
+  return `每日目標\u3000${formattedCount}\u00A0字`;
 }
 
 export function askSaveAsBody(title: string): string {

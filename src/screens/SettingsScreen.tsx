@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
+import { formatInteger } from '../domain/formatNumber';
 import { useProject, useSample } from '../state/sampleStore';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
 
@@ -44,21 +45,21 @@ export function SettingsScreen() {
           title={project.title}
           onClick={() => rename.open(wide ? 'center' : 'sheet')}
         />
-        <article className="setting-card goal-card">
+        <article className="setting-card goal-card" aria-labelledby="settings-goal-heading">
           <span className="project-icon">
             <BookIcon size={22} />
           </span>
           <span className="goal-copy">
-            <strong>{BOOK_GOAL_LABEL}</strong>
+            <strong id="settings-goal-heading">{BOOK_GOAL_LABEL}</strong>
             <small className="goal-lines">
-              <span>全書 {project.bookGoal}{'\u00A0'}字</span>
-              <span>每天 {goalNow}{'\u00A0'}字</span>
+              <span>{settingsBookGoalLine(formatInteger(project.bookGoal))}</span>
+              <span>{settingsDailyGoalLine(formatInteger(goalNow))}</span>
             </small>
           </span>
           <button
             type="button"
             className="icon-button"
-            aria-label="修改目標"
+            aria-label={SETTINGS_EDIT_GOAL_ARIA}
             onClick={() => {
               setDaily(String(goalNow));
               setBook(String(project.bookGoal));

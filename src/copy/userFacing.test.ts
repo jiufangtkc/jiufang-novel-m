@@ -88,7 +88,10 @@ describe('章節目錄文案', () => {
     expect(copy.bookTitleCount(38)).toBe('38／40');
     expect(copy.BOOK_SECTION).toBe('這份稿子');
     expect(copy.BOOK_TITLE_LABEL).toBe('書名');
-    expect(copy.BOOK_GOAL_LABEL).toBe('目標');
+    expect(copy.BOOK_GOAL_LABEL).toBe('寫作目標');
+    expect(copy.SETTINGS_EDIT_GOAL_ARIA).toBe('修改寫作目標');
+    expect(copy.settingsBookGoalLine('100,000')).toBe('全書目標\u3000100,000\u00A0字');
+    expect(copy.settingsDailyGoalLine('1,000')).toBe('每日目標\u30001,000\u00A0字');
     expect(copy.ASK_SAVE_AS_TITLE).toBe('要不要現在另存？');
     expect(copy.ASK_SAVE_LATER).toBe('等一下');
     expect(copy.ASK_SAVE_NOW).toBe('現在另存');
