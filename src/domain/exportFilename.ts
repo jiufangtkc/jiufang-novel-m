@@ -1,12 +1,6 @@
-/** 去掉檔名不允許的字元。 */
-export function sanitizeDbBasename(title: string): string {
-  const trimmed = title
-    .replace(/[/\\:*?"<>|]/g, '')
-    .replace(/[\u0000-\u001f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-  return trimmed.slice(0, 80) || '未命名';
-}
+import { sanitizeDbBasename } from './bookTitle';
+
+export { sanitizeDbBasename };
 
 /** 另存到雲端時的預設檔名：書名_YYYYMMDD-HHMM.db */
 export function exportDbFilename(title: string, now = new Date()): string {

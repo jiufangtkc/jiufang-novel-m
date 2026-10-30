@@ -1,6 +1,6 @@
 import { Link, useParams } from 'react-router-dom';
 import { CalendarIcon, ClockIcon, FlameIcon, PenIcon } from '../components/Icons';
-import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
+import { MANUSCRIPT_NOT_FOUND, STATS_HEADING } from '../copy/userFacing';
 import { formatInteger } from '../domain/formatNumber';
 import { useProject, useSample } from '../state/sampleStore';
 
@@ -14,8 +14,11 @@ export function StatsScreen() {
 
   return (
     <div className="page" data-testid="stats-screen">
-      <header className="topbar">
-        <h1>{project.title} — 寫作統計</h1>
+      <header className="topbar stats-heading">
+        <div>
+          <h1>{STATS_HEADING}</h1>
+          <p className="stats-book-name">{project.title}</p>
+        </div>
       </header>
       <div className="scroll-pane stats-page">
         <div className="stat-grid">

@@ -2,6 +2,7 @@ import { settleImportedLogs, writingDayKey, type GoalSchedule, createSchedule, w
 import { MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { appSpace } from './browserSpace';
 import type { StoredBook } from './appSpace';
+import { externalFileFromStored, type BookFileMark } from '../domain/bookTitle';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
 import { openMemoryDb } from './wasmDb';
 
@@ -30,6 +31,9 @@ export interface ImportedBook {
   wordCount: number;
   schedule: GoalSchedule;
   bytes: Uint8Array;
+  hasExternalFile: boolean;
+  titleInFile: string | null;
+  titleSavePending: BookFileMark['titleSavePending'];
 }
 
 function scheduleFromLogs(logs: readonly FileLog[], dailyTarget: number, now: Date): GoalSchedule {
@@ -57,6 +61,13 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
     const db = await openMemoryDb(item.bytes);
     try {
       const loaded = readFileProject(db.sql);
+      const mark = externalFileFromStored({
+        key: item.key,
+        hasExternalFile: item.hasExternalFile,
+        titleInFile: item.titleInFile,
+        title: loaded.info.title,
+        titleSavePending: item.titleSavePending,
+      });
       books.push({
         key: item.key,
         filename: item.filename,
@@ -68,6 +79,9 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         wordCount: loaded.wordCount,
         schedule: scheduleFromLogs(loaded.logs, loaded.info.dailyTargetWordCount, now),
         bytes: item.bytes,
+        hasExternalFile: mark.hasExternalFile,
+        titleInFile: mark.titleInFile,
+        titleSavePending: mark.titleSavePending,
       });
     } finally {
       db.close();
@@ -93,8 +107,19 @@ export async function importBook(filename: string, bytes: Uint8Array, now = new 
       wordCount: loaded.wordCount,
       schedule: scheduleFromLogs(loaded.logs, loaded.info.dailyTargetWordCount, now),
       bytes: exported,
+      hasExternalFile: true,
+      titleInFile: loaded.info.title,
+      titleSavePending: null,
     };
-    await putBook({ key, filename: book.filename, title: book.title, bytes: exported });
+    await putBook({
+      key,
+      filename: book.filename,
+      title: book.title,
+      bytes: exported,
+      hasExternalFile: true,
+      titleInFile: loaded.info.title,
+      titleSavePending: null,
+    });
     return book;
   } finally {
     db.close();
@@ -109,13 +134,29 @@ export async function saveBookBytes(
   tree: ImportedBook['tree'],
   cards: FileCard[],
   logs: FileLog[],
+  bookkeeping?: BookFileMark,
+  persist = true,
 ): Promise<Uint8Array> {
   const existing = await getBook(key);
   const db = await openMemoryDb(existing?.bytes ?? new Uint8Array());
   try {
     writeFileProject(db.sql, info, tree, cards, logs);
     const exported = db.exportBytes();
-    await putBook({ key, filename, title, bytes: exported });
+    if (!persist) return exported;
+    const mark = bookkeeping ?? {
+      titleInFile: existing?.titleInFile ?? null,
+      hasExternalFile: existing?.hasExternalFile,
+      titleSavePending: existing?.titleSavePending ?? null,
+    };
+    await putBook({
+      key,
+      filename,
+      title,
+      bytes: exported,
+      titleInFile: mark.titleInFile,
+      hasExternalFile: mark.hasExternalFile,
+      titleSavePending: mark.titleSavePending,
+    });
     return exported;
   } finally {
     db.close();

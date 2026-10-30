@@ -1,7 +1,20 @@
+import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { createMemoryAppSpace } from './appSpace';
+import { DATABASE_FILE_TYPE, savePickerConfig } from './browserDisk';
 import { createMemoryTargetStore, restoreTarget, type DiskFile } from './fileTarget';
-import { saveNotice, saveProjectAsNew, saveProjectToPlace, writeWithoutDestroying, type SaveEnvironment } from './saveProject';
+import { readFileProject, snapshotFingerprints, writeFileProject, type FileProjectInfo } from './projectFile';
+import { openMemoryDb } from './wasmDb';
+import {
+  handOffPrepared,
+  saveNotice,
+  saveProjectAsNew,
+  saveProjectFromClick,
+  saveProjectToPlace,
+  shouldPickBeforeBuild,
+  writeWithoutDestroying,
+  type SaveEnvironment,
+} from './saveProject';
 import { verifyExportedDatabase } from './verifyDatabase';
 
 const ORIGINAL = new Uint8Array([1, 2, 3, 4]);
@@ -202,6 +215,211 @@ describe('App 空間', () => {
     expect(loaded?.filename).toBe('原稿.db');
     expect(loaded?.title).toBe('【範例】測試書');
     expect(Array.from(loaded?.bytes ?? [])).toEqual(Array.from(NEXT));
+  });
+});
+
+function sha256(bytes: Uint8Array): string {
+  return createHash('sha256').update(bytes).digest('hex');
+}
+
+const sampleInfo = (title: string): FileProjectInfo => ({
+  title,
+  logline: '【範例】一句話',
+  currentTheme: '',
+  globalFontFamily: '',
+  globalFontSize: 12,
+  editorFontFamily: '',
+  editorFontSize: 16,
+  targetWordCount: 100000,
+  dailyTargetWordCount: 1000,
+  categoryOrder: null,
+  expandedCategories: null,
+  categoriesMeta: '{}',
+  lastOpenedNodeId: 'ch-1',
+  lastCursorPosition: 3,
+});
+
+async function sampleBytes(title: string): Promise<Uint8Array> {
+  const db = await openMemoryDb(new Uint8Array());
+  try {
+    writeFileProject(
+      db.sql,
+      sampleInfo(title),
+      [
+        {
+          id: 'ch-1',
+          type: 'file',
+          title: '第一章　未班車',
+          content: '【範例】地下道的燈一盞一盞熄滅。',
+          progress: 'Final',
+        },
+        {
+          id: 'ch-2',
+          type: 'file',
+          title: '第二章　剪票口',
+          content: '【範例】狐狸把票根對折。',
+          progress: 'Draft',
+        },
+      ],
+      [],
+      [],
+    );
+    db.sql.run(
+      'INSERT INTO snapshots (name, note, timestamp, word_count, project_data) VALUES (?, ?, ?, ?, ?)',
+      ['【範例】快照', '', '2026-10-30', 12, 'kept'],
+    );
+    return db.exportBytes();
+  } finally {
+    db.close();
+  }
+}
+
+async function retitle(bytes: Uint8Array, title: string): Promise<Uint8Array> {
+  const db = await openMemoryDb(bytes);
+  try {
+    const loaded = readFileProject(db.sql);
+    writeFileProject(db.sql, { ...loaded.info, title }, loaded.tree, loaded.cards, loaded.logs);
+    return db.exportBytes();
+  } finally {
+    db.close();
+  }
+}
+
+describe('用新書名另存', () => {
+  it('先開存檔視窗再整理內容；取消就什麼都不寫', async () => {
+    const order: string[] = [];
+    const original = new FakeDisk('【範例】月台上的狐狸.db', ORIGINAL);
+    const box = env({
+      canPickFiles: true,
+      pick: async () => {
+        order.push('pick');
+        return null;
+      },
+    });
+    const outcome = await saveProjectFromClick({
+      env: box.env,
+      bookKey: 'book-1',
+      plan: 'pick-new-name',
+      writeBackName: original.name,
+      newTitleName: '【範例】月台上的白狐.db',
+      startIn: original,
+      buildBytes: async () => {
+        order.push('build');
+        return NEXT;
+      },
+    });
+    expect(order).toEqual(['pick']);
+    expect(outcome.kind).toBe('cancelled');
+    expect(original.writes).toBe(0);
+    expect(saveNotice(outcome)).toBeNull();
+  });
+
+  it('舊檔的大小和雜湊不變，新檔只有書名不同', async () => {
+    const oldBytes = await sampleBytes('【範例】月台上的狐狸');
+    const newBytes = await retitle(oldBytes, '【範例】月台上的白狐');
+    const oldDb = await openMemoryDb(oldBytes);
+    const newDb = await openMemoryDb(newBytes);
+    try {
+      const before = readFileProject(oldDb.sql);
+      const after = readFileProject(newDb.sql);
+      expect(after.info.title).toBe('【範例】月台上的白狐');
+      expect(before.info.title).toBe('【範例】月台上的狐狸');
+      expect(after.tree).toEqual(before.tree);
+      expect(after.cards).toEqual(before.cards);
+      expect(after.logs).toEqual(before.logs);
+      expect(snapshotFingerprints(newDb.sql)).toEqual(snapshotFingerprints(oldDb.sql));
+      expect(sha256(oldBytes)).not.toBe(sha256(newBytes));
+    } finally {
+      oldDb.close();
+      newDb.close();
+    }
+
+    const order: string[] = [];
+    const original = new FakeDisk('【範例】月台上的狐狸.db', oldBytes);
+    const created = new FakeDisk('【範例】月台上的白狐.db', new Uint8Array());
+    const oldHash = sha256(original.bytes);
+    const box = env({
+      canPickFiles: true,
+      pick: async (name, startIn) => {
+        order.push('pick');
+        expect(name).toBe('【範例】月台上的白狐.db');
+        expect(startIn).toBe(original);
+        return created;
+      },
+    });
+    const outcome = await saveProjectFromClick({
+      env: box.env,
+      bookKey: 'book-1',
+      plan: 'pick-new-name',
+      writeBackName: original.name,
+      newTitleName: '【範例】月台上的白狐.db',
+      startIn: original,
+      buildBytes: async () => {
+        order.push('build');
+        return newBytes;
+      },
+    });
+    expect(order).toEqual(['pick', 'build']);
+    expect(outcome).toEqual({ kind: 'saved-under-new-title', filename: created.name });
+    expect(saveNotice(outcome)).toBe('已用新書名另存一份');
+    expect(original.writes).toBe(0);
+    expect(original.bytes.byteLength).toBe(oldBytes.byteLength);
+    expect(sha256(original.bytes)).toBe(oldHash);
+    expect(sha256(created.bytes)).toBe(sha256(newBytes));
+
+    const again = new Uint8Array([4, 5, 6]);
+    const saved = await saveProjectToPlace(box.env, 'book-1', again, '【範例】月台上的白狐.db');
+    expect(saved.kind).toBe('saved');
+    expect(Array.from(created.bytes)).toEqual(Array.from(again));
+    expect(sha256(original.bytes)).toBe(oldHash);
+  });
+
+  it('改過書名才先跳視窗；寫回原檔不用跳', () => {
+    const file = new FakeDisk('原稿.db', ORIGINAL);
+    expect(shouldPickBeforeBuild({
+      canPick: true,
+      needsNewName: true,
+      remembered: undefined,
+      hasExternalFile: true,
+    })).toBe(true);
+    expect(shouldPickBeforeBuild({
+      canPick: true,
+      needsNewName: false,
+      remembered: null,
+      hasExternalFile: false,
+    })).toBe(true);
+    expect(shouldPickBeforeBuild({
+      canPick: true,
+      needsNewName: false,
+      remembered: file,
+      hasExternalFile: true,
+    })).toBe(false);
+    expect(shouldPickBeforeBuild({
+      canPick: false,
+      needsNewName: true,
+      remembered: null,
+      hasExternalFile: true,
+    })).toBe(false);
+  });
+
+  it('存檔類型用九方編輯器稿件檔，並把舊檔把手交給視窗', () => {
+    const handle = { name: '原稿.db' };
+    expect(DATABASE_FILE_TYPE.description).toBe('九方編輯器稿件檔');
+    expect(savePickerConfig('白狐.db', handle).startIn).toBe(handle);
+    expect(savePickerConfig('白狐.db').startIn).toBeUndefined();
+  });
+
+  it('事先備好的分享在按下時直接交出檔案', async () => {
+    const shared: string[] = [];
+    const box = env({
+      share: async (filename) => {
+        shared.push(filename);
+        return 'shared';
+      },
+    });
+    const outcome = await handOffPrepared(box.env, '白狐_20261030-1140.db', NEXT);
+    expect(outcome.kind).toBe('handed-off');
+    expect(shared).toEqual(['白狐_20261030-1140.db']);
   });
 });
 

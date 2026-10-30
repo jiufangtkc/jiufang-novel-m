@@ -170,6 +170,14 @@ a { color: var(--accent); }
   font-weight: 700;
 }
 
+.project-main strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
 .project-main small, .setting-card small, .setting-row small {
   display: block;
   margin-top: 4px;
@@ -578,8 +586,10 @@ button.save-status {
   margin: 0 0 10px;
   font-size: 15px;
   line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-.files-status-title strong { font-weight: 700; }
+.files-status-title strong { font-weight: 700; overflow-wrap: anywhere; }
+.files-status-line.is-warning { color: var(--warning); }
 .files-status-line {
   margin: 0 0 6px;
   color: var(--muted);
@@ -779,6 +789,7 @@ button.save-status {
 .tree-inline-rename input {
   width: 100%;
   min-height: 36px;
+  font-size: 16px;
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--accent);
@@ -952,6 +963,134 @@ html.landscape-writing .write-layout .editor-pane {
   min-width: 0;
   min-height: 0;
 }
+
+.book-title-button {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  padding: 0 8px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.book-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.book-title-button svg { flex-shrink: 0; }
+.book-title-tip {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 5;
+  max-width: min(360px, 80vw);
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: normal;
+}
+.book-title-tip small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+.inline-book-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 8px 4px 0;
+}
+.rename-book-input {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  padding: 0 12px;
+  font-size: 16px;
+}
+.rename-count {
+  margin: 4px 0 0;
+  text-align: right;
+  color: var(--muted);
+  font-size: 12px;
+}
+.rename-warn {
+  margin: 4px 0 0;
+  color: var(--warning);
+  font-size: 12px;
+}
+.ask-save-actions .button { min-height: 50px; }
+.settings-kicker {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+}
+.book-name-row {
+  width: 100%;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 8px 4px;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  font-size: 16px;
+}
+.book-name-row .label { flex-shrink: 0; color: var(--muted); }
+.book-name-row .value {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 700;
+}
+.book-name-row .chevron {
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 20px;
+}
+.stats-heading > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 6px 12px 6px 0;
+}
+.stats-heading h1 { flex: none; }
+.stats-book-name {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+html.book-title-modal .scroll-pane { overflow: hidden; }
 
 @media (prefers-reduced-motion: reduce) {
   .daily-bar-fill { transition: none; }

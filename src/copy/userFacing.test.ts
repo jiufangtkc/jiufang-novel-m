@@ -80,6 +80,29 @@ describe('章節目錄文案', () => {
     expect(copy.versionRowLabel('10月29日（四） 19:57', '120')).toBe('10月29日（四） 19:57 · 120 字');
   });
 
+  it('改書名的句子', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.BOOK_RENAME_TITLE).toBe('改書名');
+    expect(copy.BOOK_TITLE_BLANK_HINT).toBe('留白會用「未命名稿子」');
+    expect(copy.BOOK_TITLE_LIMIT_HINT).toBe('最多 40 個字，多的字沒有貼上');
+    expect(copy.bookTitleCount(38)).toBe('38／40');
+    expect(copy.BOOK_SECTION).toBe('這份稿子');
+    expect(copy.BOOK_TITLE_LABEL).toBe('書名');
+    expect(copy.BOOK_GOAL_LABEL).toBe('目標');
+    expect(copy.ASK_SAVE_AS_TITLE).toBe('要不要現在另存？');
+    expect(copy.ASK_SAVE_LATER).toBe('等一下');
+    expect(copy.ASK_SAVE_NOW).toBe('現在另存');
+    expect(copy.askSaveAsBody('白狐')).toBe('書名改成《白狐》了。原本的檔案裡還是舊書名，另存一份新檔才會用新書名。');
+    expect(copy.TITLE_PENDING_EXPORT).toBe('書名改過了，還沒另存。原本的檔案裡還是舊書名');
+    expect(copy.TITLE_PENDING_RESAVE).toBe('書名改過了，下次按「儲存專案」會用新書名另存一份，舊檔留著');
+    expect(copy.TOAST_SAVED_UNDER_NEW_TITLE).toBe('已用新書名另存一份');
+    expect(copy.STATS_HEADING).toBe('寫作統計');
+    expect(copy.DB_FILE_TYPE_LABEL).toBe('九方編輯器稿件檔');
+    expect(copy.currentFileLine('白狐.db')).toBe('檔案：白狐.db');
+    expect(copy.titlePendingNotice('export')).toBe(copy.TITLE_PENDING_EXPORT);
+    expect(copy.titlePendingNotice(null)).toBeNull();
+  });
+
   it('更多摘要：幕不寫幕數，卷要寫章數', () => {
     expect(treeMoreSummary(TREE_KIND_SCENE, 0, 0, '12')).toBe('幕 · 共 12 字');
     expect(treeMoreSummary(TREE_KIND_CHAPTER, 0, 2, '3,280')).toBe('章 · 2 幕 · 共 3,280 字');

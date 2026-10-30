@@ -5,6 +5,8 @@ export interface DiskFile {
   write(bytes: Uint8Array): Promise<void>;
   queryPermission(): Promise<'granted' | 'prompt' | 'denied'>;
   requestPermission(): Promise<'granted' | 'denied'>;
+  /** 瀏覽器的檔案把手。存檔視窗要用它從舊檔的資料夾開。 */
+  directoryHint?: unknown;
 }
 
 export interface SaveTarget {

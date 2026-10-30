@@ -1,14 +1,31 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
-import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { useProject, useSample } from '../state/sampleStore';
+import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
+
+function useWideLayout(): boolean {
+  const [wide, setWide] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 600px)').matches : false,
+  );
+  useEffect(() => {
+    const media = window.matchMedia('(min-width: 600px)');
+    const apply = () => setWide(media.matches);
+    apply();
+    media.addEventListener('change', apply);
+    return () => media.removeEventListener('change', apply);
+  }, []);
+  return wide;
+}
 
 export function SettingsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
   const { state, actions } = useSample();
+  const wide = useWideLayout();
+  const rename = useBookRename(project);
   const [editing, setEditing] = useState(false);
   const goalNow = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const [daily, setDaily] = useState(String(goalNow));
@@ -22,12 +39,17 @@ export function SettingsScreen() {
         <h1>設定</h1>
       </header>
       <div className="scroll-pane settings-page">
+        <p className="settings-kicker">{BOOK_SECTION}</p>
+        <BookTitleSettingRow
+          title={project.title}
+          onClick={() => rename.open(wide ? 'center' : 'sheet')}
+        />
         <article className="setting-card">
           <span className="project-icon">
             <BookIcon size={22} />
           </span>
           <span>
-            <strong>{project.title}</strong>
+            <strong>{BOOK_GOAL_LABEL}</strong>
             <small>
               目標字數：{project.bookGoal} 字　·　每日目標：{goalNow} 字
             </small>
@@ -129,6 +151,7 @@ export function SettingsScreen() {
           </form>
         </div>
       )}
+      {rename.dialogs}
     </div>
   );
 }
