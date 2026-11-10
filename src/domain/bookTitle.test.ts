@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { exportDbFilename, projectSaveFilename } from './exportFilename';
 import {
+  FILENAME_MAX_BYTES,
+  RESERVED_NAME_SUFFIX,
   bookAfterRename,
   clipBookTitle,
   commitBookTitleEdit,
@@ -121,7 +123,7 @@ describe('檔名', () => {
     for (const name of ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'LPT1']) {
       expect(resolvedBookTitle(name)).toBe(name);
       const base = sanitizeDbBasename(name);
-      expect(base.toLowerCase()).toBe(`${name.toLowerCase()}_`);
+      expect(base.toLowerCase()).toBe(`${name.toLowerCase()}${RESERVED_NAME_SUFFIX}`);
       expect(`${base}.db`.toLowerCase().startsWith(`${name.toLowerCase()}.`)).toBe(false);
     }
     expect(titleMatchesFilename('CON', 'CON.db')).toBe(true);
@@ -133,6 +135,214 @@ describe('檔名', () => {
     expect(titleMatchesFilename('月台/白狐', '月台白狐.db')).toBe(true);
     expect(titleMatchesFilename('月台/白狐', '月台／白狐.db')).toBe(true);
     expect(titleMatchesFilename(WHITE, `${FOX}.db`)).toBe(false);
+  });
+
+  it('40 個家庭組合表情的書名：儲存與另存檔名都 ≤ 255 位元組且結尾是完整家庭表情', () => {
+    const encoder = new TextEncoder();
+    const family = '👨\u200d👩\u200d👧\u200d👦';
+    const title = family.repeat(40);
+    const base = sanitizeDbBasename(title);
+    const saveName = projectSaveFilename(title);
+    const exportName = exportDbFilename(title, when);
+
+    expect(encoder.encode(base).byteLength).toBeLessThanOrEqual(FILENAME_MAX_BYTES);
+    expect(encoder.encode(saveName).byteLength).toBeLessThanOrEqual(255);
+    expect(encoder.encode(exportName).byteLength).toBeLessThanOrEqual(255);
+    expect(saveName.endsWith('.db')).toBe(true);
+    expect(exportName.endsWith('.db')).toBe(true);
+    expect(base.endsWith(family)).toBe(true);
+    expect(saveName.slice(0, -3).endsWith(family)).toBe(true);
+    expect(filenameStem(exportName).endsWith(family)).toBe(true);
+  });
+
+  it('膚色表情、旗幟表情落在位元組截斷處時，整組留下或整組拿掉，不留殘缺字元', () => {
+    const encoder = new TextEncoder();
+    const waveSkin = '👋🏽'; // 8 位元組
+    const flagTw = '🇹🇼'; // 8 位元組
+
+    // 64 個中文字（192 位元組）＋ 8 位元組表情 ＝ 200 位元組（剛好塞得下，整組留下）
+    const fitSkin = `${'狐'.repeat(64)}${waveSkin}尾`;
+    const baseFitSkin = sanitizeDbBasename(fitSkin);
+    expect(encoder.encode(baseFitSkin).byteLength).toBe(200);
+    expect(baseFitSkin.endsWith(waveSkin)).toBe(true);
+
+    const fitFlag = `${'狐'.repeat(64)}${flagTw}尾`;
+    const baseFitFlag = sanitizeDbBasename(fitFlag);
+    expect(encoder.encode(baseFitFlag).byteLength).toBe(200);
+    expect(baseFitFlag.endsWith(flagTw)).toBe(true);
+
+    // 65 個中文字（195 位元組）＋ 8 位元組表情 ＝ 203 位元組（超過 200，整組拿掉，不留半個）
+    const dropSkin = `${'狐'.repeat(65)}${waveSkin}`;
+    const baseDropSkin = sanitizeDbBasename(dropSkin);
+    expect(baseDropSkin).toBe('狐'.repeat(65));
+    expect(baseDropSkin.includes('👋')).toBe(false);
+
+    const dropFlag = `${'狐'.repeat(65)}${flagTw}`;
+    const baseDropFlag = sanitizeDbBasename(dropFlag);
+    expect(baseDropFlag).toBe('狐'.repeat(65));
+    expect(baseDropFlag.includes('🇹')).toBe(false);
+
+    // 截完不留單獨代理字元、零寬連接字元（U+200D）、變體選擇字元（U+FE0F），並去掉截斷處結尾空白與句點
+    const withBrokenAndEdges = `${'狐'.repeat(65)} \u3000.${waveSkin}`;
+    expect(sanitizeDbBasename(withBrokenAndEdges)).toBe('狐'.repeat(65));
+    expect(sanitizeDbBasename('👨\u200d')).toBe('👨');
+    expect(sanitizeDbBasename('\u200d\ufe0f\ud83d')).toBe('未命名稿子');
+    // 單一字元叢集本身超過 200 位元組時，安全回退為未命名稿子
+    expect(sanitizeDbBasename(`狐${'\u0300'.repeat(100)}`)).toBe('未命名稿子');
+  });
+
+  it('沒有 Intl.Segmenter 時，家庭表情不拆開，膚色、旗幟與 40 個家庭表情都不會切出殘缺字元', () => {
+    const encoder = new TextEncoder();
+    const family = '👨\u200d👩\u200d👧\u200d👦';
+    const waveSkin = '👋🏽';
+    const flagTw = '🇹🇼';
+    const intlHolder = Intl as unknown as { Segmenter?: typeof Intl.Segmenter };
+    const originalSegmenter = intlHolder.Segmenter;
+    try {
+      delete intlHolder.Segmenter;
+
+      expect(sanitizeDbBasename(`月台${family}白狐`)).toBe(`月台${family}白狐`);
+      expect(projectSaveFilename(`月台${family}白狐`)).toBe(`月台${family}白狐.db`);
+      expect(sanitizeDbBasename('月台👨👩👧👦白狐')).toBe('月台👨👩👧👦白狐');
+      expect(projectSaveFilename('月台👨👩👧👦白狐')).toBe('月台👨👩👧👦白狐.db');
+
+      const dropSkin = sanitizeDbBasename(`${'狐'.repeat(65)}${waveSkin}`);
+      expect(dropSkin).toBe('狐'.repeat(65));
+      expect(dropSkin.includes('👋')).toBe(false);
+
+      const dropFlag = sanitizeDbBasename(`${'狐'.repeat(65)}${flagTw}`);
+      expect(dropFlag).toBe('狐'.repeat(65));
+      expect(dropFlag.includes('🇹')).toBe(false);
+
+      const familyTitle = family.repeat(40);
+      const familyBase = sanitizeDbBasename(familyTitle);
+      const familySave = projectSaveFilename(familyTitle);
+      const familyExport = exportDbFilename(familyTitle, when);
+      expect(encoder.encode(familyBase).byteLength).toBeLessThanOrEqual(FILENAME_MAX_BYTES);
+      expect(encoder.encode(familySave).byteLength).toBeLessThanOrEqual(255);
+      expect(encoder.encode(familyExport).byteLength).toBeLessThanOrEqual(255);
+      expect(familyBase.endsWith(family)).toBe(true);
+      expect(familySave.slice(0, -3).endsWith(family)).toBe(true);
+      expect(filenameStem(familyExport).endsWith(family)).toBe(true);
+    } finally {
+      intlHolder.Segmenter = originalSegmenter;
+    }
+  });
+
+  it('80 個中文字的舊書名與 81 個英文字邊界：儲存與另存檔名都 ≤ 255 位元組，一般書名維持原樣', () => {
+    const encoder = new TextEncoder();
+    const longCjk = '狐'.repeat(80);
+    const saveName = projectSaveFilename(longCjk);
+    const exportName = exportDbFilename(longCjk, when);
+
+    expect(encoder.encode(saveName).byteLength).toBeLessThanOrEqual(255);
+    expect(encoder.encode(exportName).byteLength).toBeLessThanOrEqual(255);
+    expect(saveName.endsWith('.db')).toBe(true);
+    expect(exportName.endsWith('.db')).toBe(true);
+
+    // 81 個 ASCII 英文字元受 80 字上限截斷為 80 字
+    expect(sanitizeDbBasename('a'.repeat(81))).toBe('a'.repeat(80));
+
+    // 一般長度書名與既有結果完全相同
+    const march = new Date('2026-03-15T09:05:00');
+    expect(exportDbFilename('【範例】霧/港*紀事', march)).toBe('【範例】霧／港＊紀事_20260315-0905.db');
+    expect(projectSaveFilename('月台🦊白狐')).toBe('月台🦊白狐.db');
+  });
+
+  it('Windows 保留名稱全部逐一加「稿」，另存檔名不含連續兩個底線，非保留名不變', () => {
+    const reservedNames = [
+      'CON',
+      'con',
+      'Con',
+      'PRN',
+      'AUX',
+      'NUL',
+      'COM1',
+      'COM2',
+      'COM3',
+      'COM4',
+      'COM5',
+      'COM6',
+      'COM7',
+      'COM8',
+      'COM9',
+      'LPT1',
+      'LPT2',
+      'LPT3',
+      'LPT4',
+      'LPT5',
+      'LPT6',
+      'LPT7',
+      'LPT8',
+      'LPT9',
+      'COM\u00b9',
+      'COM\u00b2',
+      'COM\u00b3',
+      'LPT\u00b9',
+      'LPT\u00b2',
+      'LPT\u00b3',
+    ];
+    for (const name of reservedNames) {
+      expect(sanitizeDbBasename(name)).toBe(`${name}稿`);
+      expect(projectSaveFilename(name)).toBe(`${name}稿.db`);
+      const exported = exportDbFilename(name, when);
+      expect(exported).toBe(`${name}稿_20261030-1140.db`);
+      expect(exported.includes('__')).toBe(false);
+    }
+
+    expect(sanitizeDbBasename('CON.')).toBe('CON稿');
+    expect(sanitizeDbBasename('CON ')).toBe('CON稿');
+    expect(sanitizeDbBasename('nul.txt')).toBe('nul稿.txt');
+    expect(projectSaveFilename('nul.txt')).toBe('nul稿.txt.db');
+    expect(exportDbFilename('nul.txt', when)).toBe('nul稿.txt_20261030-1140.db');
+    expect(exportDbFilename('CON.', when).includes('__')).toBe(false);
+    expect(exportDbFilename('CON ', when).includes('__')).toBe(false);
+    expect(exportDbFilename('nul.txt', when).includes('__')).toBe(false);
+
+    expect(sanitizeDbBasename('COM10')).toBe('COM10');
+    expect(sanitizeDbBasename('CONSOLE')).toBe('CONSOLE');
+    expect(projectSaveFilename('COM10')).toBe('COM10.db');
+    expect(projectSaveFilename('CONSOLE')).toBe('CONSOLE.db');
+  });
+
+  it('新舊保留名檔名與新舊長書名檔名，titleMatchesFilename 都判斷為同一本', () => {
+    expect(titleMatchesFilename('CON', 'CON.db')).toBe(true);
+    expect(titleMatchesFilename('CON', 'CON_.db')).toBe(true);
+    expect(titleMatchesFilename('CON', 'CON__20261030-1911.db')).toBe(true);
+    expect(titleMatchesFilename('CON', 'CON稿.db')).toBe(true);
+    expect(titleMatchesFilename('CON', 'CON稿_20261110-1310.db')).toBe(true);
+
+    expect(titleMatchesFilename('nul.txt', 'nul.txt.db')).toBe(true);
+    expect(titleMatchesFilename('nul.txt', 'nul_.txt.db')).toBe(true);
+    expect(titleMatchesFilename('nul.txt', 'nul_.txt_20261030-1911.db')).toBe(true);
+    expect(titleMatchesFilename('nul.txt', 'nul稿.txt.db')).toBe(true);
+    expect(titleMatchesFilename('nul.txt', 'nul稿.txt_20261110-1310.db')).toBe(true);
+
+    const longCjk = '狐'.repeat(80);
+    // 舊規則下存得出去的 80 個中文字（243 位元組）
+    expect(titleMatchesFilename(longCjk, `${longCjk}.db`)).toBe(true);
+    expect(titleMatchesFilename(longCjk, `${longCjk}_20261030-1911.db`)).toBe(true);
+    // 新規則截斷後的儲存與另存檔名
+    const truncatedBase = sanitizeDbBasename(longCjk);
+    const exportedLong = exportDbFilename(longCjk, when);
+    expect(titleMatchesFilename(longCjk, `${truncatedBase}.db`)).toBe(true);
+    expect(titleMatchesFilename(longCjk, exportedLong)).toBe(true);
+    expect(titleMatchesFilename(truncatedBase, exportedLong)).toBe(true);
+    expect(shouldSaveUnderNewName({
+      hasExternalFile: true,
+      titleInFile: FOX,
+      title: longCjk,
+      filename: exportedLong,
+    })).toBe(false);
+
+    // 交錯結尾句點與空白：新檔名清理為「狐」，但仍認得 cfb9275 舊規則產生的「狐..db」及日期版本
+    expect(sanitizeDbBasename('狐. . ')).toBe('狐');
+    expect(titleMatchesFilename('狐. . ', '狐..db')).toBe(true);
+    expect(titleMatchesFilename('狐. . ', '狐._20261030-1911.db')).toBe(true);
+    expect(titleMatchesFilename('狐. .', '狐..db')).toBe(true);
+    expect(titleMatchesFilename('狐. .', '狐._20261030-1911.db')).toBe(true);
+    expect(titleMatchesFilename('狐. . ', '狐.db')).toBe(true);
+    expect(titleMatchesFilename('狐. . ', '狐_20261110-1310.db')).toBe(true);
   });
 });
 
