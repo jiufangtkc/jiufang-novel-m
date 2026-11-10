@@ -581,9 +581,12 @@ button.save-status {
   flex-direction: column;
   gap: 2px;
 }
+/* WO-43：字級放大或窄螢幕時允許在標題與數字間折行，避免壓到右側鉛筆按鈕。 */
 .goal-card .goal-lines span {
   display: block;
-  white-space: nowrap;
+  white-space: normal;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
 }
 .goal-card .icon-button { margin-left: auto; flex-shrink: 0; }
 .files-status-card {
