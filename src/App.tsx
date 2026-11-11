@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { Toast } from './components/Toast';
+import { LayoutProvider } from './layout';
 import { HomeScreen } from './screens/HomeScreen';
 import { CardsScreen } from './screens/CardsScreen';
 import { FilesScreen } from './screens/FilesScreen';
@@ -32,23 +33,25 @@ export function App() {
 
   return (
     <SampleProvider>
-      <BrowserRouter>
-        <div className="app-shell">
-          <Routes>
-            <Route path="/" element={<HomeScreen />} />
-            <Route path="/p/:projectId" element={<Workspace />}>
-              <Route index element={<Navigate to="write" replace />} />
-              <Route path="write/:chapterId?" element={<WriteScreen />} />
-              <Route path="cards" element={<CardsScreen />} />
-              <Route path="files" element={<FilesScreen />} />
-              <Route path="stats" element={<StatsScreen />} />
-              <Route path="settings" element={<SettingsScreen />} />
-              <Route path="logs" element={<LogsScreen />} />
-            </Route>
-          </Routes>
-          <Toast />
-        </div>
-      </BrowserRouter>
+      <LayoutProvider>
+        <BrowserRouter>
+          <div className="app-shell">
+            <Routes>
+              <Route path="/" element={<HomeScreen />} />
+              <Route path="/p/:projectId" element={<Workspace />}>
+                <Route index element={<Navigate to="write" replace />} />
+                <Route path="write/:chapterId?" element={<WriteScreen />} />
+                <Route path="cards" element={<CardsScreen />} />
+                <Route path="files" element={<FilesScreen />} />
+                <Route path="stats" element={<StatsScreen />} />
+                <Route path="settings" element={<SettingsScreen />} />
+                <Route path="logs" element={<LogsScreen />} />
+              </Route>
+            </Routes>
+            <Toast />
+          </div>
+        </BrowserRouter>
+      </LayoutProvider>
     </SampleProvider>
   );
 }

@@ -111,4 +111,109 @@ describe('章節目錄文案', () => {
     expect(treeMoreSummary(TREE_KIND_CHAPTER, 0, 2, '3,280')).toBe('章 · 2 幕 · 共 3,280 字');
     expect(treeMoreSummary(TREE_KIND_VOLUME, 3, 2, '3,280')).toBe('卷 · 3 章 · 2 幕 · 共 3,280 字');
   });
+
+  it('資料集試看版文案（WO-45、WO-50 定案）', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.SAMPLE_CARDS_NOTICE).toBe('範例卡片，之後會換成這份稿子的卡片');
+    expect(copy.CARDS_HEADING).toBe('資料集');
+    expect(copy.BACK_TO_CATEGORIES_ARIA).toBe('返回分類清單');
+    expect(copy.BACK_TO_CARDS_ARIA).toBe('返回卡片清單');
+    expect(copy.categoryRowAria('角色', 5)).toBe('角色，5 張卡片');
+    expect(copy.cardCollapseAria('沈雨晴')).toBe('收合「沈雨晴」子卡片');
+    expect(copy.cardExpandAria('沈雨晴')).toBe('展開「沈雨晴」子卡片');
+    expect(copy.cardDetailAria('沈雨晴')).toBe('看「沈雨晴」卡片內容');
+    expect(copy.VIEW_CARDS_BUTTON).toBe('看卡片');
+    expect(copy.CLOSE_CARDS_ARIA).toBe('關閉資料集');
+    expect(copy.EMPTY_CARD_CONTENT_MESSAGE).toBe('這張卡片還沒有內容。');
+    expect(copy.UNTITLED_CARD_TITLE).toBe('未命名卡片');
+    expect(copy.displayCardTitle('沈雨晴')).toBe('沈雨晴');
+    expect(copy.displayCardTitle('')).toBe('未命名卡片');
+    expect(copy.displayCardTitle('   ')).toBe('未命名卡片');
+    expect(copy.displayCardTitle(null)).toBe('未命名卡片');
+    expect(copy.cardDetailAria('')).toBe('看「未命名卡片」卡片內容');
+    expect(copy.cardDetailAria('   ')).toBe('看「未命名卡片」卡片內容');
+  });
+
+  it('WO-56：四種版面資料集定案文字', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.CARDS_READONLY_BADGE).toBe('只能看');
+    expect(copy.CARDS_EMPTY_CATEGORY_HINT).toBe('請選擇分類');
+    expect(copy.CARDS_EMPTY_CARD_HINT).toBe('請選擇卡片');
+    expect(copy.CARDS_COLUMN_CATEGORIES).toBe('分類');
+    expect(copy.CARDS_COLUMN_CARDS).toBe('卡片清單');
+    expect(copy.CARDS_COLUMN_CONTENT).toBe('卡片內容');
+    expect(copy.CARDS_PREVIEW_EMPTY_HINT).toBe('這份稿子還沒有正文。');
+    expect(copy.cardsSubcardsCountLabel(2)).toBe('子卡片\u30002 張');
+    expect(copy.cardsCountLabel(4)).toBe('4 張');
+  });
+
+  it('WO-57：介面用字常數定案（專注模式、收合目錄、展開目錄、資料集）', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.FOCUS_MODE_ENTER_BUTTON).toBe('專注模式');
+    expect(copy.FOCUS_MODE_EXIT_BUTTON).toBe('離開專注模式');
+    expect(copy.CLOSE_CHAPTER_TREE_ARIA).toBe('收合目錄');
+    expect(copy.FLOATING_CHAPTER_TREE_ARIA).toBe('展開目錄');
+    expect(copy.CARDS_PANEL_ARIA).toBe('資料集');
+    expect(copy.OPEN_CHAPTER_TREE_ARIA).toBe('展開目錄');
+    expect(copy.TREE_DRAWER_BUTTON).toBe('目錄');
+    expect(copy.VIEW_CARDS_BUTTON).toBe('看卡片');
+    expect(copy.CLOSE_CARDS_ARIA).toBe('關閉資料集');
+  });
+
+  it('WO-57：今天字數統計標籤（有目標、無目標、四位數千分位、0 字驗證）', async () => {
+    const { todayWordsLabel } = await import('./userFacing');
+
+    // 1. 有每日目標：全形斜線「／」，四位數以上加千分位
+    expect(todayWordsLabel(620, 1000)).toBe('今天 620／1,000 字');
+    expect(todayWordsLabel(1234, 10000)).toBe('今天 1,234／10,000 字');
+    expect(todayWordsLabel(0, 1000)).toBe('今天 0／1,000 字');
+    expect(todayWordsLabel(12345, 20000)).toBe('今天 12,345／20,000 字');
+    expect(todayWordsLabel('620', '1,000')).toBe('今天 620／1,000 字');
+    expect(todayWordsLabel('1,234', 10000)).toBe('今天 1,234／10,000 字');
+
+    // 2. 沒設每日目標（無 goal 或 goal 為 null / undefined / 0）：顯示「今天 N 字」
+    expect(todayWordsLabel(620)).toBe('今天 620 字');
+    expect(todayWordsLabel(620, null)).toBe('今天 620 字');
+    expect(todayWordsLabel(620, undefined)).toBe('今天 620 字');
+    expect(todayWordsLabel(620, 0)).toBe('今天 620 字');
+    expect(todayWordsLabel(0)).toBe('今天 0 字');
+    expect(todayWordsLabel(0, null)).toBe('今天 0 字');
+    expect(todayWordsLabel(1234)).toBe('今天 1,234 字');
+    expect(todayWordsLabel(12345)).toBe('今天 12,345 字');
+    expect(todayWordsLabel('1,234')).toBe('今天 1,234 字');
+  });
+
+  it('WO-59：資料集與底列用字定案（CARDS_PREVIEW_EMPTY_HINT、cardsSubcardsCountLabel 全形空白、DailyProgressBar 標籤函式）', async () => {
+    const copy = await import('./userFacing');
+
+    // 1. CARDS_PREVIEW_EMPTY_HINT 定案為「這份稿子還沒有正文。」
+    expect(copy.CARDS_PREVIEW_EMPTY_HINT).toBe('這份稿子還沒有正文。');
+
+    // 2. cardsSubcardsCountLabel(n) 中間使用全形空白 U+3000
+    expect(copy.cardsSubcardsCountLabel(3)).toBe('子卡片\u30003 張');
+    expect(copy.cardsSubcardsCountLabel(3)).toBe('子卡片\u{3000}3 張');
+    expect(copy.cardsSubcardsCountLabel(1)).toBe('子卡片\u30001 張');
+    expect(copy.cardsSubcardsCountLabel(1000)).toBe('子卡片\u30001,000 張');
+
+    // 3. dailyProgressWordsLabel 未達標與達標前後綴、四位數千分位
+    expect(copy.dailyProgressWordsLabel(300, false)).toBe('今天寫了 300 字');
+    expect(copy.dailyProgressWordsLabel(300, true)).toBe('✦ 今天寫了 300 字，已達標');
+    expect(copy.dailyProgressWordsLabel(12345, false)).toBe('今天寫了 12,345 字');
+    expect(copy.dailyProgressWordsLabel(12345, true)).toBe('✦ 今天寫了 12,345 字，已達標');
+    expect(copy.dailyProgressWordsLabel(0, false)).toBe('今天寫了 0 字');
+
+    // 4. dailyProgressGoalLabel 每日目標與千分位
+    expect(copy.dailyProgressGoalLabel(1000)).toBe('每日目標 1,000 字');
+    expect(copy.dailyProgressGoalLabel(10000)).toBe('每日目標 10,000 字');
+    expect(copy.dailyProgressGoalLabel(500)).toBe('每日目標 500 字');
+
+    // 5. WO-56 其餘文字保持不變
+    expect(copy.CARDS_READONLY_BADGE).toBe('只能看');
+    expect(copy.CARDS_EMPTY_CATEGORY_HINT).toBe('請選擇分類');
+    expect(copy.CARDS_EMPTY_CARD_HINT).toBe('請選擇卡片');
+    expect(copy.CARDS_COLUMN_CATEGORIES).toBe('分類');
+    expect(copy.CARDS_COLUMN_CARDS).toBe('卡片清單');
+    expect(copy.CARDS_COLUMN_CONTENT).toBe('卡片內容');
+    expect(copy.cardsCountLabel(4)).toBe('4 張');
+  });
 });

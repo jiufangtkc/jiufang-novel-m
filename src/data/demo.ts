@@ -5,8 +5,15 @@ import {
   type GoalSchedule,
   type SettledWritingDay,
 } from '../domain/dailyGoal';
+import type { FileCard, SqlValue } from '../db/projectFile';
 import type { NodeType, ProgressCode } from '../domain/labels';
 import { emptyWritingLog, type WritingLogRow } from '../domain/writingLog';
+import {
+  cloneDemoCards,
+  DEMO_CATEGORIES_META_RAW,
+  DEMO_CATEGORY_ORDER_RAW,
+  DEMO_EXPANDED_CATEGORIES_RAW,
+} from './demoCards';
 
 export interface ChapterNode {
   id: string;
@@ -19,6 +26,8 @@ export interface ChapterNode {
   sceneSummary?: string;
   scenePov?: string;
   sceneLocation?: string;
+  /** 已知欄位以外的未知欄位，讀入時原樣保留 */
+  extraColumns?: Record<string, SqlValue>;
 }
 
 export interface DemoProject {
@@ -41,6 +50,14 @@ export interface DemoProject {
   titleInFile?: string | null;
   /** export：只能另存，選了等一下。resave：電腦下次儲存專案會用新書名另存。 */
   titleSavePending?: 'export' | 'resave' | null;
+  /** 升格成檔案前（範例書或新開稿子）已有的卡片清單。 */
+  cards?: FileCard[];
+  /** 升格成檔案前的分類順序原始字串（對應 project_info.category_order）。 */
+  categoryOrderRaw?: string | null;
+  /** 升格成檔案前的展開分類原始字串（對應 project_info.expanded_categories）。 */
+  expandedCategoriesRaw?: string | null;
+  /** 升格成檔案前的自訂分類設定原始字串（對應 project_info.categories_meta）。 */
+  categoriesMetaRaw?: string;
 }
 
 export function demoParagraph(label: string, index: number): string {
@@ -98,6 +115,10 @@ export const DEMO_PROJECTS: DemoProject[] = [
     title: '【範例】霧港紀事',
     updatedLabel: '12 分鐘前',
     bookGoal: 100000,
+    cards: cloneDemoCards(),
+    categoryOrderRaw: DEMO_CATEGORY_ORDER_RAW,
+    expandedCategoriesRaw: DEMO_EXPANDED_CATEGORIES_RAW,
+    categoriesMetaRaw: DEMO_CATEGORIES_META_RAW,
     nodes: [
       {
         id: 'vol-1',
@@ -196,6 +217,10 @@ export const DEMO_PROJECTS: DemoProject[] = [
     title: '【範例】第二本專案',
     updatedLabel: '3 天前',
     bookGoal: 50000,
+    cards: cloneDemoCards(),
+    categoryOrderRaw: DEMO_CATEGORY_ORDER_RAW,
+    expandedCategoriesRaw: DEMO_EXPANDED_CATEGORIES_RAW,
+    categoriesMetaRaw: DEMO_CATEGORIES_META_RAW,
     nodes: [
       {
         id: 'second-ch',
@@ -211,6 +236,10 @@ export const DEMO_PROJECTS: DemoProject[] = [
     title: '【範例】很久以前的短篇',
     updatedLabel: '2026-07-02',
     bookGoal: 8000,
+    cards: cloneDemoCards(),
+    categoryOrderRaw: DEMO_CATEGORY_ORDER_RAW,
+    expandedCategoriesRaw: DEMO_EXPANDED_CATEGORIES_RAW,
+    categoriesMetaRaw: DEMO_CATEGORIES_META_RAW,
     nodes: [
       {
         id: 'old-ch',
@@ -226,6 +255,10 @@ export const DEMO_PROJECTS: DemoProject[] = [
     title: '【範例】長目錄',
     updatedLabel: '剛剛',
     bookGoal: 10000,
+    cards: cloneDemoCards(),
+    categoryOrderRaw: DEMO_CATEGORY_ORDER_RAW,
+    expandedCategoriesRaw: DEMO_EXPANDED_CATEGORIES_RAW,
+    categoriesMetaRaw: DEMO_CATEGORIES_META_RAW,
     nodes: Array.from({ length: 41 }, (_, index) => ({
       id: `long-${index + 1}`,
       type: 'file' as const,

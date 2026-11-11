@@ -256,3 +256,20 @@ export function CloudUploadIcon(props: IconProps) {
     </Stroke>
   );
 }
+
+export function ListTreeIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M4 6h16M4 12h10M4 18h14" />
+    </Stroke>
+  );
+}
+
+export function FocusIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <circle cx="12" cy="12" r="3" />
+      <path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2" />
+    </Stroke>
+  );
+}

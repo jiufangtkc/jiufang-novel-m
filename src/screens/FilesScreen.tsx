@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '../components/Icons';
 import {
@@ -11,22 +11,14 @@ import {
 import { canPickLocalFiles } from '../db/browserDisk';
 import { writePath } from '../domain/openManuscript';
 import { formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
+import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
-import { appSpaceStatusLine, isComputerLayout } from './filesStatus';
+import { appSpaceStatusLine } from './filesStatus';
 import { filesPageLayout } from './filesPageLayout';
 
 function useComputerLayout(): boolean {
-  const [computer, setComputer] = useState(() =>
-    typeof window !== 'undefined' ? isComputerLayout(window.innerWidth) : false,
-  );
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 600px)');
-    const apply = () => setComputer(media.matches);
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, []);
-  return computer;
+  const { isAtLeastMedium } = useLayout();
+  return isAtLeastMedium;
 }
 
 export function FilesScreen() {

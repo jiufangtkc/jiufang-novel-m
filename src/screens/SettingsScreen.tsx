@@ -1,24 +1,16 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
 import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
+import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
 
 function useWideLayout(): boolean {
-  const [wide, setWide] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 600px)').matches : false,
-  );
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 600px)');
-    const apply = () => setWide(media.matches);
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, []);
-  return wide;
+  const { isAtLeastMedium } = useLayout();
+  return isAtLeastMedium;
 }
 
 export function SettingsScreen() {

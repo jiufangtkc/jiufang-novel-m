@@ -107,6 +107,25 @@ describe('只能在編輯器內貼上', () => {
     expect(decidePaste(marker, null, false).action).toBe('block');
     clearBookClip();
   });
+
+  it('從卡片複製的文字不能貼進正文（WO-50 定案）', () => {
+    clearBookClip();
+    const cardText = '【範例】沈雨晴，二十四歲，鐘錶修復師的養女。';
+
+    // 情境一：沒有任何正文複製、只從卡片複製 → 貼到正文
+    // 此時 internal clip 為 null，剪貼簿 incoming 為卡片內容
+    const decisionNoInternal = decidePaste(cardText, clipForBook('book-a'), false);
+    expect(decisionNoInternal).toEqual({ action: 'block' });
+
+    // 情境二：先在正文複製一段（產生 internal clip）→ 再從卡片內容複製另一段 → 貼到正文
+    const marker = createClipMarker();
+    rememberBookClip('book-a', { text: '正文原本複製的一段內容。', marker });
+    // 卡片複製不會呼叫 rememberBookClip，但系統剪貼簿 incoming 被換成卡片文字
+    const decisionAfterCardCopy = decidePaste(cardText, clipForBook('book-a'), false);
+    expect(decisionAfterCardCopy).toEqual({ action: 'block' });
+
+    clearBookClip();
+  });
 });
 
 describe('游標不要被鍵盤擋住', () => {

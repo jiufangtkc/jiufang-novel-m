@@ -125,4 +125,26 @@ describe('另存時保留沒改到的表', () => {
     expect(again.cards).toHaveLength(1);
     expect(again.cards[0]?.title).toBe('【範例】角色');
   });
+
+  it('舊格式範例書（v1 升 v14）存回後章節、正文、寫作紀錄不變', () => {
+    const { sql } = openNodeSql();
+    createVersion1(sql);
+    const loaded = readFileProject(sql);
+    expect(currentSchemaVersion(sql)).toBe(14);
+    expect(loaded.info.title).toBe('【範例】舊檔');
+    expect(loaded.tree.map((node) => node.title)).toEqual(['第一章　信']);
+    expect(loaded.tree[0]?.content).toBe('【範例】霧港只有這一句。');
+    expect(loaded.logs).toHaveLength(1);
+    expect(loaded.logs[0]?.date).toBe('2026-01-02');
+    expect(loaded.logs[0]?.duration).toBe(60);
+    expect(loaded.logs[0]?.word_count).toBe(10);
+
+    writeFileProject(sql, loaded.info, loaded.tree, loaded.cards, loaded.logs);
+    const again = readFileProject(sql);
+    expect(again.info.title).toBe('【範例】舊檔');
+    expect(again.tree).toEqual(loaded.tree);
+    expect(again.tree[0]?.title).toBe('第一章　信');
+    expect(again.tree[0]?.content).toBe('【範例】霧港只有這一句。');
+    expect(again.logs).toEqual(loaded.logs);
+  });
 });

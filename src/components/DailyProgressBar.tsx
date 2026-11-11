@@ -1,4 +1,5 @@
 import { goalProgress } from '../domain/dailyGoal';
+import { dailyProgressWordsLabel, dailyProgressGoalLabel } from '../copy/userFacing';
 
 export function DailyProgressBar({
   words,
@@ -29,8 +30,8 @@ export function DailyProgressBar({
     >
       {compact ? null : (
         <div className="daily-bar-heading">
-          <span>{met ? '✦ 今日已寫' : '今日已寫'} {words} 字{met ? '，已達標' : ''}</span>
-          <span>目標 {goal} 字</span>
+          <span>{dailyProgressWordsLabel(words, met)}</span>
+          <span>{dailyProgressGoalLabel(goal)}</span>
         </div>
       )}
       <span className="daily-bar-track">

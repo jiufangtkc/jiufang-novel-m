@@ -37,7 +37,9 @@ import { PROGRESS_ORDER, progressLabel } from '../domain/labels';
 import { findNode, updateNode, type ChapterNode } from '../data/demo';
 import { readLiveDraftFromEditor } from '../editor/liveDraft';
 import {
+  CARDS_PANEL_ARIA,
   CHAPTER_NOT_FOUND,
+  CLOSE_CHAPTER_TREE_ARIA,
   MANUSCRIPT_NOT_FOUND,
   TREE_ADD_CHAPTER,
   TREE_ADD_CHAPTER_BELOW,
@@ -92,6 +94,9 @@ import {
   treeMovedToast,
   treeSelectedHint,
 } from '../copy/userFacing';
+import { CloseIcon } from '../components/Icons';
+import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
+import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
 import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
 import { ChapterTree } from './ChapterTree';
@@ -106,16 +111,8 @@ type RenameIntent = 'stay' | 'write';
 type MenuKind = 'short' | 'full' | 'more' | 'progress' | 'volume';
 
 function useDesktop(): boolean {
-  const [desktop, setDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 600px)').matches : false,
-  );
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 600px)');
-    const onChange = () => setDesktop(media.matches);
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-  return desktop;
+  const { isAtLeastMedium } = useLayout();
+  return isAtLeastMedium;
 }
 
 export function WriteScreen() {
@@ -124,6 +121,7 @@ export function WriteScreen() {
   const project = useProject(projectId);
   const { actions } = useSample();
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
+  const { mode: layoutMode, sidePanels, closePanel, focusMode } = useLayout();
   const desktop = useDesktop();
   const rename = useBookRename(project);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -313,6 +311,9 @@ export function WriteScreen() {
     const place: TreePlace = { nodeId: id, prevId, offset };
     saveTreePlace(window.sessionStorage, book.id, place);
     setHighlightId(id);
+    if (layoutMode === 'medium' || layoutMode === 'phone-landscape') {
+      closePanel('left');
+    }
   }
 
   function commit(
@@ -540,9 +541,42 @@ export function WriteScreen() {
 
   const impact = confirmNode ? removalImpact(confirmNode) : null;
 
+  const isYieldLeft =
+    (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.left;
+  const isYieldRight =
+    (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.right;
+  const yieldClasses = [
+    isYieldLeft ? 'yield-left' : '',
+    isYieldRight ? 'yield-right' : '',
+    isYieldLeft || isYieldRight ? 'is-yielding' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={chapterId ? 'write-layout has-chapter' : 'write-layout'} data-testid="write-screen">
-      <section className={showOrganize ? 'tree-pane is-organizing' : 'tree-pane'} data-testid="chapter-tree">
+    <div
+      className={[
+        chapterId ? 'write-layout has-chapter' : 'write-layout',
+        yieldClasses,
+        sidePanels.left ? 'tree-open' : 'tree-closed',
+        sidePanels.right ? 'aside-open' : 'aside-closed',
+        focusMode ? 'is-focus-mode' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      data-testid="write-screen"
+      data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
+      data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
+    >
+      <section
+        className={[
+          showOrganize ? 'tree-pane is-organizing' : 'tree-pane',
+          sidePanels.left ? 'is-open' : 'is-closed',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        data-testid="chapter-tree"
+      >
         <header className="topbar">
           {showOrganize ? (
             <h1>{TREE_ORGANIZE}</h1>
@@ -555,7 +589,17 @@ export function WriteScreen() {
             <button type="button" className="button primary" data-testid="organize-done" onClick={() => setOrganizing(false)}>
               {TREE_DONE}
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              className="icon-button tree-close-button"
+              aria-label={CLOSE_CHAPTER_TREE_ARIA}
+              onClick={() => closePanel('left')}
+              data-testid="close-tree-pane"
+            >
+              <CloseIcon size={20} />
+            </button>
+          )}
         </header>
         <div className="scroll-pane" ref={scrollRef}>
           <ChapterTree
@@ -646,7 +690,12 @@ export function WriteScreen() {
         ) : null}
         {desktop ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
       </section>
-      <section className="editor-pane">
+      <section
+        className={['editor-pane', yieldClasses].filter(Boolean).join(' ')}
+        data-testid="editor-pane"
+        data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
+        data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
+      >
         {chapter ? (
           <EditorPane key={`${chapter.id}:${editorEpoch}`} projectId={book.id} chapter={chapter} />
         ) : chapterId ? (
@@ -659,6 +708,19 @@ export function WriteScreen() {
           </div>
         )}
       </section>
+      <aside
+        className={sidePanels.right ? 'write-aside is-open' : 'write-aside is-closed'}
+        data-testid="write-aside"
+        aria-label={CARDS_PANEL_ARIA}
+      >
+        {sidePanels.right && (
+          <WritingCardsDrawer
+            projectId={book.id}
+            isDesktopFile={book.origin === 'file'}
+            onClose={() => closePanel('right')}
+          />
+        )}
+      </aside>
 
       {menuNode && menu?.kind === 'progress' ? (
         <Sheet title={TREE_PROGRESS} testId="progress-menu" onClose={() => setMenu(null)}>

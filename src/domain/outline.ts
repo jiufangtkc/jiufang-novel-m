@@ -1,4 +1,10 @@
 import type { ChapterNode, DemoProject } from '../data/demo';
+import {
+  cloneDemoCards,
+  DEMO_CATEGORIES_META_RAW,
+  DEMO_CATEGORY_ORDER_RAW,
+  DEMO_EXPANDED_CATEGORIES_RAW,
+} from '../data/demoCards';
 
 /** 對齊日後寫進資料庫的列。parent_id 指向上一層，node_type 用 folder、file、scene。 */
 export interface OutlineRow {
@@ -65,6 +71,25 @@ export interface KeyValueStore {
   setItem(key: string, value: string): void;
 }
 
+export function normalizeLoadedProject(project: DemoProject): DemoProject {
+  if (project.origin === 'file') {
+    return project;
+  }
+  const hasCardsArray = Array.isArray(project.cards);
+  return {
+    ...project,
+    cards: hasCardsArray ? project.cards : cloneDemoCards(),
+    categoryOrderRaw:
+      project.categoryOrderRaw !== undefined ? project.categoryOrderRaw : DEMO_CATEGORY_ORDER_RAW,
+    expandedCategoriesRaw:
+      project.expandedCategoriesRaw !== undefined
+        ? project.expandedCategoriesRaw
+        : DEMO_EXPANDED_CATEGORIES_RAW,
+    categoriesMetaRaw:
+      project.categoriesMetaRaw !== undefined ? project.categoriesMetaRaw : DEMO_CATEGORIES_META_RAW,
+  };
+}
+
 export function saveProjects(store: KeyValueStore, projects: readonly DemoProject[]): void {
   store.setItem(OUTLINE_STORAGE_KEY, JSON.stringify(projects));
 }
@@ -75,7 +100,7 @@ export function loadProjects(store: KeyValueStore): DemoProject[] | null {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed) || parsed.length === 0) return null;
-    return parsed as DemoProject[];
+    return (parsed as DemoProject[]).map(normalizeLoadedProject);
   } catch {
     return null;
   }

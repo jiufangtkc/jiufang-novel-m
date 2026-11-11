@@ -1,3 +1,5 @@
+import { formatInteger } from '../domain/formatNumber';
+
 /** 九方審過的介面文案（改前改後表 V1）。 */
 
 export const MANUSCRIPT_NOT_FOUND = '找不到這份稿子。請回首頁重新開啟。';
@@ -218,3 +220,106 @@ export function treeMoreSummary(kind: string, chapters: number, scenes: number, 
   if (kind === TREE_KIND_SCENE) return `${kind} · 共 ${words} 字`;
   return `${kind} · ${scenes} 幕 · 共 ${words} 字`;
 }
+
+/** 第 3 階段資料集卡片試看版（WO-45、WO-50）。 */
+export const SAMPLE_CARDS_NOTICE = '範例卡片，之後會換成這份稿子的卡片';
+export const CARDS_HEADING = '資料集';
+export const BACK_TO_CATEGORIES_ARIA = '返回分類清單';
+export const BACK_TO_CARDS_ARIA = '返回卡片清單';
+export const EMPTY_CARD_CONTENT_MESSAGE = '這張卡片還沒有內容。';
+export const UNTITLED_CARD_TITLE = '未命名卡片';
+
+/**
+ * 取得卡片標題；若為空字串或僅含空白字元，則顯示「未命名卡片」（九方 14:34 定案）。
+ */
+export function displayCardTitle(title?: string | null): string {
+  if (!title) return UNTITLED_CARD_TITLE;
+  const trimmed = title.trim();
+  return trimmed.length > 0 ? trimmed : UNTITLED_CARD_TITLE;
+}
+
+export function categoryRowAria(name: string, count: number): string {
+  return `${name}，${count} 張卡片`;
+}
+
+export function cardCollapseAria(title: string): string {
+  return `收合「${displayCardTitle(title)}」子卡片`;
+}
+
+export function cardExpandAria(title: string): string {
+  return `展開「${displayCardTitle(title)}」子卡片`;
+}
+
+export function cardDetailAria(title: string): string {
+  return `看「${displayCardTitle(title)}」卡片內容`;
+}
+
+/** 寫作時看卡片（WO-50，暫用名稱列入待審文字）。 */
+export const VIEW_CARDS_BUTTON = '看卡片';
+export const CLOSE_CARDS_ARIA = '關閉資料集';
+
+/** 寫作頁與版面按鈕文案（九方 2026-11-11 定案）。 */
+export const TREE_DRAWER_BUTTON = '目錄';
+export const OPEN_CHAPTER_TREE_ARIA = '展開目錄';
+export const CLOSE_CHAPTER_TREE_ARIA = '收合目錄';
+export const FOCUS_MODE_ENTER_BUTTON = '專注模式';
+export const FOCUS_MODE_EXIT_BUTTON = '離開專注模式';
+export const FLOATING_CHAPTER_TREE_ARIA = '展開目錄';
+export const FLOATING_VIEW_CARDS_ARIA = '看卡片';
+export const CARDS_PANEL_ARIA = '資料集';
+
+/** 今天字數統計標籤（九方 2026-11-11 定案）。有每日目標顯示「今天 N／M 字」，無目標顯示「今天 N 字」。四位數以上加千分位。 */
+export function todayWordsLabel(words: number | string, goal?: number | string | null): string {
+  const displayWords = typeof words === 'number' ? formatInteger(words) : words;
+  const hasGoal =
+    goal !== undefined &&
+    goal !== null &&
+    goal !== '' &&
+    (typeof goal !== 'number' || (Number.isFinite(goal) && goal > 0));
+
+  if (hasGoal) {
+    const displayGoal = typeof goal === 'number' ? formatInteger(goal) : goal;
+    return `今天 ${displayWords}／${displayGoal} 字`;
+  }
+  return `今天 ${displayWords} 字`;
+}
+
+/** 資料集與看卡片依四種版面調整（九方 2026-11-11 定案）。 */
+export const CARDS_READONLY_BADGE = '只能看';
+export const CARDS_EMPTY_CATEGORY_HINT = '請選擇分類';
+export const CARDS_EMPTY_CARD_HINT = '請選擇卡片';
+export const CARDS_COLUMN_CATEGORIES = '分類';
+export const CARDS_COLUMN_CARDS = '卡片清單';
+export const CARDS_COLUMN_CONTENT = '卡片內容';
+
+/** 手機橫拿資料集右側預覽在整份稿子皆無正文時之提示（九方 2026-11-11 定案）。 */
+export const CARDS_PREVIEW_EMPTY_HINT = '這份稿子還沒有正文。';
+
+/** 子卡片數量標籤（九方 2026-11-11 定案）。中間為全形空白（U+3000）。 */
+export function cardsSubcardsCountLabel(count: number): string {
+  return `子卡片\u3000${formatInteger(count)} 張`;
+}
+
+/** 分類或卡片數量標籤（九方 2026-11-11 定案）。 */
+export function cardsCountLabel(count: number): string {
+  return `${count} 張`;
+}
+
+/**
+ * 每日進度條底列字數標籤（九方 2026-11-11 定案）。
+ * 未達標：「今天寫了 N 字」；達標時：「✦ 今天寫了 N 字，已達標」。四位數以上加千分位。
+ */
+export function dailyProgressWordsLabel(words: number | string, met: boolean): string {
+  const formatted = typeof words === 'number' ? formatInteger(words) : words;
+  return met ? `✦ 今天寫了 ${formatted} 字，已達標` : `今天寫了 ${formatted} 字`;
+}
+
+/**
+ * 每日進度條底列目標標籤（九方 2026-11-11 定案）。
+ * 顯示「每日目標 N 字」。四位數以上加千分位。
+ */
+export function dailyProgressGoalLabel(goal: number | string): string {
+  const formatted = typeof goal === 'number' ? formatInteger(goal) : goal;
+  return `每日目標 ${formatted} 字`;
+}
+
