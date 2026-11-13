@@ -9,11 +9,14 @@ import { openNodeSql } from '../db/nodeSql';
 import { readFileProject, writeFileProject, type FileCard } from '../db/projectFile';
 import { createVersion14Shell } from '../db/schemaFixture';
 import {
+  addCustomCategory,
   appendCategoryToOrder,
+  deleteCustomCategory,
   parseCategoriesMeta,
   parseCategoryOrder,
   removeCategoryFromOrder,
   removeCustomCategoryName,
+  renameCustomCategory,
   resolveVisibleCategories,
   serializeCategoriesMeta,
   serializeCategoryOrder,
@@ -39,6 +42,10 @@ import {
 } from './sampleStore';
 import {
   openDesktopSampleMemoryDb,
+  SAMPLE_BUILTIN_CHILD_CARD_ID,
+  SAMPLE_BUILTIN_ROOT_CARD_ID,
+  SAMPLE_CUSTOM_CATEGORY_CODE,
+  SAMPLE_CUSTOM_ROOT_CARD_ID,
   SAMPLE_DEFAULT_COLOR,
   SAMPLE_DESKTOP_CARDS,
   SAMPLE_NON_DEFAULT_COLOR,
@@ -724,6 +731,175 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
       expect(row.logline).toBeNull();
       expect(row.last_opened_node_id).toBe('ch-1');
       expect(row.last_cursor_position).toBe(5);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('WO-61：經 sampleStore 編輯、改色、刪除、放回、整理分類後存回 .db 的完整回歸測試', async () => {
+    const db = await openDesktopSampleMemoryDb();
+    try {
+      const parsed = readFileProject(db.sql);
+      let state = createState(new Date('2026-11-13T10:00:00Z'));
+      const archive = createMemoryArchive();
+      const dispatch = (action: Action) => {
+        state = reduce(state, action);
+      };
+
+      const bookId = 'desktop-regression-book';
+      dispatch({
+        type: 'attach-file',
+        project: {
+          id: bookId,
+          dbKey: bookId,
+          title: parsed.info.title,
+          updatedLabel: '剛剛',
+          bookGoal: parsed.info.targetWordCount,
+          nodes: parsed.tree,
+          origin: 'file',
+        },
+        schedule: state.schedule,
+        extras: {
+          info: parsed.info,
+          cards: parsed.cards,
+          logs: parsed.logs,
+        },
+      });
+
+      // 原始狀態確認
+      const initialCards = getProjectCards(state, bookId);
+      expect(initialCards.length).toBeGreaterThan(0);
+      const initialSettings = getProjectCategorySettings(state, bookId);
+
+      // 1. 編輯卡片標題、內容（原樣保存 Markdown）與改顏色
+      // 選取 SAMPLE_BUILTIN_ROOT_CARD_ID（角色分類的母卡）
+      const editCardId = SAMPLE_BUILTIN_ROOT_CARD_ID;
+      const targetCardBefore = initialCards.find((c) => c.id === editCardId)!;
+      expect(targetCardBefore).toBeDefined();
+
+      const newTitle = '【範例】更新後的角色標題';
+      const newContent = '【範例】更新後的角色內容\n\n- 特徵：**冷靜沈著**\n- 備註：*隱藏身分*';
+      const newColor = '#61afef';
+
+      dispatch({
+        type: 'update-card',
+        projectId: bookId,
+        cardId: editCardId,
+        patch: {
+          title: newTitle,
+          content: newContent,
+          color: newColor,
+        },
+      });
+
+      const updatedCard = getProjectCards(state, bookId).find((c) => c.id === editCardId)!;
+      expect(updatedCard.title).toBe(newTitle);
+      expect(updatedCard.content).toBe(newContent);
+      expect(updatedCard.color).toBe(newColor);
+
+      // 2. 整理分類：
+      // (a) 新增自訂空分類
+      const addResult = addCustomCategory({
+        name: '【範例】即將刪除的空分類',
+        categoryOrder: initialSettings.categoryOrder,
+        categoriesMeta: initialSettings.categoriesMeta,
+      });
+      expect(addResult.added).toBe(true);
+      expect(addResult.code).toMatch(/^custom_[0-9a-f]{8}$/);
+      const emptyCatCode = addResult.code;
+
+      // (b) 自訂分類改名（將 SAMPLE_CUSTOM_CATEGORY_CODE 改名為「【範例】改名後的自訂分類」）
+      const renameResult = renameCustomCategory({
+        code: SAMPLE_CUSTOM_CATEGORY_CODE,
+        newName: '【範例】改名後的自訂分類',
+        categoriesMeta: addResult.nextCategoriesMeta,
+      });
+      expect(renameResult.renamed).toBe(true);
+
+      // (c) 刪除空自訂分類（emptyCatCode 沒有卡片，可成功刪除）
+      const deleteCatResult = deleteCustomCategory({
+        code: emptyCatCode,
+        categoryOrder: addResult.nextCategoryOrder,
+        categoriesMeta: renameResult.nextCategoriesMeta,
+        cards: getProjectCards(state, bookId),
+      });
+      expect(deleteCatResult.deleted).toBe(true);
+      expect(deleteCatResult.nextCategoryOrder).not.toContain(emptyCatCode);
+      expect(deleteCatResult.nextCategoriesMeta).not.toContain(emptyCatCode);
+      // ai_chat 與其他未知鍵原樣保留
+      expect(deleteCatResult.nextCategoryOrder).toContain('ai_chat');
+
+      dispatch({
+        type: 'set-card-categories',
+        projectId: bookId,
+        categoryOrder: deleteCatResult.nextCategoryOrder,
+        categoriesMeta: deleteCatResult.nextCategoriesMeta,
+      });
+
+      // 3. 刪卡與放回（連同子卡片回到原母卡與原順序）：
+      // 選取 SAMPLE_BUILTIN_CHILD_CARD_ID（底下有孫卡與曾孫卡）
+      const deleteCardId = SAMPLE_BUILTIN_CHILD_CARD_ID;
+      const childCardBefore = initialCards.find((c) => c.id === deleteCardId)!;
+      const grandchildCardBefore = initialCards.find((c) => c.parent_id === deleteCardId)!;
+
+      const delRecord = await deleteProjectCardWithArchive(state, dispatch, bookId, deleteCardId, {
+        archive,
+        deletedAt: Date.now(),
+        recordId: 'del-reg-child-card',
+      });
+      expect(delRecord).not.toBeNull();
+      // 驗證卡片與其子孫卡片已被移出
+      expect(getProjectCards(state, bookId).some((c) => c.id === deleteCardId)).toBe(false);
+      expect(getProjectCards(state, bookId).some((c) => c.id === grandchildCardBefore.id)).toBe(false);
+
+      // 放回原位置
+      await restoreProjectCardFromArchive(state, dispatch, bookId, 'del-reg-child-card', { archive });
+      const restoredCards = getProjectCards(state, bookId);
+      const restoredCard = restoredCards.find((c) => c.id === deleteCardId)!;
+      const restoredGrandchild = restoredCards.find((c) => c.id === grandchildCardBefore.id)!;
+      expect(restoredCard).toBeDefined();
+      expect(restoredCard.parent_id).toBe(childCardBefore.parent_id);
+      expect(restoredCard.sort_order).toBe(childCardBefore.sort_order);
+      expect(restoredGrandchild).toBeDefined();
+      expect(restoredGrandchild.parent_id).toBe(deleteCardId);
+
+      // 4. 寫回 .db（呼叫 writeFileProject）
+      const project = state.projects.find((p) => p.id === bookId)!;
+      const extra = state.fileExtras[bookId]!;
+      const infoForSave = buildFileProjectInfo(state, project);
+      writeFileProject(db.sql, infoForSave, project.nodes, extra.cards, extra.logs);
+
+      // 5. 讀回 .db 並驗證
+      const reparsed = readFileProject(db.sql);
+
+      // 驗證 1：編輯後的標題、內容、色碼已成功存回
+      const reparsedEditedCard = reparsed.cards.find((c) => c.id === editCardId)!;
+      expect(reparsedEditedCard.title).toBe(newTitle);
+      expect(reparsedEditedCard.content).toBe(newContent);
+      expect(reparsedEditedCard.color).toBe(newColor);
+
+      // 驗證 2：自訂分類改名已存回 categories_meta
+      expect(reparsed.info.categoriesMeta).toContain('【範例】改名後的自訂分類');
+
+      // 驗證 3：刪除的空自訂分類不在 category_order 與 categories_meta 中
+      expect(reparsed.info.categoryOrder).not.toContain(emptyCatCode);
+      expect(reparsed.info.categoriesMeta).not.toContain(emptyCatCode);
+
+      // 驗證 4：刪卡後放回的卡片完好保留，parent_id 與 sort_order 不變
+      const reparsedRestoredCard = reparsed.cards.find((c) => c.id === deleteCardId)!;
+      expect(reparsedRestoredCard).toBeDefined();
+      expect(reparsedRestoredCard.parent_id).toBe(childCardBefore.parent_id);
+      expect(reparsedRestoredCard.sort_order).toBe(childCardBefore.sort_order);
+
+      // 驗證 5：其他未動的卡片（如 SAMPLE_CUSTOM_ROOT_CARD_ID）內容與顏色完全不變
+      const customRootCard = reparsed.cards.find((c) => c.id === SAMPLE_CUSTOM_ROOT_CARD_ID)!;
+      expect(customRootCard.title).toBe('【範例】自訂分類母卡');
+      expect(customRootCard.color).toBe(SAMPLE_NON_DEFAULT_COLOR);
+
+      // 驗證 6：電腦版欄位（project_info 與章節節點）完好如初
+      expect(reparsed.info.title).toBe(parsed.info.title);
+      expect(reparsed.info.categoryOrder).toContain('ai_chat');
+      expect(reparsed.cards.length).toBe(initialCards.length);
     } finally {
       db.close();
     }

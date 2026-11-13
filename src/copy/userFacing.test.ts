@@ -216,4 +216,66 @@ describe('章節目錄文案', () => {
     expect(copy.CARDS_COLUMN_CONTENT).toBe('卡片內容');
     expect(copy.cardsCountLabel(4)).toBe('4 張');
   });
+
+  it('WO-60：統計匯入匯出預留與檔案頁分組用字定案', async () => {
+    const copy = await import('./userFacing');
+
+    // 1. 檔案頁三組標題
+    expect(copy.FILES_GROUP_SAVE).toBe('存檔');
+    expect(copy.FILES_GROUP_OPEN_CLOSE).toBe('開啟與關閉');
+    expect(copy.FILES_GROUP_IMPORT_EXPORT).toBe('匯入與匯出');
+    expect(copy.FILES_GROUP_OPEN_CLOSE).not.toBe('開稿');
+
+    // 2. 準備中標籤與提示
+    expect(copy.PREPARING_BADGE).toBe('準備中');
+    expect(copy.FEATURE_IN_PREPARATION).toBe('功能還在準備中。');
+
+    // 3. 檔案頁按鈕與說明文字
+    expect(copy.IMPORT_TEXT_FILE_BUTTON).toBe('匯入文字檔');
+    expect(copy.IMPORT_TEXT_FILE_HINT).toBe('把文字檔的內容加進這份稿子');
+    expect(copy.EXPORT_FULL_TEXT_BUTTON).toBe('匯出全文');
+    expect(copy.EXPORT_FULL_TEXT_HINT).toBe('把整份稿子匯出成一個 TXT 或 Markdown 檔');
+
+    // 4. 統計頁區塊與說明小字
+    expect(copy.STATS_IMPORT_EXPORT_HEADING).toBe('匯入與匯出');
+    expect(copy.STATS_IMPORT_EXPORT_SCOPE_HINT).toBe('只算匯入文字檔、匯出全文的次數');
+    expect(copy.STATS_IMPORT_COUNT_LABEL).toBe('匯入 次數');
+    expect(copy.STATS_EXPORT_COUNT_LABEL).toBe('匯出 次數');
+
+    // 5. 紀錄卡匯入匯出標籤（全形空白與預設破折號）
+    expect(copy.logImportCountLabel()).toBe('匯入\u3000— 次');
+    expect(copy.logImportCountLabel(null)).toBe('匯入\u3000— 次');
+    expect(copy.logImportCountLabel('—')).toBe('匯入\u3000— 次');
+    expect(copy.logImportCountLabel(3)).toBe('匯入\u30003 次');
+    expect(copy.logImportCountLabel(1000)).toBe('匯入\u30001,000 次');
+
+    expect(copy.logExportCountLabel()).toBe('匯出\u3000— 次');
+    expect(copy.logExportCountLabel(null)).toBe('匯出\u3000— 次');
+    expect(copy.logExportCountLabel('—')).toBe('匯出\u3000— 次');
+    expect(copy.logExportCountLabel(2)).toBe('匯出\u30002 次');
+    expect(copy.logExportCountLabel(2000)).toBe('匯出\u30002,000 次');
+
+    // 6. 新文字絕不可含有「.db」或「開稿」
+    const newTexts = [
+      copy.FILES_GROUP_SAVE,
+      copy.FILES_GROUP_OPEN_CLOSE,
+      copy.FILES_GROUP_IMPORT_EXPORT,
+      copy.PREPARING_BADGE,
+      copy.FEATURE_IN_PREPARATION,
+      copy.IMPORT_TEXT_FILE_BUTTON,
+      copy.IMPORT_TEXT_FILE_HINT,
+      copy.EXPORT_FULL_TEXT_BUTTON,
+      copy.EXPORT_FULL_TEXT_HINT,
+      copy.STATS_IMPORT_EXPORT_HEADING,
+      copy.STATS_IMPORT_EXPORT_SCOPE_HINT,
+      copy.STATS_IMPORT_COUNT_LABEL,
+      copy.STATS_EXPORT_COUNT_LABEL,
+      copy.logImportCountLabel(),
+      copy.logExportCountLabel(),
+    ];
+    for (const text of newTexts) {
+      expect(text).not.toContain('.db');
+      expect(text).not.toContain('開稿');
+    }
+  });
 });

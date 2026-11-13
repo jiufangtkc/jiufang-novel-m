@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
 import {
   applyHtmlLayoutAttributes,
+  applyPanelsHtmlAttributes,
   LayoutProvider,
   useLayout,
   useLayoutMode,
@@ -92,5 +93,68 @@ describe('WO-54：版面 Context 與 Hook（useLayoutMode）', () => {
 
     const html = renderToStaticMarkup(createElement(ConsumerOutside));
     expect(html).toContain('data-testid="outside"');
+  });
+
+  describe('WO-62：專注模式 HTML 屬性與 LayoutProvider 狀態整合', () => {
+    it('WO-62：applyPanelsHtmlAttributes 於專注模式時寫入 data-focus-mode="true"，非專注時刪除', () => {
+      const fakeDoc = {
+        documentElement: {
+          dataset: {} as Record<string, string>,
+        },
+      };
+      vi.stubGlobal('document', fakeDoc);
+
+      try {
+        // 進入專注模式
+        applyPanelsHtmlAttributes({ left: false, right: false }, true);
+        expect(fakeDoc.documentElement.dataset.focusMode).toBe('true');
+        expect(fakeDoc.documentElement.dataset.sidePanelLeft).toBe('false');
+        expect(fakeDoc.documentElement.dataset.sidePanelRight).toBe('false');
+
+        // 離開專注模式
+        applyPanelsHtmlAttributes({ left: true, right: false }, false);
+        expect(fakeDoc.documentElement.dataset.focusMode).toBeUndefined();
+        expect(fakeDoc.documentElement.dataset.sidePanelLeft).toBe('true');
+        expect(fakeDoc.documentElement.dataset.sidePanelRight).toBe('false');
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it('WO-62：LayoutProvider 支援 initialPanels / initialFocusMode 初始化專注模式', () => {
+      function FocusConsumer() {
+        const layout = useLayout();
+        return createElement('div', {
+          'data-testid': 'focus-consumer',
+          'data-focus-mode': String(layout.focusMode),
+          'data-left': String(layout.sidePanels.left),
+          'data-right': String(layout.sidePanels.right),
+        });
+      }
+
+      // 透過 initialPanels.focusMode 初始化
+      const htmlFromPanels = renderToStaticMarkup(
+        createElement(
+          LayoutProvider,
+          { initialMode: 'phone-portrait', initialPanels: { focusMode: true } },
+          createElement(FocusConsumer),
+        ),
+      );
+      expect(htmlFromPanels).toContain('data-focus-mode="true"');
+      expect(htmlFromPanels).toContain('data-left="false"');
+      expect(htmlFromPanels).toContain('data-right="false"');
+
+      // 透過 initialFocusMode 初始化
+      const htmlFromDirectProp = renderToStaticMarkup(
+        createElement(
+          LayoutProvider,
+          { initialMode: 'wide', initialFocusMode: true },
+          createElement(FocusConsumer),
+        ),
+      );
+      expect(htmlFromDirectProp).toContain('data-focus-mode="true"');
+      expect(htmlFromDirectProp).toContain('data-left="false"');
+      expect(htmlFromDirectProp).toContain('data-right="false"');
+    });
   });
 });

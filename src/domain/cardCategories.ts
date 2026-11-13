@@ -541,3 +541,252 @@ export function resolveVisibleCategories(options: {
     isOrphan,
   }));
 }
+
+/**
+ * 檢查分類是否可以刪除：
+ * - 內建分類（summary, character, world, timeline, ai_chat）不可刪除
+ * - 自訂分類若含有卡片不可刪除（必須先將卡片移走或刪除）
+ */
+export function canDeleteCategory(
+  code: string,
+  cards: readonly { category: string }[] = [],
+): { canDelete: boolean; reason?: string } {
+  if (!code || isBuiltinCategory(code) || !isCustomCategory(code)) {
+    return { canDelete: false, reason: '內建分類，不能刪除' };
+  }
+  const hasCards = cards.some((c) => c.category === code);
+  if (hasCards) {
+    return {
+      canDelete: false,
+      reason: '分類內還有卡片，要先把卡片移走或刪掉才能刪除',
+    };
+  }
+  return { canDelete: true };
+}
+
+/**
+ * 刪除自訂分類：
+ * - 只有沒有卡片的自訂分類才能刪除
+ * - 從 category_order 與 categories_meta 移除自己的鍵
+ * - 若傳入 expandedCategories 亦一併移除
+ * - 隱藏分類（ai_chat）與未知鍵／非字串元素原樣保留
+ */
+export function deleteCustomCategory(params: {
+  code: string;
+  categoryOrder?: string | null | ParsedCategoryArray;
+  categoriesMeta?: string | null | ParsedCategoriesMeta;
+  cards?: readonly { category: string }[];
+  expandedCategories?: string | null | ParsedCategoryArray;
+}): {
+  nextCategoryOrder: string | null;
+  nextCategoriesMeta: string;
+  nextExpandedCategories?: string | null;
+  deleted: boolean;
+  reason?: string;
+} {
+  const { code, cards = [] } = params;
+  const order =
+    typeof params.categoryOrder === 'object' && params.categoryOrder !== null
+      ? params.categoryOrder
+      : parseCategoryOrder(params.categoryOrder);
+
+  const meta =
+    typeof params.categoriesMeta === 'object' && params.categoriesMeta !== null
+      ? params.categoriesMeta
+      : parseCategoriesMeta(params.categoriesMeta);
+
+  const check = canDeleteCategory(code, cards);
+  if (!check.canDelete) {
+    return {
+      nextCategoryOrder: serializeCategoryOrder(order),
+      nextCategoriesMeta: serializeCategoriesMeta(meta) ?? '{}',
+      nextExpandedCategories: params.expandedCategories !== undefined
+        ? serializeExpandedCategories(
+            typeof params.expandedCategories === 'object' && params.expandedCategories !== null
+              ? params.expandedCategories
+              : parseExpandedCategories(params.expandedCategories),
+          )
+        : undefined,
+      deleted: false,
+      reason: check.reason,
+    };
+  }
+
+  const nextOrder = removeCategoryFromOrder(order, code);
+  const nextMeta = removeCustomCategoryName(meta, code);
+
+  let nextExpanded: string | null | undefined = undefined;
+  if (params.expandedCategories !== undefined) {
+    const expanded =
+      typeof params.expandedCategories === 'object' && params.expandedCategories !== null
+        ? params.expandedCategories
+        : parseExpandedCategories(params.expandedCategories);
+    const updatedExpanded = removeCategoryFromOrder(expanded, code);
+    nextExpanded = serializeExpandedCategories(updatedExpanded);
+  }
+
+  return {
+    nextCategoryOrder: serializeCategoryOrder(nextOrder),
+    nextCategoriesMeta: serializeCategoriesMeta(nextMeta) ?? '{}',
+    nextExpandedCategories: nextExpanded,
+    deleted: true,
+  };
+}
+
+/**
+ * 改名自訂分類：
+ * - 內建分類不可改名
+ * - 分類名稱不可為空字串或純空白
+ * - 僅更新 categories_meta 中對應的鍵，保留其餘未知鍵與 ai_chat
+ */
+export function renameCustomCategory(params: {
+  code: string;
+  newName: string;
+  categoriesMeta?: string | null | ParsedCategoriesMeta;
+}): {
+  nextCategoriesMeta: string;
+  renamed: boolean;
+  reason?: string;
+} {
+  const { code, newName } = params;
+  const meta =
+    typeof params.categoriesMeta === 'object' && params.categoriesMeta !== null
+      ? params.categoriesMeta
+      : parseCategoriesMeta(params.categoriesMeta);
+
+  if (!code || isBuiltinCategory(code) || !isCustomCategory(code)) {
+    return {
+      nextCategoriesMeta: serializeCategoriesMeta(meta) ?? '{}',
+      renamed: false,
+      reason: '內建分類不能改名',
+    };
+  }
+
+  const trimmed = newName.trim();
+  if (!trimmed) {
+    return {
+      nextCategoriesMeta: serializeCategoriesMeta(meta) ?? '{}',
+      renamed: false,
+      reason: '名稱不能是空白',
+    };
+  }
+
+  const nextMeta = setCustomCategoryName(meta, code, trimmed);
+  return {
+    nextCategoriesMeta: serializeCategoriesMeta(nextMeta) ?? '{}',
+    renamed: true,
+  };
+}
+
+/**
+ * 在可見分類清單中上移／下移分類：
+ * - 調整順序後重新計算 category_order
+ * - 隱藏分類（ai_chat）與未知元素位置保留不被破壞
+ */
+export function moveCategoryInOrder(params: {
+  code: string;
+  direction: 'up' | 'down';
+  categoryOrder?: string | null | ParsedCategoryArray;
+  categoriesMeta?: string | null | ParsedCategoriesMeta;
+  cards?: readonly { category: string }[];
+}): {
+  nextCategoryOrder: string | null;
+  moved: boolean;
+} {
+  const order =
+    typeof params.categoryOrder === 'object' && params.categoryOrder !== null
+      ? params.categoryOrder
+      : parseCategoryOrder(params.categoryOrder);
+
+  const meta =
+    typeof params.categoriesMeta === 'object' && params.categoriesMeta !== null
+      ? params.categoriesMeta
+      : parseCategoriesMeta(params.categoriesMeta);
+
+  const visible = resolveVisibleCategories({
+    categoryOrder: order,
+    categoriesMeta: meta,
+    cards: params.cards,
+  });
+
+  const index = visible.findIndex((item) => item.id === params.code);
+  if (index === -1) {
+    return { nextCategoryOrder: serializeCategoryOrder(order), moved: false };
+  }
+
+  const targetIndex = params.direction === 'up' ? index - 1 : index + 1;
+  if (targetIndex < 0 || targetIndex >= visible.length) {
+    return { nextCategoryOrder: serializeCategoryOrder(order), moved: false };
+  }
+
+  const nextCodes = visible.map((v) => v.id);
+  const temp = nextCodes[index]!;
+  nextCodes[index] = nextCodes[targetIndex]!;
+  nextCodes[targetIndex] = temp;
+
+  const knownCustomCodes = visible.filter((v) => v.isCustom).map((v) => v.id);
+  const nextOrder = rebuildCategoryOrder(order, nextCodes, knownCustomCodes);
+
+  return {
+    nextCategoryOrder: serializeCategoryOrder(nextOrder),
+    moved: true,
+  };
+}
+
+/**
+ * 新增自訂分類：
+ * - 產生不重複的 custom_＋8 碼小寫十六進位代碼
+ * - 加入 category_order
+ * - 將名稱寫進 categories_meta
+ */
+export function addCustomCategory(params: {
+  name: string;
+  categoryOrder?: string | null | ParsedCategoryArray;
+  categoriesMeta?: string | null | ParsedCategoriesMeta;
+  existingCodes?: Iterable<string>;
+}): {
+  code: string;
+  nextCategoryOrder: string | null;
+  nextCategoriesMeta: string;
+  added: boolean;
+  reason?: string;
+} {
+  const trimmed = params.name.trim();
+  const order =
+    typeof params.categoryOrder === 'object' && params.categoryOrder !== null
+      ? params.categoryOrder
+      : parseCategoryOrder(params.categoryOrder);
+
+  const meta =
+    typeof params.categoriesMeta === 'object' && params.categoriesMeta !== null
+      ? params.categoriesMeta
+      : parseCategoriesMeta(params.categoriesMeta);
+
+  if (!trimmed) {
+    return {
+      code: '',
+      nextCategoryOrder: serializeCategoryOrder(order),
+      nextCategoriesMeta: serializeCategoriesMeta(meta) ?? '{}',
+      added: false,
+      reason: '名稱不能是空白',
+    };
+  }
+
+  const existing = new Set<string>(params.existingCodes ?? order.codes);
+  for (const key of Object.keys(meta.entries)) {
+    existing.add(key);
+  }
+
+  const code = generateCustomCategoryCode(existing);
+  const nextOrder = appendCategoryToOrder(order, code);
+  const nextMeta = setCustomCategoryName(meta, code, trimmed);
+
+  return {
+    code,
+    nextCategoryOrder: serializeCategoryOrder(nextOrder),
+    nextCategoriesMeta: serializeCategoriesMeta(nextMeta) ?? '{}',
+    added: true,
+  };
+}
+
+

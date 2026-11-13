@@ -1,4 +1,5 @@
 import { addDays, type GoalSchedule, goalProgress, wordsRemaining } from './dailyGoal';
+import { getTotalImportExportStats, type TotalImportExportStats } from './importExportStats';
 import { formatHours, type WritingLogRow } from './writingLog';
 
 export interface StatsSummary {
@@ -17,6 +18,8 @@ export interface StatsSummary {
   totalDurationSeconds: number;
   totalHoursLabel: string;
   activeDays: number;
+  /** WO-60 匯入匯出全書合計（只限顯示預留） */
+  importExport: TotalImportExportStats;
 }
 
 export function streakFromKeys(
@@ -81,5 +84,6 @@ export function summarizeStats(
     totalDurationSeconds,
     totalHoursLabel: formatHours(totalDurationSeconds),
     activeDays: activeKeys.length,
+    importExport: getTotalImportExportStats(logs),
   };
 }

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  addCustomCategory,
   appendCategoryToOrder,
   BUILTIN_CATEGORY_CODES,
   BUILTIN_CATEGORY_NAMES,
@@ -8,19 +9,23 @@ import {
   CATEGORY_SUMMARY,
   CATEGORY_TIMELINE,
   CATEGORY_WORLD,
+  canDeleteCategory,
   CUSTOM_CATEGORY_REGEX,
+  deleteCustomCategory,
   generateCustomCategoryCode,
   getCategoryDisplayName,
   isBuiltinCategory,
   isCustomCategory,
   isHiddenCategory,
   isStandardCustomCategoryCode,
+  moveCategoryInOrder,
   parseCategoriesMeta,
   parseCategoryOrder,
   parseExpandedCategories,
   rebuildCategoryOrder,
   removeCategoryFromOrder,
   removeCustomCategoryName,
+  renameCustomCategory,
   resolveVisibleCategories,
   serializeCategoriesMeta,
   serializeCategoryOrder,
@@ -308,5 +313,209 @@ describe('寬鬆解析與序列化保護（P0-2 相關）', () => {
     expect(savedObj.custom_123).toBe('太短非8碼');
     expect(savedObj.custom_123456789).toBe('太長非8碼');
     expect(savedObj.custom_c15c6bd8).toBe('【範例】自訂分類001改');
+  });
+});
+
+describe('WO-61 分類管理規則（cardCategories）', () => {
+  const builtinCodes = ['summary', 'character', 'world', 'timeline', 'ai_chat'];
+
+  it('WO-61 分類：內建 4 類與 ai_chat 不能改名（reason: 內建分類不能改名）', () => {
+    const rawMeta = JSON.stringify({ custom_c15c6bd8: '自訂分類001' });
+
+    for (const code of builtinCodes) {
+      const res = renameCustomCategory({
+        code,
+        newName: '【範例】改名嘗試',
+        categoriesMeta: rawMeta,
+      });
+      expect(res.renamed).toBe(false);
+      expect(res.reason).toBe('內建分類不能改名');
+    }
+  });
+
+  it('WO-61 分類：內建 4 類與 ai_chat 不能刪除（reason: 內建分類，不能刪除）', () => {
+    for (const code of builtinCodes) {
+      const check = canDeleteCategory(code, []);
+      expect(check.canDelete).toBe(false);
+      expect(check.reason).toBe('內建分類，不能刪除');
+
+      const delRes = deleteCustomCategory({
+        code,
+        categoryOrder: '["summary", "character", "world", "timeline", "ai_chat"]',
+        categoriesMeta: '{}',
+        cards: [],
+      });
+      expect(delRes.deleted).toBe(false);
+      expect(delRes.reason).toBe('內建分類，不能刪除');
+    }
+  });
+
+  it('WO-61 分類：自訂分類可改名（寫 categories_meta），且保留其餘未知鍵與設定', () => {
+    const rawMeta = JSON.stringify({
+      custom_c15c6bd8: '舊分類名',
+      desktop_view_mode: 'compact',
+      ai_chat: '電腦版AI對話名稱',
+    });
+
+    const res = renameCustomCategory({
+      code: 'custom_c15c6bd8',
+      newName: '新自訂分類名',
+      categoriesMeta: rawMeta,
+    });
+
+    expect(res.renamed).toBe(true);
+    const parsed = JSON.parse(res.nextCategoriesMeta);
+    expect(parsed.custom_c15c6bd8).toBe('新自訂分類名');
+    expect(parsed.desktop_view_mode).toBe('compact');
+    expect(parsed.ai_chat).toBe('電腦版AI對話名稱');
+
+    // 空白名稱拒絕改名
+    const blankRes = renameCustomCategory({
+      code: 'custom_c15c6bd8',
+      newName: '   ',
+      categoriesMeta: rawMeta,
+    });
+    expect(blankRes.renamed).toBe(false);
+    expect(blankRes.reason).toBe('名稱不能是空白');
+  });
+
+  it('WO-61 分類：自訂分類可上移下移（寫 category_order），保留 ai_chat 與未知元素位置', () => {
+    const rawOrder = JSON.stringify([
+      'summary',
+      'character',
+      'world',
+      'timeline',
+      'ai_chat',
+      'custom_00000001',
+      'custom_00000002',
+    ]);
+    const rawMeta = JSON.stringify({
+      custom_00000001: '分類一',
+      custom_00000002: '分類二',
+    });
+
+    // custom_00000002 上移
+    const moveUpRes = moveCategoryInOrder({
+      code: 'custom_00000002',
+      direction: 'up',
+      categoryOrder: rawOrder,
+      categoriesMeta: rawMeta,
+    });
+    expect(moveUpRes.moved).toBe(true);
+    const orderAfterUp = JSON.parse(moveUpRes.nextCategoryOrder!);
+    expect(orderAfterUp).toContain('ai_chat');
+    // custom_00000002 移到 custom_00000001 前面
+    const idx1 = orderAfterUp.indexOf('custom_00000001');
+    const idx2 = orderAfterUp.indexOf('custom_00000002');
+    expect(idx2).toBeLessThan(idx1);
+
+    // 最前項不能再上移，最後項不能再下移
+    const firstMoveUp = moveCategoryInOrder({
+      code: 'summary',
+      direction: 'up',
+      categoryOrder: rawOrder,
+      categoriesMeta: rawMeta,
+    });
+    expect(firstMoveUp.moved).toBe(false);
+
+    const lastMoveDown = moveCategoryInOrder({
+      code: 'custom_00000002',
+      direction: 'down',
+      categoryOrder: rawOrder,
+      categoriesMeta: rawMeta,
+    });
+    expect(lastMoveDown.moved).toBe(false);
+  });
+
+  it('WO-61 分類：有卡片的自訂分類不能刪，並說明要先把卡片移走或刪掉', () => {
+    const cards = [
+      { id: 'card-1', category: 'custom_c15c6bd8' },
+      { id: 'card-2', category: 'character' },
+    ];
+
+    const check = canDeleteCategory('custom_c15c6bd8', cards);
+    expect(check.canDelete).toBe(false);
+    expect(check.reason).toBe('分類內還有卡片，要先把卡片移走或刪掉才能刪除');
+
+    const delRes = deleteCustomCategory({
+      code: 'custom_c15c6bd8',
+      categoryOrder: '["summary", "custom_c15c6bd8"]',
+      categoriesMeta: '{"custom_c15c6bd8": "自訂分類"}',
+      cards,
+    });
+    expect(delRes.deleted).toBe(false);
+    expect(delRes.reason).toBe('分類內還有卡片，要先把卡片移走或刪掉才能刪除');
+  });
+
+  it('WO-61 分類：沒有卡片的自訂分類可刪除，只移除自己的鍵，ai_chat 與未知鍵原樣保留', () => {
+    const rawOrder = JSON.stringify([
+      'summary',
+      'character',
+      'world',
+      'timeline',
+      'ai_chat',
+      'custom_c15c6bd8',
+      'custom_another1',
+    ]);
+    const rawMeta = JSON.stringify({
+      custom_c15c6bd8: '要刪的自訂分類',
+      custom_another1: '保留的自訂分類',
+      desktop_view_mode: 'compact',
+      ai_chat: 'AI 對話紀錄',
+    });
+    const cards = [
+      { id: 'c-1', category: 'summary' },
+      { id: 'c-2', category: 'custom_another1' },
+    ];
+
+    const delRes = deleteCustomCategory({
+      code: 'custom_c15c6bd8',
+      categoryOrder: rawOrder,
+      categoriesMeta: rawMeta,
+      cards,
+      expandedCategories: JSON.stringify(['summary', 'custom_c15c6bd8']),
+    });
+
+    expect(delRes.deleted).toBe(true);
+
+    // category_order 移除自己的代碼，但 ai_chat 與其他分類完整保留
+    const nextOrder = JSON.parse(delRes.nextCategoryOrder!);
+    expect(nextOrder).not.toContain('custom_c15c6bd8');
+    expect(nextOrder).toContain('ai_chat');
+    expect(nextOrder).toContain('custom_another1');
+    expect(nextOrder).toContain('summary');
+
+    // categories_meta 僅移除自己的鍵，其餘未知鍵原樣保留
+    const nextMeta = JSON.parse(delRes.nextCategoriesMeta);
+    expect(nextMeta.custom_c15c6bd8).toBeUndefined();
+    expect(nextMeta.custom_another1).toBe('保留的自訂分類');
+    expect(nextMeta.desktop_view_mode).toBe('compact');
+    expect(nextMeta.ai_chat).toBe('AI 對話紀錄');
+
+    // expandedCategories 亦一併移除該代碼
+    const nextExpanded = JSON.parse(delRes.nextExpandedCategories!);
+    expect(nextExpanded).toEqual(['summary']);
+  });
+
+  it('WO-61 分類：新增自訂分類產生 custom_＋8 碼，加入 category_order 並寫入 categories_meta', () => {
+    const rawOrder = JSON.stringify(['summary', 'character', 'world', 'timeline', 'ai_chat']);
+    const rawMeta = JSON.stringify({ desktop_setting: true });
+
+    const addRes = addCustomCategory({
+      name: '【範例】武器設定',
+      categoryOrder: rawOrder,
+      categoriesMeta: rawMeta,
+    });
+
+    expect(addRes.added).toBe(true);
+    expect(addRes.code).toMatch(CUSTOM_CATEGORY_REGEX);
+
+    const nextOrder = JSON.parse(addRes.nextCategoryOrder!);
+    expect(nextOrder).toContain(addRes.code);
+    expect(nextOrder).toContain('ai_chat');
+
+    const nextMeta = JSON.parse(addRes.nextCategoriesMeta);
+    expect(nextMeta[addRes.code]).toBe('【範例】武器設定');
+    expect(nextMeta.desktop_setting).toBe(true);
   });
 });

@@ -5,6 +5,10 @@ import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icon
 import { StatusBadge } from '../components/StatusBadge';
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import {
+  FOCUS_MODE_LANDSCAPE_ENTER_ARIA,
+  FOCUS_MODE_THUMB_ENTER_LABEL,
+} from '../copy/focusModeCopy';
+import {
   EDITOR_PLACEHOLDER,
   FLOATING_CHAPTER_TREE_ARIA,
   FLOATING_VIEW_CARDS_ARIA,
@@ -37,9 +41,17 @@ import { revealCaret } from '../editor/caret';
 import { focusWritingBody } from '../editor/focusWriting';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
-import { CompositionActionQueue, handleEditorLayoutChange, useLayout } from '../layout';
+import {
+  CompositionActionQueue,
+  handleEditorLayoutChange,
+  INITIAL_LANDSCAPE_EXIT_STATE,
+  LANDSCAPE_EXIT_TIMEOUT_MS,
+  landscapeExitReducer,
+  useLayout,
+} from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
 import { editorSaveStatus } from './editorSaveStatus';
+import './focusMode.css';
 
 export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
   const navigate = useNavigate();
@@ -93,12 +105,54 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     exitFocusMode,
   } = useLayout();
   const prevLayoutModeRef = useRef(layoutMode);
+  const prevFocusModeRef = useRef(focusMode);
   const compositionQueue = useRef(new CompositionActionQueue()).current;
   const caretSnapshotRef = useRef<WritingCaretSnapshot | null>(null);
   const capturedSnapshotRef = useRef<WritingCaretSnapshot | null>(null);
   const isComposingRef = useRef(false);
   const pendingOpenAfterCompositionRef = useRef(false);
   const pendingTimerRef = useRef<number | null>(null);
+
+  const [landscapeExitState, setLandscapeExitState] = useState(INITIAL_LANDSCAPE_EXIT_STATE);
+  const landscapeExitTimerRef = useRef<number | null>(null);
+
+  const clearLandscapeExitTimer = () => {
+    if (landscapeExitTimerRef.current !== null) {
+      window.clearTimeout(landscapeExitTimerRef.current);
+      landscapeExitTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!focusMode) {
+      clearLandscapeExitTimer();
+      setLandscapeExitState(INITIAL_LANDSCAPE_EXIT_STATE);
+    }
+  }, [focusMode, layoutMode]);
+
+  useEffect(() => {
+    return () => {
+      clearLandscapeExitTimer();
+    };
+  }, []);
+
+  const handleExitClick = () => {
+    if (layoutMode === 'phone-landscape') {
+      const result = landscapeExitReducer(landscapeExitState, { type: 'click' });
+      setLandscapeExitState(result.nextState);
+      if (result.shouldExit) {
+        clearLandscapeExitTimer();
+        exitFocusMode();
+      } else {
+        clearLandscapeExitTimer();
+        landscapeExitTimerRef.current = window.setTimeout(() => {
+          setLandscapeExitState((prev) => landscapeExitReducer(prev, { type: 'collapse' }).nextState);
+        }, LANDSCAPE_EXIT_TIMEOUT_MS);
+      }
+    } else {
+      exitFocusMode();
+    }
+  };
 
   const clearPendingComposition = () => {
     pendingOpenAfterCompositionRef.current = false;
@@ -243,6 +297,18 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     }
   }, [layoutMode, ref]);
 
+  useLayoutEffect(() => {
+    if (prevFocusModeRef.current !== focusMode) {
+      prevFocusModeRef.current = focusMode;
+      handleEditorLayoutChange({
+        textarea: ref.current,
+        isComposing: isComposingRef.current,
+        queue: compositionQueue,
+        revealFn: revealCaret,
+      });
+    }
+  }, [focusMode, ref]);
+
   useEffect(() => {
     if (!focusWriting || didFocusBody.current) return;
     if (focusWritingBody(ref.current)) didFocusBody.current = true;
@@ -278,9 +344,11 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     >
       <button
         type="button"
-        className="focus-exit-button"
+        className={['focus-exit-button', landscapeExitState.expanded ? 'is-expanded' : '']
+          .filter(Boolean)
+          .join(' ')}
         aria-label={FOCUS_MODE_EXIT_BUTTON}
-        onClick={exitFocusMode}
+        onClick={handleExitClick}
         data-testid="exit-focus-mode"
       >
         {FOCUS_MODE_EXIT_BUTTON}
@@ -357,6 +425,16 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         <CardsIcon size={18} />
         <span>{VIEW_CARDS_BUTTON}</span>
       </button>
+      <button
+        type="button"
+        className="landscape-focus-trigger"
+        aria-label={FOCUS_MODE_LANDSCAPE_ENTER_ARIA}
+        onClick={enterFocusMode}
+        data-testid="toggle-focus-landscape"
+      >
+        <FocusIcon size={18} />
+        <span className="floating-button-label">{FOCUS_MODE_LANDSCAPE_ENTER_ARIA}</span>
+      </button>
       <textarea
         ref={ref}
         className="editor-input"
@@ -432,13 +510,48 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
             {TREE_NEXT_CHAPTER}
           </button>
         </div>
+        <div className="thumb-bar" data-testid="thumb-bar">
+          <button
+            type="button"
+            className="thumb-button thumb-tree-button"
+            aria-label={TREE_DRAWER_BUTTON}
+            onClick={() => togglePanel('left')}
+            data-testid="thumb-tree-button"
+          >
+            <ListTreeIcon size={18} />
+            <span>{TREE_DRAWER_BUTTON}</span>
+          </button>
+          <button
+            type="button"
+            className="thumb-button thumb-cards-button"
+            aria-label={VIEW_CARDS_BUTTON}
+            onPointerDown={handleButtonPointerDown}
+            onClick={toggleCards}
+            data-testid="thumb-cards-button"
+          >
+            <CardsIcon size={18} />
+            <span>{VIEW_CARDS_BUTTON}</span>
+          </button>
+          <button
+            type="button"
+            className="thumb-button thumb-focus-button"
+            aria-label={FOCUS_MODE_THUMB_ENTER_LABEL}
+            onClick={enterFocusMode}
+            data-testid="thumb-focus-button"
+          >
+            <FocusIcon size={18} />
+            <span>{FOCUS_MODE_THUMB_ENTER_LABEL}</span>
+          </button>
+        </div>
       </footer>
-      <div className="focus-bottom-status" data-testid="focus-bottom-status">
-        <span>{todayWordsLabel(todayWords, goal)}</span>
-        <span className="focus-status-sep">·</span>
-        <span>{saveStatus.label}</span>
-      </div>
-      {isCardsOpen && layoutMode !== 'wide' && (
+      {(!focusMode || (layoutMode !== 'phone-portrait' && layoutMode !== 'phone-landscape')) && (
+        <div className="focus-bottom-status" data-testid="focus-bottom-status">
+          <span>{todayWordsLabel(todayWords, goal)}</span>
+          <span className="focus-status-sep">·</span>
+          <span>{saveStatus.label}</span>
+        </div>
+      )}
+      {isCardsOpen && !focusMode && layoutMode !== 'wide' && (
         <WritingCardsDrawer
           projectId={projectId}
           isDesktopFile={project?.origin === 'file'}

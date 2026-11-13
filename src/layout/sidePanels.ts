@@ -25,17 +25,20 @@ export interface PanelsState {
 }
 
 export function createInitialPanelsState(
-  initial?: Partial<SidePanelsState>,
+  initial?: Partial<SidePanelsState> & { focusMode?: boolean },
   layout?: LayoutResolution,
 ): PanelsState {
   const defaultLeft = layout?.mode === 'wide' ? true : false;
+  const initialFocus = Boolean(initial?.focusMode);
   return {
     sidePanels: {
-      left: initial?.left ?? defaultLeft,
-      right: initial?.right ?? false,
+      left: initialFocus ? false : (initial?.left ?? defaultLeft),
+      right: initialFocus ? false : (initial?.right ?? false),
     },
-    focusMode: false,
-    savedBeforeFocus: null,
+    focusMode: initialFocus,
+    savedBeforeFocus: initialFocus
+      ? { left: initial?.left ?? defaultLeft, right: initial?.right ?? false }
+      : null,
     savedForOneSide: null,
   };
 }

@@ -106,7 +106,8 @@ export interface LayoutProviderProps {
   initialMode?: LayoutMode;
   initialWideColumns?: WideColumns | null;
   initialPointer?: PointerMode;
-  initialPanels?: Partial<SidePanelsState>;
+  initialPanels?: Partial<SidePanelsState> & { focusMode?: boolean };
+  initialFocusMode?: boolean;
 }
 
 export function LayoutProvider({
@@ -115,6 +116,7 @@ export function LayoutProvider({
   initialWideColumns,
   initialPointer,
   initialPanels,
+  initialFocusMode,
 }: LayoutProviderProps) {
   const [layoutState, setLayoutState] = useState<{
     mode: LayoutMode;
@@ -146,8 +148,12 @@ export function LayoutProvider({
     const isWide =
       initialMode === 'wide' ||
       (typeof window !== 'undefined' && window.innerWidth >= WIDE_ONE_SIDE_MIN);
+    const combinedPanels = {
+      ...initialPanels,
+      focusMode: initialFocusMode ?? initialPanels?.focusMode,
+    };
     return createInitialPanelsState(
-      initialPanels,
+      combinedPanels,
       isWide ? { mode: 'wide', wideColumns: initialWideColumns ?? 'one-side' } : undefined,
     );
   });

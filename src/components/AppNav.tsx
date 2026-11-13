@@ -1,5 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { CardsIcon, ChartIcon, FolderIcon, GearIcon, PenIcon } from './Icons';
+import { useLayout } from '../layout';
 
 const TABS = [
   { id: 'write', label: '寫作', icon: PenIcon },
@@ -17,6 +18,10 @@ function isTabActive(tab: string, pathname: string): boolean {
 
 export function AppNav({ projectId, variant }: { projectId: string; variant: 'bottom' | 'rail' }) {
   const { pathname } = useLocation();
+  const { focusMode } = useLayout();
+
+  if (focusMode) return null;
+
   return (
     <nav className={variant === 'bottom' ? 'bottom-nav' : 'nav-rail'} aria-label="主要導覽" data-testid={variant === 'bottom' ? 'bottom-nav' : 'nav-rail'}>
       {TABS.map((tab) => {

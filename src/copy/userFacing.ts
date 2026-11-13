@@ -323,3 +323,47 @@ export function dailyProgressGoalLabel(goal: number | string): string {
   return `每日目標 ${formatted} 字`;
 }
 
+/**
+ * WO-60 統計與寫作紀錄預留匯入匯出次數、檔案頁三組分組標題（九方 2026-11-12 定案）。
+ */
+export const FILES_GROUP_SAVE = '存檔';
+export const FILES_GROUP_OPEN_CLOSE = '開啟與關閉';
+export const FILES_GROUP_IMPORT_EXPORT = '匯入與匯出';
+export const PREPARING_BADGE = '準備中';
+export const FEATURE_IN_PREPARATION = '功能還在準備中。';
+
+export const IMPORT_TEXT_FILE_BUTTON = '匯入文字檔';
+export const IMPORT_TEXT_FILE_HINT = '把文字檔的內容加進這份稿子';
+export const EXPORT_FULL_TEXT_BUTTON = '匯出全文';
+export const EXPORT_FULL_TEXT_HINT = '把整份稿子匯出成一個 TXT 或 Markdown 檔';
+
+export const STATS_IMPORT_EXPORT_HEADING = '匯入與匯出';
+export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔、匯出全文的次數';
+export const STATS_IMPORT_COUNT_LABEL = '匯入 次數';
+export const STATS_EXPORT_COUNT_LABEL = '匯出 次數';
+
+/**
+ * 寫作過程紀錄卡匯入次數標籤。中間使用全形空白（U+3000）。
+ * 未開放或未指定次數時顯示「匯入　— 次」。
+ */
+export function logImportCountLabel(count?: number | string | null): string {
+  if (count === null || count === undefined || count === '—') {
+    return '匯入\u3000— 次';
+  }
+  const formatted = typeof count === 'number' ? formatInteger(count) : count;
+  return `匯入\u3000${formatted} 次`;
+}
+
+/**
+ * 寫作過程紀錄卡匯出次數標籤。中間使用全形空白（U+3000）。
+ * 未開放或未指定次數時顯示「匯出　— 次」。
+ */
+export function logExportCountLabel(count?: number | string | null): string {
+  if (count === null || count === undefined || count === '—') {
+    return '匯出\u3000— 次';
+  }
+  const formatted = typeof count === 'number' ? formatInteger(count) : count;
+  return `匯出\u3000${formatted} 次`;
+}
+
+

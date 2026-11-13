@@ -473,3 +473,141 @@ describe('WO-56：換版面狀態保留與空狀態操作導引驗證', () => {
     });
   });
 });
+
+describe('WO-61 四種版面卡片編輯與挑顏色位置驗證', () => {
+  const cardId = '20000000-0000-4000-8000-000000000001';
+
+  it('WO-61 版面 ① 手機直拿：拇指區按鈕、編輯模式與下方面板 6 欄網格挑色', () => {
+    const html = renderCardsScreenWithLayout('phone-portrait', null, {
+      initialCategoryId: 'character',
+      initialCardId: cardId,
+      initialEditorMode: 'edit',
+      initialPickingColor: true,
+    });
+
+    expect(html).toContain('data-layout="phone-portrait"');
+    expect(html).toContain('card-editor-thumb-bar');
+    expect(html).toContain('data-testid="card-editor-done-btn"');
+    expect(html).toContain('data-testid="card-editor-cancel-btn"');
+    expect(html).toContain('card-color-picker-sheet');
+    expect(html).toContain('grid-portrait');
+  });
+
+  it('WO-61 版面 ② 手機橫拿：編輯時抽屜全寬（is-full-width）、標題顏色並排、右側視窗 8 欄 6 列挑色', () => {
+    const html = renderCardsScreenWithLayout('phone-landscape', null, {
+      initialCategoryId: 'character',
+      initialCardId: cardId,
+      initialEditorMode: 'edit',
+      initialPickingColor: true,
+    });
+
+    expect(html).toContain('data-layout="phone-landscape"');
+    expect(html).toContain('cards-drawer-pane is-full-width');
+    expect(html).toContain('card-editor-row-landscape');
+    expect(html).toContain('card-color-picker-modal');
+    expect(html).toContain('grid-desktop');
+  });
+
+  it('WO-61 版面 ③ 中等：右欄底部操作區、置中視窗 8 欄 6 列挑色（每格 52）', () => {
+    const html = renderCardsScreenWithLayout('medium', null, {
+      initialCategoryId: 'character',
+      initialCardId: cardId,
+      initialEditorMode: 'edit',
+      initialPickingColor: true,
+    });
+
+    expect(html).toContain('data-layout="medium"');
+    expect(html).toContain('data-testid="cards-col-main"');
+    expect(html).toContain('card-color-picker-modal');
+    expect(html).toContain('grid-medium');
+  });
+
+  it('WO-61 版面 ④ 寬版：第三欄原地換成編輯、旁邊視窗 8 欄 6 列挑色', () => {
+    const html = renderCardsScreenWithLayout('wide', 'both', {
+      initialCategoryId: 'character',
+      initialCardId: cardId,
+      initialEditorMode: 'edit',
+      initialPickingColor: true,
+    });
+
+    expect(html).toContain('data-layout="wide"');
+    expect(html).toContain('data-testid="cards-col-detail"');
+    expect(html).toContain('card-color-picker-modal');
+    expect(html).toContain('grid-desktop');
+  });
+
+  it('WO-61 四種版面整理分類配置驗證：寬版／中等欄寬 400（is-organizing）、橫拿抽屜全寬（is-full-width）、直拿全頁呈現', () => {
+    // 1. 手機直拿：全頁呈現 CategoryManager，包含完成按鈕
+    const portraitHtml = renderCardsScreenWithLayout('phone-portrait', null, {
+      initialIsOrganizingCategories: true,
+    });
+    expect(portraitHtml).toContain('data-layout="phone-portrait"');
+    expect(portraitHtml).toContain('data-testid="category-manager-pane"');
+    expect(portraitHtml).toContain('data-testid="category-manager-done-btn"');
+
+    // 2. 手機橫拿：抽屜設定為全寬（is-full-width）並內嵌 CategoryManager
+    const landscapeHtml = renderCardsScreenWithLayout('phone-landscape', null, {
+      initialIsOrganizingCategories: true,
+    });
+    expect(landscapeHtml).toContain('data-layout="phone-landscape"');
+    expect(landscapeHtml).toContain('cards-drawer-pane is-full-width');
+    expect(landscapeHtml).toContain('data-testid="category-manager-pane"');
+    expect(landscapeHtml).toContain('data-testid="category-manager-header-done-btn"');
+
+    // 3. 中等版面：左欄具備 is-organizing 樣式類別（CSS 放寬至 400px）並內嵌 CategoryManager
+    const mediumHtml = renderCardsScreenWithLayout('medium', null, {
+      initialIsOrganizingCategories: true,
+    });
+    expect(mediumHtml).toContain('data-layout="medium"');
+    expect(mediumHtml).toContain('cards-col cards-col-categories is-organizing');
+    expect(mediumHtml).toContain('data-testid="category-manager-pane"');
+    expect(mediumHtml).toContain('data-testid="category-manager-header-done-btn"');
+
+    // 4. 寬版：第一欄具備 is-organizing 樣式類別（CSS 放寬至 400px）並內嵌 CategoryManager
+    const wideHtml = renderCardsScreenWithLayout('wide', 'both', {
+      initialIsOrganizingCategories: true,
+    });
+    expect(wideHtml).toContain('data-layout="wide"');
+    expect(wideHtml).toContain('cards-col cards-col-categories is-organizing');
+    expect(wideHtml).toContain('data-testid="category-manager-pane"');
+    expect(wideHtml).toContain('data-testid="category-manager-header-done-btn"');
+  });
+
+  it('WO-61 四種版面畫面不出現「場景」與 AI 對話紀錄分類（renderToStaticMarkup）', () => {
+    const layouts = [
+      { mode: 'phone-portrait' as const, pointer: null },
+      { mode: 'phone-landscape' as const, pointer: null },
+      { mode: 'medium' as const, pointer: null },
+      { mode: 'wide' as const, pointer: 'both' as const },
+    ];
+
+    for (const { mode, pointer } of layouts) {
+      // 1. 一般分類與卡片檢視：四種版面皆不出現「場景」與 AI 對話紀錄
+      const htmlNormal = renderCardsScreenWithLayout(mode, pointer, {
+        initialCategoryId: 'character',
+      });
+      expect(htmlNormal).not.toContain('場景');
+      expect(htmlNormal).not.toContain('AI 對話紀錄');
+      expect(htmlNormal).not.toContain('AI對話紀錄');
+      expect(htmlNormal).not.toContain('ai_chat');
+
+      // 2. 整理分類檢視（CategoryManager）：四種版面皆不列出「場景」與 AI 對話紀錄分類項目
+      const htmlOrganize = renderCardsScreenWithLayout(mode, pointer, {
+        initialIsOrganizingCategories: true,
+      });
+      expect(htmlOrganize).not.toContain('場景');
+      expect(htmlOrganize).not.toContain('data-testid="category-manager-item-ai_chat"');
+      expect(htmlOrganize).not.toContain('category-manager-item-ai_chat');
+      expect(htmlOrganize).not.toContain('data-testid="category-manager-item-scene"');
+
+      // 3. 最近刪除檢視（DeletedCardsList）：四種版面皆不出現「場景」與 AI 對話紀錄
+      const htmlDeleted = renderCardsScreenWithLayout(mode, pointer, {
+        initialShowDeletedCards: true,
+      });
+      expect(htmlDeleted).not.toContain('場景');
+      expect(htmlDeleted).not.toContain('AI 對話紀錄');
+      expect(htmlDeleted).not.toContain('AI對話紀錄');
+      expect(htmlDeleted).not.toContain('ai_chat');
+    }
+  });
+});
