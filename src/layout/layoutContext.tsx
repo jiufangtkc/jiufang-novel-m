@@ -3,11 +3,21 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from 'react';
+import {
+  applyBodyFontScale,
+  commitBodyFontScale,
+  isBodyFontScale,
+  readBodyFontScale,
+  rememberBodyFontCaret,
+  BODY_FONT_SCALE_DEFAULT,
+  type BodyFontScale,
+} from './bodyFontScale';
 import {
   commitInputMode,
   ensureInputMode,
@@ -45,6 +55,9 @@ export interface LayoutContextValue {
   deviceKind: DeviceKind;
   /** 立刻改操作方式：寫進本機、更新 data-pointer。不重載、不改目錄和游標。 */
   setInputMode: (mode: PointerMode) => void;
+  /** 正文字級百分比。只放大正文，立刻生效，存在這個瀏覽器。 */
+  bodyFontScale: BodyFontScale;
+  setBodyFontScale: (scale: BodyFontScale) => void;
   isAtLeastMedium: boolean;
   isWide: boolean;
   isPhone: boolean;
@@ -105,6 +118,21 @@ export interface InputPreference {
 }
 
 /** 讀本機已存的操作方式。沒存過就猜一次並寫入。寫不進去就只用這一頁的猜測。 */
+/** 讀本機正文字級。沒存過或不認得就用 100。寫不進去不影響這一頁。 */
+export function loadBodyFontScale(): BodyFontScale {
+  if (typeof localStorage === 'undefined') return BODY_FONT_SCALE_DEFAULT;
+  try {
+    return readBodyFontScale(localStorage);
+  } catch {
+    return BODY_FONT_SCALE_DEFAULT;
+  }
+}
+
+function scaleFromProp(value: number | undefined): BodyFontScale {
+  if (value != null && isBodyFontScale(value)) return value;
+  return BODY_FONT_SCALE_DEFAULT;
+}
+
 export function loadInputPreference(): InputPreference {
   const signals = readDeviceSignals();
   if (typeof localStorage === 'undefined') {
@@ -141,6 +169,8 @@ export interface LayoutProviderProps {
   initialPointer?: PointerMode;
   /** 測試用。正式畫面不傳，改由本機儲存或第一次猜測決定。 */
   initialDeviceKind?: DeviceKind;
+  /** 測試用。正式畫面不傳，改讀本機的正文字級。 */
+  initialBodyFontScale?: number;
   initialPanels?: Partial<SidePanelsState> & { focusMode?: boolean };
   initialFocusMode?: boolean;
 }
@@ -151,6 +181,7 @@ export function LayoutProvider({
   initialWideColumns,
   initialPointer,
   initialDeviceKind,
+  initialBodyFontScale,
   initialPanels,
   initialFocusMode,
 }: LayoutProviderProps) {
@@ -159,7 +190,10 @@ export function LayoutProvider({
     wideColumns: WideColumns | null;
     pointer: PointerMode;
     deviceKind: DeviceKind;
+    bodyFontScale: BodyFontScale;
   }>(() => {
+    const bodyFontScale = initialMode ? scaleFromProp(initialBodyFontScale) : loadBodyFontScale();
+    applyBodyFontScale(bodyFontScale);
     if (initialMode) {
       return {
         mode: initialMode,
@@ -171,6 +205,7 @@ export function LayoutProvider({
               : null,
         pointer: initialPointer ?? 'touch',
         deviceKind: initialDeviceKind ?? 'unknown',
+        bodyFontScale,
       };
     }
     const res = getCurrentWindowResolution();
@@ -180,6 +215,7 @@ export function LayoutProvider({
       wideColumns: res.wideColumns,
       pointer: pref.inputMode,
       deviceKind: pref.deviceKind,
+      bodyFontScale,
     };
   });
 
@@ -204,6 +240,12 @@ export function LayoutProvider({
   layoutRef.current = layoutState;
   const pointerRef = useRef(layoutState.pointer);
   pointerRef.current = layoutState.pointer;
+  const bodyFontScaleRef = useRef(layoutState.bodyFontScale);
+  bodyFontScaleRef.current = layoutState.bodyFontScale;
+
+  useLayoutEffect(() => {
+    applyBodyFontScale(layoutState.bodyFontScale);
+  }, [layoutState.bodyFontScale]);
 
   const windowDimsRef = useRef<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 390,
@@ -266,6 +308,7 @@ export function LayoutProvider({
             wideColumns: res.wideColumns,
             pointer: prev.pointer,
             deviceKind: prev.deviceKind,
+            bodyFontScale: prev.bodyFontScale,
           };
         });
       });
@@ -359,6 +402,26 @@ export function LayoutProvider({
     });
   }, []);
 
+  const setBodyFontScale = useCallback((scale: BodyFontScale) => {
+    if (!isBodyFontScale(scale) || scale === bodyFontScaleRef.current) return;
+    if (typeof document !== 'undefined' && typeof HTMLTextAreaElement !== 'undefined') {
+      const found = document.querySelector('textarea.editor-input');
+      if (found instanceof HTMLTextAreaElement) {
+        rememberBodyFontCaret(found, bodyFontScaleRef.current);
+      }
+    }
+    applyBodyFontScale(scale);
+    if (typeof localStorage !== 'undefined') {
+      try {
+        commitBodyFontScale(localStorage, scale);
+      } catch {
+        // 私人瀏覽可能不准寫入。這一頁仍先改過去。
+      }
+    }
+    bodyFontScaleRef.current = scale;
+    setLayoutState((prev) => (prev.bodyFontScale === scale ? prev : { ...prev, bodyFontScale: scale }));
+  }, []);
+
   const value = useMemo<LayoutContextValue>(() => {
     const isAtLeastMedium =
       layoutState.mode === 'medium' || layoutState.mode === 'wide';
@@ -372,6 +435,8 @@ export function LayoutProvider({
       pointer: layoutState.pointer,
       deviceKind: layoutState.deviceKind,
       setInputMode,
+      bodyFontScale: layoutState.bodyFontScale,
+      setBodyFontScale,
       isAtLeastMedium,
       isWide,
       isPhone,
@@ -384,7 +449,7 @@ export function LayoutProvider({
       exitFocusMode: exitFocus,
       toggleFocusMode: toggleFocus,
     };
-  }, [layoutState, panelsState, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode]);
+  }, [layoutState, panelsState, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode, setBodyFontScale]);
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 }
@@ -396,6 +461,7 @@ export function useLayout(): LayoutContextValue {
   // 若在 Provider 外被呼叫，提供安全預設值
   const res = getCurrentWindowResolution();
   const pref = loadInputPreference();
+  const bodyFontScale = loadBodyFontScale();
   const isAtLeastMedium = res.mode === 'medium' || res.mode === 'wide';
   const isWide = res.mode === 'wide';
   const isPhone = res.mode === 'phone-portrait' || res.mode === 'phone-landscape';
@@ -406,6 +472,8 @@ export function useLayout(): LayoutContextValue {
     pointer: pref.inputMode,
     deviceKind: pref.deviceKind,
     setInputMode: () => {},
+    bodyFontScale,
+    setBodyFontScale: () => {},
     isAtLeastMedium,
     isWide,
     isPhone,

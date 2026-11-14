@@ -2,18 +2,22 @@ import type { DeviceKind } from '../layout/inputMode';
 import type { PointerMode } from '../layout/layoutMode';
 
 /**
- * 設定頁「外觀」組用字（WO-94，文案第 7 節與規格 G）。
- * 「正文字級」那一列與說明裡指向上面字級的句子，等外觀-3 再加。
- * 現在先不寫那句，避免指到還沒有的開關。
+ * 設定頁「外觀」組用字（WO-94、WO-96）。
+ * 裝置稱呼跟操作方式同一套：手機「這支手機」、電腦「這台電腦」、
+ * 平板「這台平板」、分不出來「這個裝置」。不另寫一套。
  */
 
 export const APPEARANCE_SECTION = '外觀';
 
-/**
- * 外觀組由上到下。正文字級還沒做，畫面不畫那一列，也不放灰色佔位。
- * 外觀-3 要畫在操作方式上方，就畫這個順序的第一列。
- */
+/** 外觀組由上到下。介面字級還沒做，不畫、也不放灰色佔位。 */
 export const APPEARANCE_ROW_ORDER = ['body-font-scale', 'input-mode'] as const;
+
+export const BODY_FONT_SCALE_TITLE = '正文字級';
+export const BODY_FONT_DECREASE = 'A−';
+export const BODY_FONT_INCREASE = 'A＋';
+export const BODY_FONT_DECREASE_ARIA = '縮小正文字級';
+export const BODY_FONT_INCREASE_ARIA = '放大正文字級';
+export const BODY_FONT_PREVIEW = '月台上的狐狸';
 
 export const INPUT_MODE_TITLE = '操作方式';
 export const INPUT_MODE_TOUCH = '用手指點';
@@ -31,8 +35,12 @@ export function deviceKindPhrase(kind: DeviceKind): string {
   return '這個裝置';
 }
 
+export function bodyFontScaleDescription(kind: DeviceKind): string {
+  return `調整寫作時正文的字有多大。只會套用在${deviceKindPhrase(kind)}。`;
+}
+
 export function inputModeDescription(kind: DeviceKind): string {
-  return `依你操作的方式調整列和按鈕的間距。只會套用在${deviceKindPhrase(kind)}。`;
+  return `依你操作的方式調整列和按鈕的間距。要調正文的字有多大，請用上面的「正文字級」。只會套用在${deviceKindPhrase(kind)}。`;
 }
 
 export function inputModeName(mode: PointerMode): string {

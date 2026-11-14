@@ -13,7 +13,7 @@ export function SettingsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
   const { state, actions } = useSample();
-  const { isAtLeastMedium, pointer, deviceKind, setInputMode } = useLayout();
+  const { isAtLeastMedium, mode, pointer, deviceKind, setInputMode, bodyFontScale, setBodyFontScale } = useLayout();
   const wide = isAtLeastMedium;
   const rename = useBookRename(project);
   const [editing, setEditing] = useState(false);
@@ -74,7 +74,14 @@ export function SettingsScreen() {
           </select>
           <span className="hint">預設是午夜 12 點。改了只影響之後的寫作日，已經算好的日子不變。</span>
         </label>
-        <AppearanceSettings pointer={pointer} deviceKind={deviceKind} onChange={setInputMode} />
+        <AppearanceSettings
+          pointer={pointer}
+          deviceKind={deviceKind}
+          bodyFontScale={bodyFontScale}
+          layoutMode={mode}
+          onChange={setInputMode}
+          onBodyFontScale={setBodyFontScale}
+        />
         <Link className="setting-row" to={`/p/${project.id}/logs`}>
           <span>
             <strong>寫作過程紀錄</strong>
