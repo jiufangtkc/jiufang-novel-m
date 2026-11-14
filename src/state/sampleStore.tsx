@@ -13,7 +13,9 @@ import {
   changeDayEndHour,
   changeGoal,
   countAchievements,
+  createSchedule,
   glowing,
+  withClock,
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
@@ -46,8 +48,7 @@ import {
 } from '../db/saveProject';
 import { verifyExportedDatabase } from '../db/verifyDatabase';
 import { BOOK_RENAME_FAIL, BOOK_RENAMED_TOAST, STASH_FAIL } from '../copy/userFacing';
-import { countManuscriptWords } from '../domain/manuscriptWords';
-import { countWords } from '../domain/wordCount';
+import { countBookWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
 import { importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
 import {
@@ -68,7 +69,6 @@ import {
 } from '../domain/writingLog';
 import { summarizeStats, type StatsSummary } from '../domain/stats';
 import {
-  collectContents,
   createDemoSchedule,
   DEMO_PROJECTS,
   demoLogs,
@@ -99,7 +99,15 @@ import {
   loadProjects,
   normalizeLoadedProject,
   saveProjects,
+  type KeyValueStore,
 } from '../domain/outline';
+import {
+  fingerprintBytes,
+  loadDeviceSaveRecord,
+  recallExportedFile,
+  rememberExportedFile,
+  saveDeviceSaveRecord,
+} from './deviceSaveRecord';
 
 export interface SampleState {
   projects: DemoProject[];
@@ -110,6 +118,8 @@ export interface SampleState {
   activeProjectId: string | null;
   logs: WritingLogRow[];
   demoLogs: WritingLogRow[];
+  /** WO-69：新開稿子（還沒升格成檔案）各自的寫作紀錄；每日目標結算狀態放在 goalById。 */
+  logsById: Record<string, WritingLogRow[]>;
   toast: string | null;
   /** 匯入檔的卡片與寫作紀錄，另存時原樣帶出。 */
   fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
@@ -222,6 +232,15 @@ function savedProjects(): DemoProject[] | null {
   }
 }
 
+/** WO-77：這台裝置的瀏覽器本機儲存；私人瀏覽或測試環境沒有時回傳 null。 */
+function deviceStore(): KeyValueStore | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
   const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) =>
@@ -231,19 +250,49 @@ export function createState(now: Date): SampleState {
     }),
   );
   const logs = alignToday(demoLogs(), schedule);
+  // WO-77：讀回這台裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
+  const record = loadDeviceSaveRecord(deviceStore(), now);
   return {
     projects,
     recentIds: projects.map((project) => project.id),
     schedule,
     demoSchedule: schedule,
-    goalById: {},
+    goalById: record.goalById,
     activeProjectId: null,
     logs,
     demoLogs: logs,
+    logsById: record.logsById,
     toast: null,
     fileExtras: {},
-    saveMeta: {},
+    saveMeta: record.saveMeta,
   };
+}
+
+/**
+ * WO-77：把存檔時間與新稿子的寫作紀錄留在這台裝置（不寫進 .db）。
+ * 寫作紀錄只留還沒升格成檔案、也不是內建範例書的稿子。
+ */
+export function persistDeviceSaveRecord(store: KeyValueStore, state: SampleState): void {
+  saveDeviceSaveRecord(store, {
+    saveMeta: state.saveMeta,
+    logsById: state.logsById,
+    goalById: state.goalById,
+    draftIds: state.projects
+      .filter((project) => project.origin !== 'file' && !isSampleBook(project))
+      .map((project) => project.id),
+  });
+}
+
+/** WO-77：另存成功後，記下交出去的那份檔案指紋，開回同一份檔時對得上另存時間。 */
+export async function noteExportedBytes(store: KeyValueStore, bytes: Uint8Array, atMs: number): Promise<void> {
+  const fingerprint = await fingerprintBytes(bytes);
+  if (fingerprint) rememberExportedFile(store, fingerprint, atMs);
+}
+
+/** WO-77：開回的檔若正是這台裝置另存出去的那一份，取回當時的另存時間；內容不同就沒有。 */
+export async function exportTimeOfBytes(store: KeyValueStore, bytes: Uint8Array): Promise<number | null> {
+  const fingerprint = await fingerprintBytes(bytes);
+  return fingerprint ? recallExportedFile(store, fingerprint) : null;
 }
 
 function patchSaveMeta(
@@ -383,6 +432,68 @@ function syncFileLog(
   };
 }
 
+/** WO-69：內建範例書（【範例】霧港紀事等）共用範例寫作紀錄；其他稿子各有自己的紀錄。 */
+const SAMPLE_BOOK_IDS = new Set(DEMO_PROJECTS.map((project) => project.id));
+
+function isSampleBook(project: DemoProject): boolean {
+  return project.origin !== 'file' && SAMPLE_BOOK_IDS.has(project.id);
+}
+
+/** WO-69：新稿子的空白寫作狀態。每日目標與一天結束時刻沿用目前設定，紀錄與達成次數從 0 開始。 */
+function freshSchedule(state: SampleState, now: Date): GoalSchedule {
+  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  return withClock(createSchedule({ dayEndHour: state.schedule.dayEndHour, defaultGoal: goal }), now);
+}
+
+/** WO-69：目前 state.schedule／state.logs 代表的是不是這份稿子。沒有開著的稿子時代表範例書。 */
+function isCurrentTracking(state: SampleState, project: DemoProject): boolean {
+  return state.activeProjectId ? state.activeProjectId === project.id : isSampleBook(project);
+}
+
+/** WO-69：讀出某份稿子自己的每日目標結算狀態與寫作紀錄，不借用其他稿子的。 */
+function trackingOf(
+  state: SampleState,
+  project: DemoProject,
+  now: Date,
+): { schedule: GoalSchedule; logs: WritingLogRow[] } {
+  if (isCurrentTracking(state, project)) return { schedule: state.schedule, logs: state.logs };
+  if (project.origin === 'file') {
+    const extra = state.fileExtras[project.dbKey ?? ''];
+    return {
+      schedule: state.goalById[project.id] ?? state.schedule,
+      logs: extra ? fileLogsToRows(extra.logs) : state.logs,
+    };
+  }
+  if (isSampleBook(project)) return { schedule: state.demoSchedule, logs: state.demoLogs };
+  return {
+    schedule: state.goalById[project.id] ?? freshSchedule(state, now),
+    logs: state.logsById[project.id] ?? [],
+  };
+}
+
+/** WO-69：把某份稿子的結算狀態與紀錄寫回它自己的位置；是目前那份才一併更新畫面用的 schedule／logs。 */
+function storeTracking(
+  state: SampleState,
+  project: DemoProject,
+  schedule: GoalSchedule,
+  logs: WritingLogRow[],
+): SampleState {
+  const current = isCurrentTracking(state, project);
+  let next: SampleState = current ? { ...state, schedule, logs } : state;
+  if (project.origin === 'file') {
+    next = { ...next, goalById: { ...next.goalById, [project.id]: schedule } };
+  } else if (isSampleBook(project)) {
+    next = { ...next, demoSchedule: schedule, demoLogs: logs };
+  } else {
+    next = {
+      ...next,
+      goalById: { ...next.goalById, [project.id]: schedule },
+      logsById: { ...next.logsById, [project.id]: logs },
+    };
+  }
+  return next;
+}
+
 function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
   const active = state.projects.find((project) => project.id === state.activeProjectId);
   if (active?.origin === 'file' && state.activeProjectId) {
@@ -392,7 +503,35 @@ function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
       goalById: { ...state.goalById, [state.activeProjectId]: schedule },
     };
   }
+  // WO-69：新開稿子的目標與結算狀態只存在自己那份，不寫進範例書。
+  if (active && !isSampleBook(active)) {
+    return { ...state, schedule, goalById: { ...state.goalById, [active.id]: schedule } };
+  }
   return { ...state, schedule, demoSchedule: schedule };
+}
+
+/** WO-69：更新目前這份稿子的寫作紀錄，同時寫回它自己的位置。 */
+function keepLogs(state: SampleState, logs: WritingLogRow[]): SampleState {
+  const active = state.projects.find((project) => project.id === state.activeProjectId);
+  if (active?.origin === 'file') return { ...state, logs };
+  if (active && !isSampleBook(active)) {
+    return { ...state, logs, logsById: { ...state.logsById, [active.id]: logs } };
+  }
+  return { ...state, logs, demoLogs: logs };
+}
+
+function toFileLogs(logs: readonly WritingLogRow[]): FileLog[] {
+  return logs.map((log) => ({
+    date: log.date,
+    duration: log.duration,
+    word_count: log.word_count,
+    ai_continuation_count: log.ai_continuation_count,
+    ai_continuation_chars: log.ai_continuation_chars,
+    ai_chat_count: log.ai_chat_count,
+    ai_details: log.ai_details ?? '{}',
+    paste_large_count: log.paste_large_count,
+    delete_large_count: log.delete_large_count,
+  }));
 }
 
 export function getProjectCards(state: SampleState, projectId: string): FileCard[] {
@@ -496,7 +635,9 @@ export function buildFileProjectInfo(state: SampleState, project: DemoProject): 
   const key = project.dbKey ?? project.id;
   const extra =
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
-  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  // WO-69：用這份稿子自己的每日目標。
+  const own = trackingOf(state, project, new Date()).schedule;
+  const goal = own.open?.goals.at(-1)?.goal ?? own.defaultGoal;
 
   if (extra?.info) {
     const src = extra.info;
@@ -639,7 +780,9 @@ export function buildPromotedFileExtras(
     state.fileExtras[project.id];
   if (existing) return existing;
 
-  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  // WO-69：升格成檔案時只帶這份稿子自己的目標與寫作紀錄。
+  const own = trackingOf(state, project, new Date());
+  const goal = own.schedule.open?.goals.at(-1)?.goal ?? own.schedule.defaultGoal;
   return {
     info: {
       title: project.title,
@@ -664,17 +807,7 @@ export function buildPromotedFileExtras(
           ...(card.extraColumns ? { extraColumns: { ...card.extraColumns } } : {}),
         }))
       : [],
-    logs: state.logs.map((log) => ({
-      date: log.date,
-      duration: log.duration,
-      word_count: log.word_count,
-      ai_continuation_count: log.ai_continuation_count,
-      ai_continuation_chars: log.ai_continuation_chars,
-      ai_chat_count: log.ai_chat_count,
-      ai_details: log.ai_details ?? '{}',
-      paste_large_count: log.paste_large_count,
-      delete_large_count: log.delete_large_count,
-    })),
+    logs: toFileLogs(own.logs),
   };
 }
 
@@ -741,7 +874,10 @@ export function reduce(state: SampleState, action: Action): SampleState {
           filename: current.filename || action.filename,
         })),
         fileExtras: { ...state.fileExtras, [key]: extras },
-        goalById: { ...state.goalById, [project.id]: state.goalById[project.id] ?? state.schedule },
+        goalById: {
+          ...state.goalById,
+          [project.id]: state.goalById[project.id] ?? trackingOf(state, project, now).schedule,
+        },
       };
     }
     case 'dismiss-recent':
@@ -776,6 +912,9 @@ export function reduce(state: SampleState, action: Action): SampleState {
         ...state,
         projects: [project, ...state.projects],
         recentIds: [action.id, ...state.recentIds],
+        // WO-69：新稿子有自己的空白寫作紀錄與結算狀態，不借範例書的。
+        goalById: { ...state.goalById, [action.id]: freshSchedule(state, now) },
+        logsById: { ...state.logsById, [action.id]: [] },
         toast: '已開新稿子',
       };
     }
@@ -827,12 +966,12 @@ export function reduce(state: SampleState, action: Action): SampleState {
       const project = state.projects.find((item) => item.id === action.projectId);
       const node = project ? findNode(project.nodes, action.nodeId) : null;
       if (!project || !node || (node.content ?? '') === action.text) return state;
-      const deltaWords =
-        project.origin === 'file'
-          ? countManuscriptWords(action.text) - countManuscriptWords(node.content ?? '')
-          : classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
-      const schedule = applyWordDelta(state.schedule, deltaWords, now);
-      const next = keepSchedule(state, schedule);
+      // WO-76：不分來源，一律用同一套算法比較改前與改後的整章字數。
+      const deltaWords = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      // WO-69：字數只記進被改的那份稿子自己的紀錄，不記到其他稿子或範例書。
+      const own = trackingOf(state, project, now);
+      const schedule = applyWordDelta(own.schedule, deltaWords, now);
+      const next = storeTracking(state, project, schedule, alignToday(own.logs, schedule));
       const projects = mapProject(next.projects, action.projectId, (current) => ({
         ...current,
         updatedLabel: '剛剛',
@@ -842,7 +981,6 @@ export function reduce(state: SampleState, action: Action): SampleState {
       return {
         ...next,
         projects,
-        logs: alignToday(next.logs, schedule),
         fileExtras: extras,
       };
     }
@@ -853,7 +991,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
       const logs = alignToday(state.logs, state.schedule).map((log) =>
         log.date === dayKey ? applyLargeEvent(log, action.delta) : log,
       );
-      return { ...state, logs, fileExtras: bumpFileLog(state, dayKey, (log) => applyLargeToFile(log, action.delta)) };
+      return { ...keepLogs(state, logs), fileExtras: bumpFileLog(state, dayKey, (log) => applyLargeToFile(log, action.delta)) };
     }
     case 'add-duration': {
       if (!state.schedule.open || action.seconds <= 0) return state;
@@ -862,8 +1000,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
         log.date === dayKey ? withAddedDuration(log, action.seconds) : log,
       );
       return {
-        ...state,
-        logs,
+        ...keepLogs(state, logs),
         fileExtras: bumpFileLog(state, dayKey, (log) => ({ ...log, duration: log.duration + action.seconds })),
       };
     }
@@ -905,11 +1042,20 @@ export function reduce(state: SampleState, action: Action): SampleState {
           logs: extra ? fileLogsToRows(extra.logs) : state.logs,
         };
       }
+      // WO-69：範例書讀範例紀錄；新開稿子讀自己的紀錄（沒有就從 0 開始）。
+      const own = isSampleBook(project)
+        ? { schedule: state.demoSchedule, logs: state.demoLogs }
+        : {
+            schedule: state.goalById[project.id] ?? freshSchedule(state, now),
+            logs: state.logsById[project.id] ?? [],
+          };
       return {
         ...state,
         activeProjectId: project.id,
-        schedule: state.demoSchedule,
-        logs: state.demoLogs,
+        schedule: own.schedule,
+        logs: own.logs,
+        goalById: isSampleBook(project) ? state.goalById : { ...state.goalById, [project.id]: own.schedule },
+        logsById: isSampleBook(project) ? state.logsById : { ...state.logsById, [project.id]: own.logs },
       };
     }
     case 'remember-place':
@@ -1173,33 +1319,33 @@ function browserSaveEnv(): SaveEnvironment {
   };
 }
 
+/** WO-69：另存或暫存時要寫進檔案的內容。寫作紀錄只取這份稿子自己的。 */
+export function manuscriptSnapshotParts(
+  state: SampleState,
+  project: DemoProject,
+): { key: string; info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] } {
+  const key = project.dbKey ?? project.id;
+  const extra =
+    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
+  const info = buildFileProjectInfo(state, project);
+  // 還沒有檔案紀錄時，只寫這份稿子自己的紀錄，不借目前畫面上別份稿子的。
+  const logs: FileLog[] = extra?.logs ?? toFileLogs(trackingOf(state, project, new Date()).logs);
+  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs };
+}
+
 async function snapshotManuscript(
   state: SampleState,
   project: DemoProject,
   persist = true,
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const key = project.dbKey ?? project.id;
-  const extra =
-    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
-  const info = buildFileProjectInfo(state, project);
-  const logs: FileLog[] = extra?.logs ?? state.logs.map((log) => ({
-    date: log.date,
-    duration: log.duration,
-    word_count: log.word_count,
-    ai_continuation_count: log.ai_continuation_count,
-    ai_continuation_chars: log.ai_continuation_chars,
-    ai_chat_count: log.ai_chat_count,
-    ai_details: log.ai_details ?? '{}',
-    paste_large_count: log.paste_large_count,
-    delete_large_count: log.delete_large_count,
-  }));
+  const { key, info, cards, logs } = manuscriptSnapshotParts(state, project);
   const bytes = await saveBookBytes(
     key,
     projectSaveFilename(project.title, project.filename),
     project.title,
     info,
     project.nodes,
-    extra?.cards ?? project.cards ?? [],
+    cards,
     logs,
     bookkeepingOf(project),
     persist,
@@ -1251,6 +1397,17 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       // 私人瀏覽可能不准寫入，畫面仍可繼續用。
     }
   }, [state.projects, state.activeProjectId]);
+
+  // WO-77：暫存／另存時間與新稿子的寫作紀錄跟著留在這台裝置，重新整理後還在。
+  useEffect(() => {
+    const store = deviceStore();
+    if (!store) return;
+    try {
+      persistDeviceSaveRecord(store, state);
+    } catch {
+      // 私人瀏覽可能不准寫入，畫面仍可繼續用。
+    }
+  }, [state.saveMeta, state.logsById, state.goalById, state.projects]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1343,6 +1500,18 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       if (live) {
         dispatch({ type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text });
       }
+      // WO-77：離開前正文已寫進本機，今天字數也要同步留下，不等畫面更新（頁面可能馬上關掉）。
+      const store = deviceStore();
+      if (store) {
+        try {
+          const tracked = live
+            ? reduce(current, { type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text })
+            : current;
+          persistDeviceSaveRecord(store, tracked);
+        } catch {
+          // 寫不進去就照舊，正文已另外留下。
+        }
+      }
       const projectId = live?.projectId ?? current.activeProjectId;
       const project = projects.find((item) => item.id === projectId);
       if (!project) return;
@@ -1405,6 +1574,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
+        const store = deviceStore();
+        const exportedAt = store ? await exportTimeOfBytes(store, bytes).catch(() => null) : null;
         const book = await importBook(file.name, bytes);
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
         rememberOpenFile(book.key, diskFile ?? null);
@@ -1426,6 +1597,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
+        // WO-77：開回的正是這台裝置另存出去的那份檔，「上次另存」沿用當時時間。
+        if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return { id: book.key, chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null };
       },
       openWithPicker: async () => {
@@ -1433,6 +1606,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (!picked) return null;
         const copy = new Uint8Array(picked.bytes.byteLength);
         copy.set(picked.bytes);
+        const store = deviceStore();
+        const exportedAt = store ? await exportTimeOfBytes(store, copy).catch(() => null) : null;
         const book = await importBook(picked.file.name, copy);
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
         rememberOpenFile(book.key, picked.file);
@@ -1454,6 +1629,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
+        if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return {
           id: book.key,
           chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null,
@@ -1590,6 +1766,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           });
           const outcome = await saveProjectAsNew(browserSaveEnv(), snap.key, bytes, exportDbFilename(project.title));
           applySaveOutcome(dispatch, project.id, outcome, 'save-as');
+          const store = deviceStore();
+          if (store && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
+            await noteExportedBytes(store, bytes, Date.now()).catch(() => undefined);
+          }
           if (outcome.kind === 'saved-as') {
             const target = await createBrowserTargetStore().load(snap.key);
             if (target?.file) rememberOpenFile(snap.key, target.file);
@@ -1612,10 +1792,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
     (projectId: string) => {
       const project = state.projects.find((item) => item.id === projectId);
       if (!project) return 0;
-      return collectContents(project.nodes).reduce(
-        (sum, text) => sum + (project.origin === 'file' ? countManuscriptWords(text) : countWords(text)),
-        0,
-      );
+      return countBookWords(project.nodes);
     },
     [state.projects],
   );
