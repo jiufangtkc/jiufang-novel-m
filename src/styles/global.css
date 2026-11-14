@@ -22,10 +22,12 @@
 /* 指標判斷與點擊範圍（WO-54） */
 html[data-pointer="mouse"] {
   --hit-size: 36px;
+  --tree-indent: 12px;
 }
 
 html[data-pointer="touch"] {
   --hit-size: 44px;
+  --tree-indent: 16px;
 }
 
 /* 版面骨架選擇器與各版面正文限寬用字數（WO-54、WO-55）
@@ -350,6 +352,7 @@ a { color: var(--accent); }
   padding-top: 2px;
   padding-bottom: 2px;
   padding-right: 4px;
+  padding-left: calc(var(--tree-depth, 0) * var(--tree-indent, 16px));
   box-sizing: border-box;
 }
 
@@ -373,6 +376,8 @@ a { color: var(--accent); }
 .folder-name { font-size: 15px; font-weight: 700; }
 .node-name { font-size: 14px; }
 .folder-name, .node-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -949,7 +954,7 @@ html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:focus-within
   width: var(--hit-size, 36px);
   min-width: var(--hit-size, 36px);
   max-width: var(--hit-size, 36px);
-  height: var(--hit-size, 36px);
+  height: max(28px, 1.6em);
   opacity: 1;
   overflow: visible;
   pointer-events: auto;
@@ -962,9 +967,232 @@ html[data-pointer="mouse"] .tree-pane.is-organizing .tree-handle {
   width: var(--hit-size, 36px);
   min-width: var(--hit-size, 36px);
   max-width: var(--hit-size, 36px);
+  height: max(28px, 1.6em);
   opacity: 1;
   pointer-events: auto;
 }
+
+/*
+ * 外觀-2（WO-95）：目錄章名騰寬度。
+ * 視覺列高跟 data-pointer 走。滑鼠列高 28，箭頭與「⋯」是 24×28，熱區不伸進上下列。
+ * 手指點的列距仍是 44 加上上下各 2。箭頭與選取列的「⋯」維持 44×44。
+ * 進度圓點維持小點，按鈕高 44，避免再佔走章名的寬度。
+ */
+html[data-pointer="mouse"] .tree-pane .tree-row {
+  gap: 0;
+  padding-right: 2px;
+  min-height: max(28px, 1.6em);
+  align-items: stretch;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-main {
+  min-height: 0;
+  height: auto;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron-spacer,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-handle,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress-spacer {
+  height: max(28px, 1.6em);
+  min-height: 0;
+  align-self: center;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron-spacer {
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .folder-name,
+html[data-pointer="mouse"] .tree-pane .tree-row .node-name {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row > .icon-button {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  height: max(28px, 1.6em);
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+}
+
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:hover > .icon-button,
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:focus-within > .icon-button,
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row.is-selected > .icon-button {
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress-spacer {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row {
+  gap: 8px;
+  padding-right: 8px;
+  align-items: center;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row .tree-main {
+  align-self: stretch;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row .tree-progress {
+  width: auto;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row .folder-name,
+html[data-pointer="touch"] .tree-pane .tree-row .node-name {
+  font-size: 16px;
+  line-height: 1.45;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+html[data-pointer="touch"] .tree-pane:not(.is-organizing) .tree-row > .icon-button {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+}
+
+html[data-pointer="touch"] .tree-pane:not(.is-organizing) .tree-row.is-selected > .icon-button {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+html[data-pointer="mouse"] .tree-row .badge,
+html[data-pointer="touch"] .tree-row .badge {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+  justify-content: center;
+}
+
+html[data-pointer="mouse"] .tree-row .badge-dot {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-pointer="touch"] .tree-row .badge,
+html[data-pointer="touch"] .tree-row .badge-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+}
+
+html[data-pointer="touch"] .tree-row.is-selected .badge-dot {
+  display: none;
+}
+
+html[data-pointer="mouse"] .tree-row:hover .badge,
+html[data-pointer="mouse"] .tree-row:focus-within .badge,
+html[data-pointer="touch"] .tree-row.is-selected .badge {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  gap: 4px;
+  border-radius: 0;
+  overflow: visible;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+html[data-pointer="mouse"] .tree-row:hover .badge {
+  font-size: 11px;
+}
+
+.tree-icon.type-folder svg {
+  width: 20px;
+  height: 20px;
+}
+
+html[data-pointer="mouse"] .tree-icon.type-folder svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tree-pane .scroll-pane {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tree-pane .scroll-pane::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tree-pane .scroll-pane::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.tree-title-tip {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  margin: 0;
+  padding: 6px 8px;
+  background: #3c3c3c;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  pointer-events: none;
+}
+
 .tree-row.is-dragging { opacity: 0.45; }
 .tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
 .tree-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
@@ -1262,8 +1490,10 @@ html[data-layout="phone-landscape"] .write-layout {
 
 html[data-layout="phone-landscape"] .tree-pane {
   display: none;
+  flex: 0 0 320px;
   width: 320px;
   min-width: 320px;
+  max-width: 320px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--bg);
@@ -1398,8 +1628,10 @@ html[data-layout="medium"] .write-layout:not(.has-chapter) .editor-pane {
 
 html[data-layout="medium"] .tree-pane {
   display: none;
+  flex: 0 0 340px;
   width: 340px;
   min-width: 340px;
+  max-width: 340px;
   flex-shrink: 0;
   border-right: 1px solid var(--border);
   background: var(--bg);
