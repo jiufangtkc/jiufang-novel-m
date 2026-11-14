@@ -16,6 +16,7 @@
   --vv-height: 100dvh;
   --vv-offset: 0px;
   --hit-size: 44px;
+  --body-font-scale: 100;
   color-scheme: dark;
 }
 
@@ -38,28 +39,28 @@ html[data-pointer="touch"] {
  */
 html[data-layout="phone-portrait"] .editor-input {
   max-width: min(calc(19 * (1em + 0.5px)), 100%);
-  font-size: 18px;
+  font-size: calc(18px * var(--body-font-scale, 100) / 100);
   padding-left: 16px;
   padding-right: 16px;
 }
 
 html[data-layout="phone-landscape"] .editor-input {
   max-width: min(calc(30 * (1em + 0.5px)), 100%);
-  font-size: 18px;
+  font-size: calc(18px * var(--body-font-scale, 100) / 100);
   padding-left: 16px;
   padding-right: 16px;
 }
 
 html[data-layout="medium"] .editor-input {
   max-width: min(calc(30 * (1em + 0.5px)), 100%);
-  font-size: 20px;
+  font-size: calc(20px * var(--body-font-scale, 100) / 100);
   padding-left: 40px;
   padding-right: 40px;
 }
 
 html[data-layout="wide"] .editor-input {
   max-width: min(calc(36 * (1em + 0.5px)), 100%);
-  font-size: 18px;
+  font-size: calc(18px * var(--body-font-scale, 100) / 100);
   padding-left: 40px;
   padding-right: 40px;
 }
@@ -2085,6 +2086,80 @@ html[data-layout="wide"] .settings-page {
 .input-mode-mark.is-touch span { height: 4px; }
 .input-mode-mark.is-mouse { gap: 3px; }
 .input-mode-mark.is-mouse span { height: 1px; }
+
+/* 正文字級（WO-96）。A−／A＋ 兩種操作方式都至少 44×44，不跟著 --hit-size 縮小。 */
+.body-font-setting {
+  margin: 4px 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.body-font-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.body-font-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.body-font-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+  border-radius: 8px;
+}
+.body-font-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.body-font-value {
+  min-width: 108px;
+  text-align: center;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.body-font-step {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+.body-font-step:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.body-font-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.body-font-preview {
+  margin: 10px 0 0;
+  color: var(--text);
+  font-weight: 400;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
+}
 .book-name-row {
   width: 100%;
   min-height: 52px;

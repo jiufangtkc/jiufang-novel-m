@@ -43,6 +43,11 @@ import { focusWritingBody } from '../editor/focusWriting';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
 import {
+  applyBodyFontCaretAnchor,
+  bodyFontCaretNeedsScroll,
+  rememberBodyFontCaret,
+} from '../layout/bodyFontScale';
+import {
   CompositionActionQueue,
   handleEditorLayoutChange,
   INITIAL_LANDSCAPE_EXIT_STATE,
@@ -104,7 +109,10 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     focusMode,
     enterFocusMode,
     exitFocusMode,
+    bodyFontScale,
   } = useLayout();
+  const bodyFontScaleRef = useRef(bodyFontScale);
+  bodyFontScaleRef.current = bodyFontScale;
   const prevLayoutModeRef = useRef(layoutMode);
   const prevFocusModeRef = useRef(focusMode);
   const compositionQueue = useRef(new CompositionActionQueue()).current;
@@ -228,14 +236,34 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
 
   const placedCursor = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (placedCursor.current === chapter.id) return;
     const el = ref.current;
     if (!el || !project) return;
-    placedCursor.current = chapter.id;
-    if (project.lastOpenedNodeId !== chapter.id) return;
-    const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
-    el.setSelectionRange(cursor, cursor);
-  }, [chapter.id, project, ref]);
+    if (placedCursor.current !== chapter.id) {
+      placedCursor.current = chapter.id;
+      if (project.lastOpenedNodeId === chapter.id) {
+        const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
+        el.setSelectionRange(cursor, cursor);
+      }
+    }
+    // 字級變了才把游標那一行捲回原來的高度。平常打字不進這裡。
+    // 組字中先排隊，不改選取、不改文字。
+    if (!bodyFontCaretNeedsScroll(bodyFontScale, el.selectionStart ?? 0)) return;
+    handleEditorLayoutChange({
+      textarea: el,
+      isComposing: isComposingRef.current,
+      queue: compositionQueue,
+      revealFn: (node) => {
+        applyBodyFontCaretAnchor(node, bodyFontScaleRef.current);
+      },
+    });
+  }, [chapter.id, project, bodyFontScale, ref]);
+
+  useLayoutEffect(() => {
+    const textarea = ref.current;
+    return () => {
+      if (textarea) rememberBodyFontCaret(textarea, bodyFontScaleRef.current);
+    };
+  }, [ref]);
 
   useEffect(() => {
     const textarea = ref.current;
