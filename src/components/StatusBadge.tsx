@@ -4,7 +4,7 @@ export function StatusBadge({ code }: { code: ProgressCode }) {
   return (
     <span className="badge" data-progress={code}>
       <span className="badge-dot" />
-      {progressLabel(code)}
+      <span className="badge-label">{progressLabel(code)}</span>
     </span>
   );
 }
