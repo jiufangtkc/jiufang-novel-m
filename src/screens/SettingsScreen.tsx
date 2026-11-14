@@ -4,10 +4,13 @@ import { BookIcon, PencilIcon } from '../components/Icons';
 import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
+import { HALF_WIDTH_SETTING_TITLE, halfWidthSettingAria } from '../copy/halfWidthCopy';
 import { useLayout } from '../layout';
+import { useHalfWidthReminder } from '../state/halfWidthReminder';
 import { useProject, useSample } from '../state/sampleStore';
 import { AppearanceSettings } from './AppearanceSettings';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
+import './halfWidth.css';
 
 export function SettingsScreen() {
   const { projectId = '' } = useParams();
@@ -21,6 +24,7 @@ export function SettingsScreen() {
   const [daily, setDaily] = useState(String(goalNow));
   const [book, setBook] = useState(String(project?.bookGoal ?? 100000));
   const [error, setError] = useState('');
+  const [halfWidthOn, setHalfWidthOn] = useHalfWidthReminder();
   if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
 
   return (
@@ -82,6 +86,21 @@ export function SettingsScreen() {
           onChange={setInputMode}
           onBodyFontScale={setBodyFontScale}
         />
+        {/* WO-76 乙段：只存在這個裝置，不寫進稿子的 .db。 */}
+        <button
+          type="button"
+          className="setting-row half-width-setting"
+          data-testid="half-width-setting"
+          aria-label={halfWidthSettingAria(halfWidthOn)}
+          onClick={() => setHalfWidthOn(!halfWidthOn)}
+        >
+          <span>
+            <strong>{HALF_WIDTH_SETTING_TITLE}</strong>
+          </span>
+          <span className={halfWidthOn ? 'setting-switch is-on' : 'setting-switch'} aria-hidden="true">
+            <span />
+          </span>
+        </button>
         <Link className="setting-row" to={`/p/${project.id}/logs`}>
           <span>
             <strong>寫作過程紀錄</strong>
