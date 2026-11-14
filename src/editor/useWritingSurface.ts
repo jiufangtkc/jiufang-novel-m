@@ -39,6 +39,11 @@ export function useWritingSurface({
   onToastRef.current = onToast;
   const openingRef = useRef(openingText);
   openingRef.current = openingText;
+  /**
+   * WO-76 乙段：按「改成全形」或「復原」時整段換掉這一章正文。
+   * 組字中不換（回傳 false）。換完立刻走既有 commit-text，字數照甲段算法更新。
+   */
+  const replaceRef = useRef<(next: string, caret: number) => boolean>(() => false);
 
   useEffect(() => {
     const textarea = ref.current;
@@ -131,6 +136,23 @@ export function useWritingSurface({
       textarea.focus();
       revealCaret(textarea);
       gate.schedule(() => flush());
+    };
+
+    replaceRef.current = (next: string, caret: number) => {
+      if (composing.current) return false;
+      const scrollTop = textarea.scrollTop;
+      const hadFocus = document.activeElement === textarea;
+      textarea.value = next;
+      textarea.setSelectionRange(caret, caret);
+      textarea.scrollTop = scrollTop;
+      // 不算成「大量文字出現」：只是同一章的標點換成全形，前後字數由 commit-text 相減。
+      latest.current = next;
+      source.current = 'type';
+      mark();
+      gate.cancel();
+      flush();
+      if (hadFocus) revealCaret(textarea);
+      return true;
     };
 
     const onCompositionStart = () => {
@@ -255,6 +277,7 @@ export function useWritingSurface({
     window.visualViewport?.addEventListener('scroll', onViewport);
 
     return () => {
+      replaceRef.current = () => false;
       flush(true);
       gate.cancel();
       setLiveReader(null);
@@ -276,5 +299,6 @@ export function useWritingSurface({
     };
   }, [bookId, chapterId]);
 
-  return { ref, dirty };
+  const replaceText = (next: string, caret: number) => replaceRef.current(next, caret);
+  return { ref, dirty, replaceText };
 }
