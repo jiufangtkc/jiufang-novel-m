@@ -1,5 +1,5 @@
 import type { ChapterNode } from '../data/demo';
-import { countManuscriptWords } from '../domain/manuscriptWords';
+import { countBookWords } from '../domain/wordCount';
 import type { ProgressCode } from '../domain/labels';
 import {
   applyMigrations,
@@ -497,11 +497,9 @@ function buildTree(rows: Record<string, unknown>[]): ChapterNode[] {
   return roots;
 }
 
+/** 全書字數（含卷章幕名稱），與寫作頁、首頁、統計同一套算法。 */
 export function treeWordCount(nodes: readonly ChapterNode[]): number {
-  return nodes.reduce((sum, node) => {
-    const own = node.type === 'folder' ? 0 : countManuscriptWords(node.content ?? '');
-    return sum + own + treeWordCount(node.children ?? []);
-  }, 0);
+  return countBookWords(nodes);
 }
 
 /** 確保父卡先於子卡寫入；孤兒或循環參照亦不遺漏。 */
