@@ -6,18 +6,15 @@ import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
+import { AppearanceSettings } from './AppearanceSettings';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
-
-function useWideLayout(): boolean {
-  const { isAtLeastMedium } = useLayout();
-  return isAtLeastMedium;
-}
 
 export function SettingsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
   const { state, actions } = useSample();
-  const wide = useWideLayout();
+  const { isAtLeastMedium, pointer, deviceKind, setInputMode } = useLayout();
+  const wide = isAtLeastMedium;
   const rename = useBookRename(project);
   const [editing, setEditing] = useState(false);
   const goalNow = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
@@ -77,6 +74,7 @@ export function SettingsScreen() {
           </select>
           <span className="hint">預設是午夜 12 點。改了只影響之後的寫作日，已經算好的日子不變。</span>
         </label>
+        <AppearanceSettings pointer={pointer} deviceKind={deviceKind} onChange={setInputMode} />
         <Link className="setting-row" to={`/p/${project.id}/logs`}>
           <span>
             <strong>寫作過程紀錄</strong>

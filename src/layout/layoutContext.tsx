@@ -9,8 +9,13 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  commitInputMode,
+  ensureInputMode,
+  readDeviceSignals,
+  type DeviceKind,
+} from './inputMode';
+import {
   resolveLayoutMode,
-  resolvePointerMode,
   WIDE_ONE_SIDE_MIN,
   type LayoutMode,
   type LayoutResolution,
@@ -36,6 +41,10 @@ export interface LayoutContextValue {
   mode: LayoutMode;
   wideColumns: WideColumns | null;
   pointer: PointerMode;
+  /** 第一次猜到的裝置種類，只決定說明小字，不跟著操作方式改。 */
+  deviceKind: DeviceKind;
+  /** 立刻改操作方式：寫進本機、更新 data-pointer。不重載、不改目錄和游標。 */
+  setInputMode: (mode: PointerMode) => void;
   isAtLeastMedium: boolean;
   isWide: boolean;
   isPhone: boolean;
@@ -90,13 +99,37 @@ export function getCurrentWindowResolution(previous?: PreviousLayoutContext): La
   return resolveLayoutMode(window.innerWidth, window.innerHeight, previous);
 }
 
-export function getCurrentWindowPointer(): PointerMode {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
-    return 'touch';
+export interface InputPreference {
+  inputMode: PointerMode;
+  deviceKind: DeviceKind;
+}
+
+/** 讀本機已存的操作方式。沒存過就猜一次並寫入。寫不進去就只用這一頁的猜測。 */
+export function loadInputPreference(): InputPreference {
+  const signals = readDeviceSignals();
+  if (typeof localStorage === 'undefined') {
+    const guess = ensureInputMode(
+      {
+        getItem: () => null,
+        setItem: () => {},
+      },
+      signals,
+    );
+    return { inputMode: guess.inputMode, deviceKind: guess.deviceKind };
   }
-  const pointerCoarse = window.matchMedia('(pointer: coarse)').matches;
-  const anyPointerCoarse = window.matchMedia('(any-pointer: coarse)').matches;
-  return resolvePointerMode({ pointerCoarse, anyPointerCoarse });
+  try {
+    const stored = ensureInputMode(localStorage, signals);
+    return { inputMode: stored.inputMode, deviceKind: stored.deviceKind };
+  } catch {
+    const guess = ensureInputMode(
+      {
+        getItem: () => null,
+        setItem: () => {},
+      },
+      signals,
+    );
+    return { inputMode: guess.inputMode, deviceKind: guess.deviceKind };
+  }
 }
 
 export const LayoutContext = createContext<LayoutContextValue | null>(null);
@@ -106,6 +139,8 @@ export interface LayoutProviderProps {
   initialMode?: LayoutMode;
   initialWideColumns?: WideColumns | null;
   initialPointer?: PointerMode;
+  /** 測試用。正式畫面不傳，改由本機儲存或第一次猜測決定。 */
+  initialDeviceKind?: DeviceKind;
   initialPanels?: Partial<SidePanelsState> & { focusMode?: boolean };
   initialFocusMode?: boolean;
 }
@@ -115,6 +150,7 @@ export function LayoutProvider({
   initialMode,
   initialWideColumns,
   initialPointer,
+  initialDeviceKind,
   initialPanels,
   initialFocusMode,
 }: LayoutProviderProps) {
@@ -122,6 +158,7 @@ export function LayoutProvider({
     mode: LayoutMode;
     wideColumns: WideColumns | null;
     pointer: PointerMode;
+    deviceKind: DeviceKind;
   }>(() => {
     if (initialMode) {
       return {
@@ -133,14 +170,16 @@ export function LayoutProvider({
               ? 'one-side'
               : null,
         pointer: initialPointer ?? 'touch',
+        deviceKind: initialDeviceKind ?? 'unknown',
       };
     }
     const res = getCurrentWindowResolution();
-    const ptr = initialPointer ?? getCurrentWindowPointer();
+    const pref = loadInputPreference();
     return {
       mode: res.mode,
       wideColumns: res.wideColumns,
-      pointer: ptr,
+      pointer: pref.inputMode,
+      deviceKind: pref.deviceKind,
     };
   });
 
@@ -163,6 +202,8 @@ export function LayoutProvider({
 
   const layoutRef = useRef(layoutState);
   layoutRef.current = layoutState;
+  const pointerRef = useRef(layoutState.pointer);
+  pointerRef.current = layoutState.pointer;
 
   const windowDimsRef = useRef<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 390,
@@ -174,10 +215,12 @@ export function LayoutProvider({
     applyPanelsHtmlAttributes(panelsState.sidePanels, panelsState.focusMode);
   }, [panelsState.sidePanels, panelsState.focusMode]);
 
-  // 監聽視窗變化與指標變化（使用 requestAnimationFrame 做節流）
+  // 監聽視窗變化（使用 requestAnimationFrame 做節流）。
+  // 操作方式不在這裡重猜：data-pointer 只跟已存的設定走（WO-94）。
+  // 實體鍵盤收合仍由 useWritingKeyboard 讀 (pointer: fine)，不跟這項設定走。
   useEffect(() => {
     if (initialMode) {
-      // 若外部強制指定，同步至 <html> 屬性後返回
+      // 若外部強制指定，同步至 <html> 屬性後返回。不寫本機儲存。
       applyHtmlLayoutAttributes(
         initialMode,
         initialWideColumns !== undefined
@@ -208,50 +251,32 @@ export function LayoutProvider({
           width: window.innerWidth,
           height: window.innerHeight,
         };
-        const ptr = getCurrentWindowPointer();
+        const ptr = pointerRef.current;
 
         applyHtmlLayoutAttributes(res.mode, res.wideColumns, ptr);
 
         setLayoutState((prev) => {
-          if (
-            prev.mode === res.mode &&
-            prev.wideColumns === res.wideColumns &&
-            prev.pointer === ptr
-          ) {
+          if (prev.mode === res.mode && prev.wideColumns === res.wideColumns) {
             return prev;
           }
-          // 版面切換時校正側欄
+          // 版面切換時校正側欄。操作方式與裝置稱呼保持原樣。
           setPanelsState((currentPanels) => normalizePanelsForLayout(currentPanels, res));
           return {
             mode: res.mode,
             wideColumns: res.wideColumns,
-            pointer: ptr,
+            pointer: prev.pointer,
+            deviceKind: prev.deviceKind,
           };
         });
       });
     };
 
-    // 初始寫入 <html> 屬性
     const currentRes = getCurrentWindowResolution();
-    const currentPtr = getCurrentWindowPointer();
-    applyHtmlLayoutAttributes(currentRes.mode, currentRes.wideColumns, currentPtr);
+    applyHtmlLayoutAttributes(currentRes.mode, currentRes.wideColumns, pointerRef.current);
 
     window.addEventListener('resize', update);
     window.addEventListener('orientationchange', update);
     window.visualViewport?.addEventListener('resize', update);
-
-    let coarseMedia: MediaQueryList | undefined;
-    let anyCoarseMedia: MediaQueryList | undefined;
-    if (typeof window.matchMedia === 'function') {
-      try {
-        coarseMedia = window.matchMedia('(pointer: coarse)');
-        anyCoarseMedia = window.matchMedia('(any-pointer: coarse)');
-        coarseMedia.addEventListener?.('change', update);
-        anyCoarseMedia.addEventListener?.('change', update);
-      } catch {
-        // 部分測試環境不支援 addEventListener 於 MediaQueryList
-      }
-    }
 
     return () => {
       if (rafId !== null) {
@@ -260,12 +285,6 @@ export function LayoutProvider({
       window.removeEventListener('resize', update);
       window.removeEventListener('orientationchange', update);
       window.visualViewport?.removeEventListener('resize', update);
-      try {
-        coarseMedia?.removeEventListener?.('change', update);
-        anyCoarseMedia?.removeEventListener?.('change', update);
-      } catch {
-        // 忽略移除錯誤
-      }
     };
   }, [initialMode, initialWideColumns, initialPointer]);
 
@@ -323,6 +342,23 @@ export function LayoutProvider({
     });
   }, []);
 
+  const setInputMode = useCallback((mode: PointerMode) => {
+    if (mode !== 'touch' && mode !== 'mouse') return;
+    pointerRef.current = mode;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        commitInputMode(localStorage, mode);
+      } catch {
+        // 私人瀏覽可能不准寫入。這一頁仍先改過去。
+      }
+    }
+    setLayoutState((prev) => {
+      applyHtmlLayoutAttributes(prev.mode, prev.wideColumns, mode);
+      if (prev.pointer === mode) return prev;
+      return { ...prev, pointer: mode };
+    });
+  }, []);
+
   const value = useMemo<LayoutContextValue>(() => {
     const isAtLeastMedium =
       layoutState.mode === 'medium' || layoutState.mode === 'wide';
@@ -334,6 +370,8 @@ export function LayoutProvider({
       mode: layoutState.mode,
       wideColumns: layoutState.wideColumns,
       pointer: layoutState.pointer,
+      deviceKind: layoutState.deviceKind,
+      setInputMode,
       isAtLeastMedium,
       isWide,
       isPhone,
@@ -346,7 +384,7 @@ export function LayoutProvider({
       exitFocusMode: exitFocus,
       toggleFocusMode: toggleFocus,
     };
-  }, [layoutState, panelsState, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus]);
+  }, [layoutState, panelsState, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode]);
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 }
@@ -357,7 +395,7 @@ export function useLayout(): LayoutContextValue {
 
   // 若在 Provider 外被呼叫，提供安全預設值
   const res = getCurrentWindowResolution();
-  const ptr = getCurrentWindowPointer();
+  const pref = loadInputPreference();
   const isAtLeastMedium = res.mode === 'medium' || res.mode === 'wide';
   const isWide = res.mode === 'wide';
   const isPhone = res.mode === 'phone-portrait' || res.mode === 'phone-landscape';
@@ -365,7 +403,9 @@ export function useLayout(): LayoutContextValue {
   return {
     mode: res.mode,
     wideColumns: res.wideColumns,
-    pointer: ptr,
+    pointer: pref.inputMode,
+    deviceKind: pref.deviceKind,
+    setInputMode: () => {},
     isAtLeastMedium,
     isWide,
     isPhone,

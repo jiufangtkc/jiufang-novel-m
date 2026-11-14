@@ -12,6 +12,10 @@
 
 export type LayoutMode = 'phone-portrait' | 'phone-landscape' | 'medium' | 'wide';
 export type WideColumns = 'one-side' | 'both';
+/**
+ * 操作方式。畫面上的 data-pointer 跟這個值走，不再跟著指標偵測即時變。
+ * 第一次怎麼猜、存在哪裡，見 inputMode.ts（WO-94）。
+ */
 export type PointerMode = 'touch' | 'mouse';
 
 export interface LayoutResolution {
@@ -104,22 +108,6 @@ export function getLayoutMode(
 export function getWideColumns(width: number): WideColumns | null {
   if (width < WIDE_ONE_SIDE_MIN) return null;
   return width >= WIDE_BOTH_MIN ? 'both' : 'one-side';
-}
-
-/**
- * 指標判斷（純函式）
- * 依 (pointer: coarse) 或 (any-pointer: coarse) 判斷：
- * 只要任一指標為粗略（觸控螢幕、觸控筆、具備觸控能力的筆電／平板），即判定為 touch；
- * 純滑鼠（無粗略指標）判定為 mouse。
- */
-export function resolvePointerMode(input: {
-  pointerCoarse?: boolean;
-  anyPointerCoarse?: boolean;
-}): PointerMode {
-  if (Boolean(input.pointerCoarse || input.anyPointerCoarse)) {
-    return 'touch';
-  }
-  return 'mouse';
 }
 
 /**
