@@ -310,12 +310,16 @@ a { color: var(--accent); }
 }
 
 .bottom-nav a[aria-current="page"],
-.nav-rail a[aria-current="page"] {
+.nav-rail a[aria-current="page"],
+.bottom-nav a[data-nav-active="true"],
+.nav-rail a[data-nav-active="true"] {
   color: var(--accent);
 }
 
 .bottom-nav a[aria-current="page"] .nav-icon,
-.nav-rail a[aria-current="page"] .nav-icon {
+.nav-rail a[aria-current="page"] .nav-icon,
+.bottom-nav a[data-nav-active="true"] .nav-icon,
+.nav-rail a[data-nav-active="true"] .nav-icon {
   background: var(--accent-soft);
 }
 
