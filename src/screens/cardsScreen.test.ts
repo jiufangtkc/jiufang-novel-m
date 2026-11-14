@@ -7,12 +7,15 @@ import {
   BACK_TO_CARDS_ARIA,
   BACK_TO_CATEGORIES_ARIA,
   cardDetailAria,
+  CARDS_EMPTY_IN_CATEGORY_HINT,
   CARDS_HEADING,
   displayCardTitle,
   SAMPLE_CARDS_NOTICE,
   TREE_UNDO_HINT,
 } from '../copy/userFacing';
 import {
+  ADD_CARD_BUTTON,
+  ADD_SUBCARD_BUTTON,
   ADD_CATEGORY_BUTTON,
   CATEGORY_BUILTIN_ARIA,
   CATEGORY_BUILTIN_BADGE,
@@ -232,25 +235,13 @@ describe('CardsScreen 畫面與驗收標準（WO-45、WO-50 定案）', () => {
     expect(categories.some((c) => c.name.includes('AI'))).toBe(false);
   });
 
-  it('只能看：畫面上絕不放編輯、新增、刪除按鈕，亦不可有 disabled 變灰按鈕', () => {
-    const source = readFileSync(new URL('./CardsScreen.tsx', import.meta.url), 'utf8');
+  it('WO-73：分類清單層不出現「新增卡片」；進入分類後才提供新增入口', () => {
+    const layer1 = renderCardsScreen('/p/fog/cards');
+    expect(layer1).not.toContain('data-testid="add-card-btn"');
+    expect(layer1).not.toContain('data-testid="add-card-btn-empty"');
 
-    // 原始碼檢查：不可出現編輯、新增、刪除的動作按鈕
-    expect(source).not.toContain('新增卡片');
-    expect(source).not.toContain('新增分類');
-    expect(source).not.toContain('編輯卡片');
-    expect(source).not.toContain('編輯分類');
-    expect(source).not.toContain('刪除卡片');
-    expect(source).not.toContain('刪除分類');
-    expect(source).not.toContain('disabled');
-
-    // 渲染的第一層（分類清單）檢查
-    const html = renderCardsScreen('/p/fog/cards');
-    expect(html).not.toContain('編輯');
-    expect(html).not.toContain('新增');
-    // 依據 WO-61 九方定案（工單第 37 行）：分類清單最下方新增「最近刪除」入口，取代 WO-50「只能看」不含刪除二字斷言
-    expect(html).not.toContain('刪除卡片');
-    expect(html).not.toContain('disabled');
+    const layer2 = renderCardsScreen('/p/fog/cards', { initialCategoryId: 'character' });
+    expect(layer2).toContain('data-testid="add-card-btn"');
   });
 
   it('導覽返回按鈕具備臺灣繁體中文 aria-label', () => {
@@ -589,12 +580,15 @@ describe('WO-61 卡片刪除、10 秒復原與最近刪除接線驗證（CardsSc
     expect(mobileEmptyHtml).not.toContain('【範例】');
     expect(mobileEmptyHtml).toContain('0 張');
 
-    // 2. 點進角色分類，卡片清單為空（無 card-item）
+    // 2. 點進角色分類，顯示空分類說明與新增卡片入口（WO-73）
     const mobileCategoryHtml = renderCardsScreen('/p/mobile-new-project/cards', {
       initialCategoryId: 'character',
     });
     expect(mobileCategoryHtml).not.toContain('【範例】沈雨晴');
-    expect(mobileCategoryHtml).toContain('data-testid="category-card-list"');
+    expect(mobileCategoryHtml).toContain('data-testid="category-cards-empty"');
+    expect(mobileCategoryHtml).toContain(CARDS_EMPTY_IN_CATEGORY_HINT);
+    expect(mobileCategoryHtml).toContain('data-testid="add-card-btn"');
+    expect(mobileCategoryHtml).toContain(ADD_CARD_BUTTON);
     expect(mobileCategoryHtml).not.toContain('card-item');
 
     // 3. 手機新開稿子若已建立自訂卡片，只顯示自己的卡片，不補進範例卡片
@@ -645,5 +639,27 @@ describe('WO-61 卡片刪除、10 秒復原與最近刪除接線驗證（CardsSc
     });
     expect(fogConfirmHtml).toContain('data-testid="card-delete-dialog"');
     expect(fogConfirmHtml).toContain('刪除「【範例】沈雨晴」？');
+  });
+});
+
+describe('WO-73 新增卡片與新增子卡片接線（CardsScreen）', () => {
+  it('WO-73：空分類顯示說明與新增卡片按鈕，且按鈕使用定案文案', () => {
+    const html = renderCardsScreen('/p/mobile-new-project/cards', {
+      initialCategoryId: 'character',
+    });
+    expect(html).toContain(CARDS_EMPTY_IN_CATEGORY_HINT);
+    expect(html).toContain(ADD_CARD_BUTTON);
+    expect(html).toContain('data-testid="add-card-btn-empty"');
+    expect(html).toContain('cards-header-action-btn');
+  });
+
+  it('WO-73：已打開的卡片在「更多動作」提供新增子卡片', () => {
+    const html = renderCardsScreen('/p/fog/cards', {
+      initialCategoryId: 'character',
+      initialCardId: '20000000-0000-4000-8000-000000000001',
+      initialShowCardMenu: true,
+    });
+    expect(html).toContain(ADD_SUBCARD_BUTTON);
+    expect(html).toContain('data-testid="card-menu-add-subcard-btn"');
   });
 });

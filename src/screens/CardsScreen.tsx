@@ -16,6 +16,7 @@ import {
   CARDS_COLUMN_CONTENT,
   CARDS_EMPTY_CARD_HINT,
   CARDS_EMPTY_CATEGORY_HINT,
+  CARDS_EMPTY_IN_CATEGORY_HINT,
   CARDS_HEADING,
   cardsCountLabel,
   CARDS_PREVIEW_EMPTY_HINT,
@@ -27,6 +28,8 @@ import {
   TREE_UNDO_HINT,
 } from '../copy/userFacing';
 import {
+  ADD_CARD_BUTTON,
+  ADD_SUBCARD_BUTTON,
   CONFIRM_DELETE_BUTTON,
   DELETED_CARDS_TITLE,
   DELETE_CARD_BUTTON,
@@ -67,6 +70,7 @@ import {
   resolveVisibleCategories,
   type ResolvedCategoryItem,
 } from '../domain/cardCategories';
+import { addCard, addSubCard } from '../domain/cardOps';
 import { deletedFromCard, type DeletedCardRecord } from '../domain/cardArchive';
 import { type FileCard } from '../db/projectFile';
 import { bookArchive } from '../db/chapterArchive';
@@ -426,6 +430,63 @@ export function CardsScreen(props: CardsScreenProps = {}) {
     }
   };
 
+  const handleAddCard = () => {
+    if (!projectId || !currentCategory) return;
+    const nextCards = addCard(rawProjectCards, { category: currentCategory.id });
+    const newCard = nextCards[nextCards.length - 1];
+    if (!newCard) return;
+    actions.setCards(projectId, nextCards);
+    setEditorMode('preview');
+    setPickingColor(false);
+    setSavedNotice(undefined);
+    setShowCardMenu(false);
+    dispatch({ type: 'SELECT_CARD', cardId: newCard.id });
+  };
+
+  const handleAddSubCard = (parentId: string) => {
+    if (!projectId) return;
+    const parent = rawProjectCards.find((c) => c.id === parentId);
+    if (!parent) return;
+    const nextCards = addSubCard(rawProjectCards, parentId);
+    const newCard = nextCards[nextCards.length - 1];
+    if (!newCard) return;
+    actions.setCards(projectId, nextCards);
+    if (collapsedIds.has(parentId)) {
+      dispatch({ type: 'TOGGLE_COLLAPSE', cardId: parentId });
+    }
+    setEditorMode('preview');
+    setPickingColor(false);
+    setSavedNotice(undefined);
+    setShowCardMenu(false);
+    dispatch({ type: 'SELECT_CARD', cardId: newCard.id });
+  };
+
+  const renderAddCardButton = (testId = 'add-card-btn') => (
+    <button
+      type="button"
+      className="cards-header-action-btn"
+      onClick={handleAddCard}
+      data-testid={testId}
+    >
+      {ADD_CARD_BUTTON}
+    </button>
+  );
+
+  const renderCategoryCardsPane = (
+    rows: readonly VisibleCardRow[],
+    selectedId: string | null,
+  ) => {
+    if (rows.length === 0) {
+      return (
+        <div className="cards-empty-category-pane" data-testid="category-cards-empty">
+          <p className="empty-note">{CARDS_EMPTY_IN_CATEGORY_HINT}</p>
+          {renderAddCardButton('add-card-btn-empty')}
+        </div>
+      );
+    }
+    return renderCardList(rows, selectedId);
+  };
+
   // 刪除確認卡片資訊與子卡片（只在目前稿子的 cards 裡找）
   const targetConfirmCard = confirmDeleteCardId
     ? (cards.find((c) => c.id === confirmDeleteCardId) ?? null)
@@ -734,6 +795,14 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           <h3 className="card-action-sheet-title">{EDIT_CARD_MORE}</h3>
           <button
             type="button"
+            className="card-action-sheet-item"
+            onClick={() => handleAddSubCard(currentCard.id)}
+            data-testid="card-menu-add-subcard-btn"
+          >
+            <span>{ADD_SUBCARD_BUTTON}</span>
+          </button>
+          <button
+            type="button"
             className="card-action-sheet-item card-action-sheet-delete"
             onClick={() => {
               setShowCardMenu(false);
@@ -899,14 +968,17 @@ export function CardsScreen(props: CardsScreenProps = {}) {
               <header className="topbar">
                 <h2>{currentCategory ? currentCategory.name : CARDS_COLUMN_CARDS}</h2>
                 {currentCategory && (
-                  <span className="cards-count-label">
-                    {cardsCountLabel(countCardsInCategory(cards, currentCategory.id))}
-                  </span>
+                  <>
+                    <span className="cards-count-label">
+                      {cardsCountLabel(countCardsInCategory(cards, currentCategory.id))}
+                    </span>
+                    {renderAddCardButton()}
+                  </>
                 )}
               </header>
               <div className="scroll-pane">
                 {currentCategory ? (
-                  renderCardList(listCards, selectedCardId)
+                  renderCategoryCardsPane(listCards, selectedCardId)
                 ) : (
                   <div className="cards-empty-state">
                     <p className="empty-note">{CARDS_EMPTY_CATEGORY_HINT}</p>
@@ -1015,8 +1087,11 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                 <span className="cards-count-label">
                   {cardsCountLabel(countCardsInCategory(cards, currentCategory.id))}
                 </span>
+                {renderAddCardButton()}
               </header>
-              <div className="scroll-pane">{renderCardList(listCards, selectedCardId)}</div>
+              <div className="scroll-pane">
+                {renderCategoryCardsPane(listCards, selectedCardId)}
+              </div>
             </>
           ) : (
             <>
@@ -1129,6 +1204,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   <span className="writing-cards-sep">·</span>
                   <span>{currentCategory.name}</span>
                 </h2>
+                {renderAddCardButton()}
                 <button
                   type="button"
                   className="icon-button writing-cards-close"
@@ -1144,7 +1220,9 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
-              <div className="scroll-pane">{renderCardList(listCards, selectedCardId)}</div>
+              <div className="scroll-pane">
+                {renderCategoryCardsPane(listCards, selectedCardId)}
+              </div>
             </>
           ) : (
             <>
@@ -1295,6 +1373,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
             <BackIcon />
           </button>
           <h1>{currentCategory.name}</h1>
+          {renderAddCardButton()}
         </header>
 
         {isDesktopFile && (
@@ -1303,7 +1382,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           </div>
         )}
 
-        <div className="scroll-pane">{renderCardList(rows, selectedCardId)}</div>
+        <div className="scroll-pane">{renderCategoryCardsPane(rows, selectedCardId)}</div>
 
         {renderCardActionSheet()}
         {renderDeleteConfirmDialog()}

@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BACK_TO_CARDS_ARIA,
   BACK_TO_CATEGORIES_ARIA,
@@ -10,12 +10,14 @@ import {
   CARDS_COLUMN_CONTENT,
   CARDS_EMPTY_CARD_HINT,
   CARDS_EMPTY_CATEGORY_HINT,
+  CARDS_EMPTY_IN_CATEGORY_HINT,
   CARDS_HEADING,
   CARDS_PANEL_ARIA,
   CARDS_PREVIEW_EMPTY_HINT,
   CARDS_READONLY_BADGE,
   CLOSE_CARDS_ARIA,
 } from '../copy/userFacing';
+import { ADD_CARD_BUTTON } from '../copy/cardEditCopy';
 import { DEMO_CARD_CATEGORIES } from '../data/demoCards';
 import {
   cardVisualStyles,
@@ -34,6 +36,29 @@ import {
 import { SampleProvider } from '../state/sampleStore';
 import { CardsScreen, type CardsScreenProps } from './CardsScreen';
 import { WriteScreen } from './WriteScreen';
+
+vi.mock('../state/sampleStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../state/sampleStore')>();
+  return {
+    ...actual,
+    useProject: (projectId: string | undefined) => {
+      if (projectId === 'mobile-new-project') {
+        return {
+          id: 'mobile-new-project',
+          title: '手機新開稿子',
+          updatedLabel: '剛剛',
+          bookGoal: 100000,
+          cards: [],
+          categoryOrderRaw: '["summary","character","world","timeline","ai_chat"]',
+          expandedCategoriesRaw: null,
+          categoriesMetaRaw: '{}',
+          nodes: [],
+        };
+      }
+      return actual.useProject(projectId);
+    },
+  };
+});
 
 function renderCardsScreenWithLayout(
   mode: LayoutMode,
@@ -610,4 +635,27 @@ describe('WO-61 四種版面卡片編輯與挑顏色位置驗證', () => {
       expect(htmlDeleted).not.toContain('ai_chat');
     }
   });
+});
+
+describe('WO-73 四種版面空分類與新增卡片（CardsScreen）', () => {
+  const modes = [
+    ['phone-portrait', null],
+    ['phone-landscape', null],
+    ['medium', null],
+    ['wide', 'both'],
+  ] as const;
+
+  for (const [mode, pointer] of modes) {
+    it(`WO-73：${mode} 空分類顯示說明與「${ADD_CARD_BUTTON}」`, () => {
+      const html = renderCardsScreenWithLayout(
+        mode,
+        pointer,
+        { initialCategoryId: 'character' },
+        'mobile-new-project',
+      );
+      expect(html).toContain(CARDS_EMPTY_IN_CATEGORY_HINT);
+      expect(html).toContain(ADD_CARD_BUTTON);
+      expect(html).toContain('data-testid="add-card-btn"');
+    });
+  }
 });
