@@ -83,12 +83,12 @@ export function SettingsScreen() {
             <small>每日字數、寫作時間、大量文字出現</small>
           </span>
         </Link>
-        <a className="setting-row" href="/fonts/OFL.txt">
+        <Link className="setting-row" to={`/p/${project.id}/font-license`} data-testid="font-license-link">
           <span>
             <strong>芫荽字型授權</strong>
             <small>SIL Open Font License 1.1，作者 But Ko／Fontworks</small>
           </span>
-        </a>
+        </Link>
       </div>
       {editing && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setEditing(false)}>

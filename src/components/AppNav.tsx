@@ -13,6 +13,7 @@ const TABS = [
 function isTabActive(tab: string, pathname: string): boolean {
   if (tab === 'write') return pathname.includes('/write');
   if (tab === 'stats') return pathname.includes('/stats') || pathname.includes('/logs');
+  if (tab === 'settings') return pathname.includes('/settings') || pathname.includes('/font-license');
   return pathname.includes(`/${tab}`);
 }
 

@@ -275,7 +275,41 @@
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
-  max-height: 90vh;
-  overflow-y: auto;
+  max-height: min(90vh, var(--vv-height, 100vh));
+  overflow: hidden;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* WO-83：直拿底部面板固定控制列，「完成」不必捲到底才看得到 */
+.card-color-picker-sheet > .card-color-picker {
+  flex: 1;
+  min-height: 0;
+  max-height: min(90vh, var(--vv-height, 100vh));
+  overflow: hidden;
+  border-radius: 0;
+  gap: 12px;
+}
+
+.card-color-picker-sheet .color-picker-grid-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.card-color-picker-sheet .color-picker-controls {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border, #3c3c3c);
+  padding-top: 12px;
+  background-color: var(--panel, #1e1e1e);
+}
+
+.card-color-picker-sheet .color-picker-actions {
+  flex-shrink: 0;
+  margin-top: 0;
+  padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
+  background-color: var(--panel, #1e1e1e);
 }

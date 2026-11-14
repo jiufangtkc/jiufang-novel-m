@@ -5,6 +5,7 @@ import { LayoutProvider } from './layout';
 import { HomeScreen } from './screens/HomeScreen';
 import { CardsScreen } from './screens/CardsScreen';
 import { FilesScreen } from './screens/FilesScreen';
+import { FontLicenseScreen } from './screens/FontLicenseScreen';
 import { LogsScreen } from './screens/LogsScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
@@ -45,6 +46,7 @@ export function App() {
                 <Route path="files" element={<FilesScreen />} />
                 <Route path="stats" element={<StatsScreen />} />
                 <Route path="settings" element={<SettingsScreen />} />
+                <Route path="font-license" element={<FontLicenseScreen />} />
                 <Route path="logs" element={<LogsScreen />} />
               </Route>
             </Routes>
