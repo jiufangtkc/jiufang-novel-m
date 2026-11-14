@@ -1,10 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import {
-  getLayoutMode,
-  getWideColumns,
-  resolveLayoutMode,
-  resolvePointerMode,
-} from './layoutMode';
+import { getLayoutMode, getWideColumns, resolveLayoutMode } from './layoutMode';
 
 describe('WO-54：版面判斷純函式', () => {
   it('WO-54：手機橫拿（寬 > 高 且 高 < 500）', () => {
@@ -204,18 +199,8 @@ describe('WO-54：版面判斷純函式', () => {
     });
   });
 
-  describe('WO-54：指標判斷（手指與滑鼠）', () => {
-    it('WO-54：coarse 指標判定為 touch', () => {
-      expect(resolvePointerMode({ pointerCoarse: true, anyPointerCoarse: false })).toBe('touch');
-    });
-
-    it('WO-54：純滑鼠（精細指標、無任何粗略指標）判定為 mouse', () => {
-      expect(resolvePointerMode({ pointerCoarse: false, anyPointerCoarse: false })).toBe('mouse');
-      expect(resolvePointerMode({})).toBe('mouse');
-    });
-
-    it('WO-54：混合情境（主指標 fine，但 any-pointer 具備 coarse 觸控螢幕）判定為 touch', () => {
-      expect(resolvePointerMode({ pointerCoarse: false, anyPointerCoarse: true })).toBe('touch');
-    });
-  });
 });
+
+// WO-54 原本三條斷言：coarse → touch、空物件 → mouse、any-pointer coarse → touch。
+// 九方 11/14 定案改成只猜一次，而且有沒有觸控不再當依據（可觸控筆電要猜成用滑鼠）。
+// 那三條與這項定案衝突，改由 inputMode.test.ts 的 C-2 案例覆蓋。
