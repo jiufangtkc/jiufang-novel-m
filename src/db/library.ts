@@ -36,7 +36,8 @@ export interface ImportedBook {
   titleSavePending: BookFileMark['titleSavePending'];
 }
 
-function scheduleFromLogs(logs: readonly FileLog[], dailyTarget: number, now: Date): GoalSchedule {
+/** 從檔案裡的寫作紀錄排出每日目標結算狀態（WO-69 單元測試也用來核對重開結果）。 */
+export function scheduleFromLogs(logs: readonly FileLog[], dailyTarget: number, now: Date): GoalSchedule {
   const goal = Math.max(MIN_DAILY_GOAL, Math.trunc(dailyTarget) || 1000);
   const today = writingDayKey(now, 0);
   const past = logs.filter((log) => log.date < today);
