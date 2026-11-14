@@ -1,7 +1,7 @@
 import { findNode, type ChapterNode } from '../data/demo';
 import type { FileCard } from '../db/projectFile';
 import { cloneNode, locateNode } from './chapterOps';
-import { countManuscriptWords } from './manuscriptWords';
+import { countWords } from './wordCount';
 
 export const VERSION_LIMIT = 10;
 export const DELETED_LIMIT = 10;
@@ -106,7 +106,7 @@ export function versionFromNode(
     nodeId: node.id,
     title: node.title,
     content,
-    wordCount: countManuscriptWords(content),
+    wordCount: countWords(content),
     savedAt,
   };
 }
