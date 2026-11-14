@@ -1278,6 +1278,39 @@ html[data-layout="phone-landscape"] .writing-cards-drawer {
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
 }
 
+/* WO-68：手機橫拿直排分頁。
+   只在目錄頁、目錄抽屜打開時與其他分頁顯示（由 Workspace 加 data-landscape-rail），
+   排在目錄抽屜左邊；正文照樣讓位，打字（鍵盤開著）與專注模式仍藏起。 */
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] {
+  flex-direction: row;
+}
+
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] > .nav-rail {
+  display: flex;
+  flex-direction: column;
+  width: 72px;
+  min-width: 72px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding-top: 8px;
+  padding-bottom: var(--safe-bottom);
+}
+
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] > .nav-rail a {
+  flex-shrink: 0;
+}
+
+html.landscape-writing[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] > .nav-rail {
+  display: none;
+}
+
+/* 目錄抽屜打開時，左側浮動「展開目錄」鈕會疊在直排分頁上，先收起；抽屜用右上 × 收合後再出現 */
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] .write-layout.tree-open .floating-tree-trigger {
+  display: none !important;
+}
+
 /* 4. ③ 中等（medium）：
    正文置中，字級 20，左右邊界 40，行寬上限 30 字。
    左上「目錄」開左側約 340 寬抽屜（讓位、點章名跳章後自動收）、右上「看卡片」。保留下方分頁。
