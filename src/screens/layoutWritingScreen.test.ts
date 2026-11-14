@@ -118,14 +118,14 @@ describe('WO-55：各版面正文限寬規則驗證', () => {
   it('WO-55：global.css 存在各版面正文限寬規則且 N 值正確（19, 30, 30, 36）', () => {
     const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
 
-    // 1. 手機直拿 N = 19
-    expect(css).toMatch(/html\[data-layout="phone-portrait"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*calc\(19\s*\*\s*\(1em\s*\+\s*0\.5px\)\)/);
+    // 1. 手機直拿 N = 19，且不可超過這一欄的可見寬度（WO-72）
+    expect(css).toMatch(/html\[data-layout="phone-portrait"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(19\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
     // 2. 手機橫拿 N = 30
-    expect(css).toMatch(/html\[data-layout="phone-landscape"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)/);
+    expect(css).toMatch(/html\[data-layout="phone-landscape"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
     // 3. 中等 N = 30
-    expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)/);
+    expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
     // 4. 寬版 N = 36
-    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\)/);
+    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
   });
 
   it('WO-55：純函式與限寬常數設定值正確', () => {
