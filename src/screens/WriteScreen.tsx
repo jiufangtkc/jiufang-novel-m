@@ -149,13 +149,17 @@ export function WriteScreen() {
   const undoAction = useRef<(() => void) | null>(null);
   nodesRef.current = project?.nodes ?? [];
 
-  const showOrganize = organizing && !desktop;
+  const showOrganize = organizing;
 
   useEffect(() => {
     if (!undo) return;
     const timer = window.setTimeout(() => setUndo(null), 10000);
     return () => window.clearTimeout(timer);
   }, [undo]);
+
+  useEffect(() => {
+    setMenu(null);
+  }, [chapterId]);
 
   useLayoutEffect(() => {
     if (!project) return;
@@ -297,6 +301,7 @@ export function WriteScreen() {
   const volumes = book.nodes.filter((node) => node.type === 'folder');
 
   function remember(id: string) {
+    setMenu(null);
     const pane = scrollRef.current;
     const row = pane?.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
     const offset = row && pane ? row.getBoundingClientRect().top - pane.getBoundingClientRect().top : 0;
@@ -594,7 +599,10 @@ export function WriteScreen() {
               type="button"
               className="icon-button tree-close-button"
               aria-label={CLOSE_CHAPTER_TREE_ARIA}
-              onClick={() => closePanel('left')}
+              onClick={() => {
+                setMenu(null);
+                closePanel('left');
+              }}
               data-testid="close-tree-pane"
             >
               <CloseIcon size={20} />
@@ -673,7 +681,7 @@ export function WriteScreen() {
               </button>
             </div>
           </div>
-        ) : !desktop ? (
+        ) : (
           <div className="tree-tools" data-testid="tree-tools">
             <button type="button" className="button secondary" data-testid="organize-toggle" onClick={() => setOrganizing(true)}>
               {TREE_ORGANIZE}
@@ -687,8 +695,8 @@ export function WriteScreen() {
               {TREE_ADD_CHAPTER}
             </button>
           </div>
-        ) : null}
-        {desktop ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
+        )}
+        {desktop && !showOrganize ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
       </section>
       <section
         className={['editor-pane', yieldClasses].filter(Boolean).join(' ')}
@@ -723,7 +731,7 @@ export function WriteScreen() {
       </aside>
 
       {menuNode && menu?.kind === 'progress' ? (
-        <Sheet title={TREE_PROGRESS} testId="progress-menu" onClose={() => setMenu(null)}>
+        <Sheet title={TREE_PROGRESS} testId="progress-menu" closeOnEscape onClose={() => setMenu(null)}>
           <div className="menu-list">
             {PROGRESS_ORDER.map((code) => (
               <button
@@ -744,7 +752,7 @@ export function WriteScreen() {
       ) : null}
 
       {menuNode && (menu?.kind === 'short' || menu?.kind === 'full' || menu?.kind === 'more') ? (
-        <Sheet title={menuNode.title} testId="node-menu" onClose={() => setMenu(null)}>
+        <Sheet title={menuNode.title} testId="node-menu" closeOnEscape onClose={() => setMenu(null)}>
           {menu.kind === 'more' ? (
             <p className="hint">
               {treeMoreSummary(
@@ -817,7 +825,7 @@ export function WriteScreen() {
       ) : null}
 
       {menu?.kind === 'volume' && menuNode?.type === 'file' ? (
-        <Sheet title={TREE_MOVE_VOLUME} testId="volume-menu" onClose={() => setMenu(null)}>
+        <Sheet title={TREE_MOVE_VOLUME} testId="volume-menu" closeOnEscape onClose={() => setMenu(null)}>
           <button
             type="button"
             className="menu-item"
@@ -986,13 +994,29 @@ function Sheet({
   title,
   testId,
   onClose,
+  closeOnEscape = false,
   children,
 }: {
   title: string;
   testId: string;
   onClose: () => void;
+  closeOnEscape?: boolean;
   children: ReactNode;
 }) {
+  const { mode } = useLayout();
+
+  useEffect(() => {
+    if (!closeOnEscape) return;
+    if (mode !== 'medium' && mode !== 'wide') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [closeOnEscape, mode, onClose]);
+
   return (
     <div className="sheet-backdrop" role="presentation" onClick={onClose}>
       <div className="sheet" role="dialog" data-testid={testId} onClick={(event) => event.stopPropagation()}>

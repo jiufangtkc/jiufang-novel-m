@@ -102,7 +102,7 @@ export function ChapterTree({
                   type="button"
                   className="tree-main"
                   onClick={() => {
-                    if (organizing && !desktop) {
+                    if (organizing) {
                       onPick(node.id);
                       return;
                     }
@@ -140,7 +140,7 @@ export function ChapterTree({
               ) : (
                 <span className="tree-progress-spacer" />
               )}
-              {organizing && !desktop ? null : (
+              {organizing ? null : (
                 <button
                   type="button"
                   className="icon-button"

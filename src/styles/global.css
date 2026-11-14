@@ -763,6 +763,21 @@ button.save-status {
   justify-content: center;
   z-index: 20;
 }
+
+/* 中等與手機橫拿：目錄選單要蓋過目錄抽屜（50）和看卡片抽屜（100）。 */
+html[data-layout="phone-landscape"] .write-layout > .sheet-backdrop,
+html[data-layout="medium"] .write-layout > .sheet-backdrop {
+  position: fixed;
+  z-index: 200;
+}
+
+html[data-layout="phone-landscape"] .write-layout > .sheet-backdrop > .sheet,
+html[data-layout="medium"] .write-layout > .sheet-backdrop > .sheet,
+html[data-layout="phone-landscape"] .write-layout > .sheet-backdrop > .dialog,
+html[data-layout="medium"] .write-layout > .sheet-backdrop > .dialog {
+  max-height: 100%;
+  overflow-y: auto;
+}
 .sheet, .dialog {
   width: min(560px, 100%);
   background: var(--panel);
@@ -946,6 +961,8 @@ html[data-pointer="mouse"] .tree-row:focus-within .tree-handle {
   background: transparent;
   color: var(--text);
   border-radius: 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 .organize-actions button:disabled { color: var(--muted); }
 .organize-dock .hint { margin: 0; padding: 8px 12px 0; }
@@ -1070,10 +1087,6 @@ html[data-pointer="mouse"] .tree-row:focus-within .tree-handle {
 .delete-actions .keep { flex: 1.6; }
 .rename-actions .button.primary { flex: 1.4; }
 .topbar .button.primary { flex: 0 0 auto; padding: 0 16px; }
-
-@media (min-width: 600px) {
-  .tree-tools, .organize-dock { display: none; }
-}
 
 /* 手機橫放且鍵盤開著：只留正文。平板與電腦不會加上這個 class。 */
 html.landscape-writing .nav-rail,
