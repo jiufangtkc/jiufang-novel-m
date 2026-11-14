@@ -556,6 +556,19 @@ button.save-status {
 
 .stats-page, .settings-page, .logs-page, .files-page { padding: 16px; }
 
+/* WO-79：直拿、中等有底部分頁時，可捲頁底部多留觸控留白，最後一項能完全露出、好點 */
+html[data-layout="phone-portrait"] .workspace .scroll-pane.files-page,
+html[data-layout="phone-portrait"] .workspace .scroll-pane.stats-page,
+html[data-layout="phone-portrait"] .workspace .scroll-pane.settings-page,
+html[data-layout="phone-portrait"] .workspace .scroll-pane.logs-page,
+html[data-layout="medium"] .workspace .scroll-pane.files-page,
+html[data-layout="medium"] .workspace .scroll-pane.stats-page,
+html[data-layout="medium"] .workspace .scroll-pane.settings-page,
+html[data-layout="medium"] .workspace .scroll-pane.logs-page {
+  padding-bottom: calc(16px + var(--hit-size));
+  scroll-padding-bottom: var(--hit-size);
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
