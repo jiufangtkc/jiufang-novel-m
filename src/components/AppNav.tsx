@@ -1,4 +1,4 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { CardsIcon, ChartIcon, FolderIcon, GearIcon, PenIcon } from './Icons';
 import { useLayout } from '../layout';
 
@@ -10,9 +10,10 @@ const TABS = [
   { id: 'settings', label: '設定', icon: GearIcon },
 ] as const;
 
-function isTabActive(tab: string, pathname: string): boolean {
+export function isTabActive(tab: string, pathname: string): boolean {
   if (tab === 'write') return pathname.includes('/write');
   if (tab === 'stats') return pathname.includes('/stats') || pathname.includes('/logs');
+  if (tab === 'settings') return pathname.includes('/settings') || pathname.includes('/font-license');
   return pathname.includes(`/${tab}`);
 }
 
@@ -40,17 +41,18 @@ export function AppNav({ projectId, variant }: { projectId: string; variant: 'bo
         const Icon = tab.icon;
         const active = isTabActive(tab.id, pathname);
         return (
-          <NavLink
+          <Link
             key={tab.id}
             to={`/p/${projectId}/${tab.id}`}
             aria-current={active ? 'page' : undefined}
+            data-nav-active={active ? 'true' : undefined}
             data-testid={`nav-${tab.id}`}
           >
             <span className="nav-icon">
               <Icon />
             </span>
             {tab.label}
-          </NavLink>
+          </Link>
         );
       })}
     </nav>
