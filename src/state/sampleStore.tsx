@@ -101,7 +101,15 @@ import {
   loadProjects,
   normalizeLoadedProject,
   saveProjects,
+  type KeyValueStore,
 } from '../domain/outline';
+import {
+  fingerprintBytes,
+  loadDeviceSaveRecord,
+  recallExportedFile,
+  rememberExportedFile,
+  saveDeviceSaveRecord,
+} from './deviceSaveRecord';
 
 export interface SampleState {
   projects: DemoProject[];
@@ -226,6 +234,15 @@ function savedProjects(): DemoProject[] | null {
   }
 }
 
+/** WO-77：這台裝置的瀏覽器本機儲存；私人瀏覽或測試環境沒有時回傳 null。 */
+function deviceStore(): KeyValueStore | null {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
   const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) =>
@@ -235,20 +252,49 @@ export function createState(now: Date): SampleState {
     }),
   );
   const logs = alignToday(demoLogs(), schedule);
+  // WO-77：讀回這台裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
+  const record = loadDeviceSaveRecord(deviceStore(), now);
   return {
     projects,
     recentIds: projects.map((project) => project.id),
     schedule,
     demoSchedule: schedule,
-    goalById: {},
+    goalById: record.goalById,
     activeProjectId: null,
     logs,
     demoLogs: logs,
-    logsById: {},
+    logsById: record.logsById,
     toast: null,
     fileExtras: {},
-    saveMeta: {},
+    saveMeta: record.saveMeta,
   };
+}
+
+/**
+ * WO-77：把存檔時間與新稿子的寫作紀錄留在這台裝置（不寫進 .db）。
+ * 寫作紀錄只留還沒升格成檔案、也不是內建範例書的稿子。
+ */
+export function persistDeviceSaveRecord(store: KeyValueStore, state: SampleState): void {
+  saveDeviceSaveRecord(store, {
+    saveMeta: state.saveMeta,
+    logsById: state.logsById,
+    goalById: state.goalById,
+    draftIds: state.projects
+      .filter((project) => project.origin !== 'file' && !isSampleBook(project))
+      .map((project) => project.id),
+  });
+}
+
+/** WO-77：另存成功後，記下交出去的那份檔案指紋，開回同一份檔時對得上另存時間。 */
+export async function noteExportedBytes(store: KeyValueStore, bytes: Uint8Array, atMs: number): Promise<void> {
+  const fingerprint = await fingerprintBytes(bytes);
+  if (fingerprint) rememberExportedFile(store, fingerprint, atMs);
+}
+
+/** WO-77：開回的檔若正是這台裝置另存出去的那一份，取回當時的另存時間；內容不同就沒有。 */
+export async function exportTimeOfBytes(store: KeyValueStore, bytes: Uint8Array): Promise<number | null> {
+  const fingerprint = await fingerprintBytes(bytes);
+  return fingerprint ? recallExportedFile(store, fingerprint) : null;
 }
 
 function patchSaveMeta(
@@ -1356,6 +1402,17 @@ export function SampleProvider({ children }: { children: ReactNode }) {
     }
   }, [state.projects, state.activeProjectId]);
 
+  // WO-77：暫存／另存時間與新稿子的寫作紀錄跟著留在這台裝置，重新整理後還在。
+  useEffect(() => {
+    const store = deviceStore();
+    if (!store) return;
+    try {
+      persistDeviceSaveRecord(store, state);
+    } catch {
+      // 私人瀏覽可能不准寫入，畫面仍可繼續用。
+    }
+  }, [state.saveMeta, state.logsById, state.goalById, state.projects]);
+
   useEffect(() => {
     let cancelled = false;
     void loadStoredBooks()
@@ -1447,6 +1504,18 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       if (live) {
         dispatch({ type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text });
       }
+      // WO-77：離開前正文已寫進本機，今天字數也要同步留下，不等畫面更新（頁面可能馬上關掉）。
+      const store = deviceStore();
+      if (store) {
+        try {
+          const tracked = live
+            ? reduce(current, { type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text })
+            : current;
+          persistDeviceSaveRecord(store, tracked);
+        } catch {
+          // 寫不進去就照舊，正文已另外留下。
+        }
+      }
       const projectId = live?.projectId ?? current.activeProjectId;
       const project = projects.find((item) => item.id === projectId);
       if (!project) return;
@@ -1509,6 +1578,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
+        const store = deviceStore();
+        const exportedAt = store ? await exportTimeOfBytes(store, bytes).catch(() => null) : null;
         const book = await importBook(file.name, bytes);
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
         rememberOpenFile(book.key, diskFile ?? null);
@@ -1530,6 +1601,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
+        // WO-77：開回的正是這台裝置另存出去的那份檔，「上次另存」沿用當時時間。
+        if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return { id: book.key, chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null };
       },
       openWithPicker: async () => {
@@ -1537,6 +1610,8 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         if (!picked) return null;
         const copy = new Uint8Array(picked.bytes.byteLength);
         copy.set(picked.bytes);
+        const store = deviceStore();
+        const exportedAt = store ? await exportTimeOfBytes(store, copy).catch(() => null) : null;
         const book = await importBook(picked.file.name, copy);
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
         rememberOpenFile(book.key, picked.file);
@@ -1558,6 +1633,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           schedule: book.schedule,
           extras: { info: book.info, cards: book.cards, logs: book.logs },
         });
+        if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return {
           id: book.key,
           chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null,
@@ -1694,6 +1770,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           });
           const outcome = await saveProjectAsNew(browserSaveEnv(), snap.key, bytes, exportDbFilename(project.title));
           applySaveOutcome(dispatch, project.id, outcome, 'save-as');
+          const store = deviceStore();
+          if (store && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
+            await noteExportedBytes(store, bytes, Date.now()).catch(() => undefined);
+          }
           if (outcome.kind === 'saved-as') {
             const target = await createBrowserTargetStore().load(snap.key);
             if (target?.file) rememberOpenFile(snap.key, target.file);

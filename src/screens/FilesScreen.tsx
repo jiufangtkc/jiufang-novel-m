@@ -93,7 +93,8 @@ export function FilesScreen() {
           ) : null}
           <p className="files-status-line" data-testid="app-space-status">
             {appSpaceStatusLine({
-              stored: project.origin === 'file',
+              // WO-77：正文真的暫存成功過（有暫存時間）也算已在 App 空間，和寫作頁說法一致。
+              stored: project.origin === 'file' || lastSaveMs != null,
               computer,
               lastSaveMs,
             })}
