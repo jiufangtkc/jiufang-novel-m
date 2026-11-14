@@ -756,7 +756,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
         updatedLabel: '剛剛',
         bookGoal: 100000,
         shape: action.shape,
-        lastOpenedNodeId: single ? chapterId : null,
+        lastOpenedNodeId: chapterId,
         lastCursor: 0,
         cards: [],
         categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
