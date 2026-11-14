@@ -402,3 +402,21 @@ html[data-layout="phone-landscape"] .cards-landscape-view .cards-drawer-pane.is-
 .cards-header-action-btn:hover {
   color: var(--primary-hover, #0062a3);
 }
+
+/* 分類內尚無卡片時的空狀態（WO-73） */
+.cards-empty-category-pane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 40px 16px;
+  min-height: 160px;
+  text-align: center;
+  color: var(--muted);
+  box-sizing: border-box;
+}
+
+.cards-empty-category-pane .cards-header-action-btn {
+  margin-left: 0;
+}

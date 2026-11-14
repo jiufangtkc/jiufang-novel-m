@@ -138,6 +138,7 @@ describe('章節目錄文案', () => {
     const copy = await import('./userFacing');
     expect(copy.CARDS_READONLY_BADGE).toBe('只能看');
     expect(copy.CARDS_EMPTY_CATEGORY_HINT).toBe('請選擇分類');
+    expect(copy.CARDS_EMPTY_IN_CATEGORY_HINT).toBe('這個分類還沒有卡片。');
     expect(copy.CARDS_EMPTY_CARD_HINT).toBe('請選擇卡片');
     expect(copy.CARDS_COLUMN_CATEGORIES).toBe('分類');
     expect(copy.CARDS_COLUMN_CARDS).toBe('卡片清單');
@@ -211,6 +212,7 @@ describe('章節目錄文案', () => {
     // 5. WO-56 其餘文字保持不變
     expect(copy.CARDS_READONLY_BADGE).toBe('只能看');
     expect(copy.CARDS_EMPTY_CATEGORY_HINT).toBe('請選擇分類');
+    expect(copy.CARDS_EMPTY_IN_CATEGORY_HINT).toBe('這個分類還沒有卡片。');
     expect(copy.CARDS_EMPTY_CARD_HINT).toBe('請選擇卡片');
     expect(copy.CARDS_COLUMN_CATEGORIES).toBe('分類');
     expect(copy.CARDS_COLUMN_CARDS).toBe('卡片清單');
