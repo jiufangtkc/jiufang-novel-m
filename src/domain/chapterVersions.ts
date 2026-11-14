@@ -1,9 +1,11 @@
 import { findNode, type ChapterNode } from '../data/demo';
+import type { FileCard } from '../db/projectFile';
 import { cloneNode, locateNode } from './chapterOps';
 import { countManuscriptWords } from './manuscriptWords';
 
 export const VERSION_LIMIT = 10;
 export const DELETED_LIMIT = 10;
+export const DELETED_CARD_LIMIT = 10;
 export const VERSION_INTERVAL_MS = 30 * 60 * 1000;
 
 export interface ChapterVersion {
@@ -28,13 +30,30 @@ export interface DeletedRecord {
   afterIds?: string[];
 }
 
+export interface DeletedCardRecord {
+  id: string;
+  rootCardId: string;
+  title: string;
+  category: string;
+  parentId: string | null;
+  index: number;
+  /** 刪除當下，由近到遠的前一個同層鄰居。 */
+  beforeIds?: string[];
+  /** 刪除當下，由近到遠的後一個同層鄰居。 */
+  afterIds?: string[];
+  /** 含該卡與所有子孫卡片的快照。 */
+  cards: FileCard[];
+  deletedAt: number;
+}
+
 export interface BookArchive {
   versions: Record<string, ChapterVersion[]>;
   deleted: DeletedRecord[];
+  deletedCards?: DeletedCardRecord[];
 }
 
 export function emptyArchive(): BookArchive {
-  return { versions: {}, deleted: [] };
+  return { versions: {}, deleted: [], deletedCards: [] };
 }
 
 export function shouldKeepVersion(lastKept: string, content: string): boolean {

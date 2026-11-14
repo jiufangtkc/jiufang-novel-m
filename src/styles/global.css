@@ -15,7 +15,63 @@
   --safe-bottom: var(--force-safe-bottom, env(safe-area-inset-bottom, 0px));
   --vv-height: 100dvh;
   --vv-offset: 0px;
+  --hit-size: 44px;
+  --body-font-scale: 100;
   color-scheme: dark;
+}
+
+/* 指標判斷與點擊範圍（WO-54） */
+html[data-pointer="mouse"] {
+  --hit-size: 36px;
+  --tree-indent: 12px;
+}
+
+html[data-pointer="touch"] {
+  --hit-size: 44px;
+  --tree-indent: 16px;
+}
+
+/* 版面骨架選擇器與各版面正文限寬用字數（WO-54、WO-55、WO-72）
+ * 上限取「N 字寬」和「這一欄看得到的寬度」較小的那個：
+ * max-width: min(calc(N * (1em + 0.5px)), 100%)
+ * 100% 是正文欄自己的寬度（左右留白在框內；側欄先把這一欄擠窄）。
+ * 沒被擠窄時仍是：直拿 19、橫拿與中等 30、寬版 36。頁面放大後不可再比畫面寬。
+ */
+html[data-layout="phone-portrait"] .editor-input {
+  max-width: min(calc(19 * (1em + 0.5px)), 100%);
+  font-size: calc(18px * var(--body-font-scale, 100) / 100);
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+html[data-layout="phone-landscape"] .editor-input {
+  max-width: min(calc(30 * (1em + 0.5px)), 100%);
+  font-size: calc(18px * var(--body-font-scale, 100) / 100);
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+html[data-layout="medium"] .editor-input {
+  max-width: min(calc(30 * (1em + 0.5px)), 100%);
+  font-size: calc(20px * var(--body-font-scale, 100) / 100);
+  padding-left: 40px;
+  padding-right: 40px;
+}
+
+html[data-layout="wide"] .editor-input {
+  max-width: min(calc(36 * (1em + 0.5px)), 100%);
+  font-size: calc(18px * var(--body-font-scale, 100) / 100);
+  padding-left: 40px;
+  padding-right: 40px;
+}
+
+html[data-wide-columns="one-side"] {}
+html[data-wide-columns="both"] {}
+
+/* 共用可點擊範圍類別（WO-54） */
+.hit-target {
+  min-width: var(--hit-size);
+  min-height: var(--hit-size);
 }
 
 * { box-sizing: border-box; }
@@ -83,7 +139,9 @@ a { color: var(--accent); }
 
 .topbar {
   min-height: 56px;
-  padding: 0 4px 0 16px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0 12px 0 16px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -93,6 +151,7 @@ a { color: var(--accent); }
 
 .topbar h1 {
   flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 18px;
   font-weight: 700;
@@ -259,12 +318,16 @@ a { color: var(--accent); }
 }
 
 .bottom-nav a[aria-current="page"],
-.nav-rail a[aria-current="page"] {
+.nav-rail a[aria-current="page"],
+.bottom-nav a[data-nav-active="true"],
+.nav-rail a[data-nav-active="true"] {
   color: var(--accent);
 }
 
 .bottom-nav a[aria-current="page"] .nav-icon,
-.nav-rail a[aria-current="page"] .nav-icon {
+.nav-rail a[aria-current="page"] .nav-icon,
+.bottom-nav a[data-nav-active="true"] .nav-icon,
+.nav-rail a[data-nav-active="true"] .nav-icon {
   background: var(--accent-soft);
 }
 
@@ -285,15 +348,18 @@ a { color: var(--accent); }
 .write-layout.has-chapter .editor-pane { display: flex; }
 
 .tree-list { list-style: none; margin: 0; padding: 4px 0 44px; }
+.tree-list .tree-list { padding: 0; }
 
 .tree-row {
   display: flex;
   align-items: center;
   gap: 4px;
-  min-height: 44px;
-  padding-top: 6px;
-  padding-bottom: 6px;
+  min-height: var(--hit-size, 44px);
+  padding-top: 2px;
+  padding-bottom: 2px;
   padding-right: 4px;
+  padding-left: calc(var(--tree-depth, 0) * var(--tree-indent, 16px));
+  box-sizing: border-box;
 }
 
 .tree-row.is-selected { background: var(--accent-soft); }
@@ -305,7 +371,7 @@ a { color: var(--accent); }
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
+  min-height: var(--hit-size, 44px);
   border: 0;
   background: transparent;
   color: var(--text);
@@ -316,6 +382,8 @@ a { color: var(--accent); }
 .folder-name { font-size: 15px; font-weight: 700; }
 .node-name { font-size: 14px; }
 .folder-name, .node-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -323,8 +391,10 @@ a { color: var(--accent); }
 
 .tree-chevron,
 .tree-chevron-spacer {
-  width: 44px;
-  height: 44px;
+  width: var(--hit-size, 44px);
+  height: var(--hit-size, 44px);
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
   flex-shrink: 0;
 }
 .tree-chevron {
@@ -353,6 +423,7 @@ a { color: var(--accent); }
   font-weight: 700;
   line-height: 1;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .badge-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -363,28 +434,44 @@ a { color: var(--accent); }
 .badge[data-progress="Final"] { color: #06d6a0; background: rgba(6, 214, 160, 0.15); border-color: rgba(6, 214, 160, 0.6); }
 .badge[data-progress="Discarded"] { color: #ef476f; background: rgba(239, 71, 111, 0.15); border-color: rgba(239, 71, 111, 0.6); }
 
-.editor { background: var(--editor); }
+.editor {
+  background: var(--editor);
+  min-width: 0;
+  max-width: 100%;
+}
 .editor .topbar { background: var(--panel); }
+
+/* 直拿把這一欄當成容器，頁面放大、欄變窄時才改拇指區排法（WO-72） */
+html[data-layout="phone-portrait"] .editor {
+  container-type: inline-size;
+  container-name: writing-editor;
+}
 
 .editor-input {
   flex: 1;
   width: 100%;
+  min-width: 0;
   min-height: 0;
   resize: none;
   border: 0;
   outline: none;
   background: var(--editor);
   color: var(--text);
-  font-size: 16px;
   line-height: 1.8;
   letter-spacing: 0.5px;
-  padding: 20px 24px;
+  padding-top: 20px;
+  padding-bottom: 20px;
+  margin-left: auto;
+  margin-right: auto;
+  box-sizing: border-box;
 }
 
 .editor-input::placeholder { color: var(--muted); }
 
 .editor-status {
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
   background: var(--panel);
   border-top: 1px solid var(--border);
   padding: 16px 16px 10px;
@@ -496,6 +583,19 @@ button.save-status {
 }
 
 .stats-page, .settings-page, .logs-page, .files-page { padding: 16px; }
+
+/* WO-79：直拿、中等有底部分頁時，可捲頁底部多留觸控留白，最後一項能完全露出、好點 */
+html[data-layout="phone-portrait"] .workspace .scroll-pane.files-page,
+html[data-layout="phone-portrait"] .workspace .scroll-pane.stats-page,
+html[data-layout="phone-portrait"] .workspace .scroll-pane.settings-page,
+html[data-layout="phone-portrait"] .workspace .scroll-pane.logs-page,
+html[data-layout="medium"] .workspace .scroll-pane.files-page,
+html[data-layout="medium"] .workspace .scroll-pane.stats-page,
+html[data-layout="medium"] .workspace .scroll-pane.settings-page,
+html[data-layout="medium"] .workspace .scroll-pane.logs-page {
+  padding-bottom: calc(16px + var(--hit-size));
+  scroll-padding-bottom: var(--hit-size);
+}
 
 .stat-grid {
   display: grid;
@@ -704,6 +804,21 @@ button.save-status {
   justify-content: center;
   z-index: 20;
 }
+
+/* 中等與手機橫拿：目錄選單要蓋過目錄抽屜（50）和看卡片抽屜（100）。 */
+html[data-layout="phone-landscape"] .write-layout > .sheet-backdrop,
+html[data-layout="medium"] .write-layout > .sheet-backdrop {
+  position: fixed;
+  z-index: 200;
+}
+
+html[data-layout="phone-landscape"] .write-layout > .sheet-backdrop > .sheet,
+html[data-layout="medium"] .write-layout > .sheet-backdrop > .sheet,
+html[data-layout="phone-landscape"] .write-layout > .sheet-backdrop > .dialog,
+html[data-layout="medium"] .write-layout > .sheet-backdrop > .dialog {
+  max-height: 100%;
+  overflow-y: auto;
+}
 .sheet, .dialog {
   width: min(560px, 100%);
   background: var(--panel);
@@ -745,12 +860,12 @@ button.save-status {
   z-index: 30;
 }
 
-@media (min-width: 600px) {
+@media (min-width: 1024px) {
   .workspace { flex-direction: row; }
   .nav-rail {
     display: flex;
     flex-direction: column;
-    width: 76px;
+    width: 72px;
     flex-shrink: 0;
     background: var(--panel);
     border-right: 1px solid var(--border);
@@ -758,22 +873,14 @@ button.save-status {
   }
   .bottom-nav { display: none; }
   .workspace-body { flex: 1; }
-  .write-layout {
-    display: grid;
-    grid-template-columns: 320px minmax(0, 1fr);
-  }
-  .write-layout .tree-pane,
-  .write-layout .editor-pane,
-  .write-layout.has-chapter .tree-pane { display: flex; }
-  .tree-pane { flex-direction: column; border-right: 1px solid var(--border); }
   .editor-empty.wide-hint { display: flex; }
   .back-button { display: none; }
   .toast { bottom: 24px; }
 }
 
 .tree-progress, .tree-progress-spacer, .tree-handle, .icon-button {
-  min-width: 44px;
-  min-height: 44px;
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
 }
 .tree-progress {
   border: 0;
@@ -796,6 +903,315 @@ button.save-status {
   flex-shrink: 0;
 }
 .tree-handle.is-hidden { display: none; }
+
+.tree-row .icon-button,
+.tree-row .tree-chevron,
+.tree-row .tree-chevron-spacer,
+.tree-row .tree-handle,
+.tree-row .tree-progress-spacer {
+  width: var(--hit-size, 44px);
+  height: var(--hit-size, 44px);
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
+  box-sizing: border-box;
+}
+
+.tree-row .tree-progress {
+  width: auto;
+  height: var(--hit-size, 44px);
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+/* 滑鼠模式下縮減列上下留白至 0，使相鄰列距達到約 36～38px */
+html[data-pointer="mouse"] .tree-row {
+  padding-top: 0;
+  padding-bottom: 0;
+  min-height: var(--hit-size, 36px);
+  position: relative;
+}
+
+/* 觸控模式：拖曳把手平常不佔位，僅在「整理目錄」模式顯示 */
+html[data-pointer="touch"] .tree-pane:not(.is-organizing) .tree-handle,
+:root:not([data-pointer="mouse"]) .tree-pane:not(.is-organizing) .tree-handle {
+  display: none !important;
+}
+
+html[data-pointer="touch"] .tree-pane.is-organizing .tree-handle,
+:root:not([data-pointer="mouse"]) .tree-pane.is-organizing .tree-handle {
+  display: grid !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  position: static !important;
+  width: var(--hit-size, 44px);
+  height: var(--hit-size, 44px);
+}
+
+/*
+ * 滑鼠模式（WO-86）：把手排在進度與「⋯」之間，依進度按鈕實際寬度自動分開。
+ * 平常寬度 0 不佔位，滑過該列才展開 hit-size。
+ */
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-handle {
+  position: static;
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+  flex-shrink: 0;
+  transition: opacity 0.15s ease;
+}
+
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:hover .tree-handle,
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:focus-within .tree-handle {
+  width: var(--hit-size, 36px);
+  min-width: var(--hit-size, 36px);
+  max-width: var(--hit-size, 36px);
+  height: max(28px, 1.6em);
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+html[data-pointer="mouse"] .tree-pane.is-organizing .tree-handle {
+  position: static;
+  width: var(--hit-size, 36px);
+  min-width: var(--hit-size, 36px);
+  max-width: var(--hit-size, 36px);
+  height: max(28px, 1.6em);
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/*
+ * 外觀-2（WO-95）：目錄章名騰寬度。
+ * 視覺列高跟 data-pointer 走。滑鼠列高 28，箭頭與「⋯」是 24×28，熱區不伸進上下列。
+ * 手指點的列距仍是 44 加上上下各 2。箭頭與選取列的「⋯」維持 44×44。
+ * 進度圓點維持小點，按鈕高 44，避免再佔走章名的寬度。
+ */
+html[data-pointer="mouse"] .tree-pane .tree-row {
+  gap: 0;
+  padding-right: 2px;
+  min-height: max(28px, 1.6em);
+  align-items: stretch;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-main {
+  min-height: 0;
+  height: auto;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron-spacer,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-handle,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress-spacer {
+  height: max(28px, 1.6em);
+  min-height: 0;
+  align-self: center;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-chevron-spacer {
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .folder-name,
+html[data-pointer="mouse"] .tree-pane .tree-row .node-name {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row > .icon-button {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  height: max(28px, 1.6em);
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+}
+
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:hover > .icon-button,
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row:focus-within > .icon-button,
+html[data-pointer="mouse"] .tree-pane:not(.is-organizing) .tree-row.is-selected > .icon-button {
+  width: 24px;
+  min-width: 24px;
+  max-width: 24px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress,
+html[data-pointer="mouse"] .tree-pane .tree-row .tree-progress-spacer {
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row {
+  gap: 8px;
+  padding-right: 8px;
+  align-items: center;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row .tree-main {
+  align-self: stretch;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row .tree-progress {
+  width: auto;
+  min-width: 0;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+html[data-pointer="touch"] .tree-pane .tree-row .folder-name,
+html[data-pointer="touch"] .tree-pane .tree-row .node-name {
+  font-size: 16px;
+  line-height: 1.45;
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+html[data-pointer="touch"] .tree-pane:not(.is-organizing) .tree-row > .icon-button {
+  width: 0;
+  min-width: 0;
+  max-width: 0;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  border: 0;
+}
+
+html[data-pointer="touch"] .tree-pane:not(.is-organizing) .tree-row.is-selected > .icon-button {
+  width: 44px;
+  min-width: 44px;
+  max-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
+}
+
+html[data-pointer="mouse"] .tree-row .badge,
+html[data-pointer="touch"] .tree-row .badge {
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  overflow: hidden;
+  font-size: 0;
+  line-height: 0;
+  justify-content: center;
+}
+
+html[data-pointer="mouse"] .tree-row .badge-dot {
+  width: 8px;
+  height: 8px;
+}
+
+html[data-pointer="touch"] .tree-row .badge,
+html[data-pointer="touch"] .tree-row .badge-dot {
+  width: 10px;
+  height: 10px;
+  min-width: 10px;
+}
+
+html[data-pointer="touch"] .tree-row.is-selected .badge-dot {
+  display: none;
+}
+
+html[data-pointer="mouse"] .tree-row:hover .badge,
+html[data-pointer="mouse"] .tree-row:focus-within .badge,
+html[data-pointer="touch"] .tree-row.is-selected .badge {
+  width: auto;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  gap: 4px;
+  border-radius: 0;
+  overflow: visible;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+html[data-pointer="mouse"] .tree-row:hover .badge {
+  font-size: 11px;
+}
+
+.tree-icon.type-folder svg {
+  width: 20px;
+  height: 20px;
+}
+
+html[data-pointer="mouse"] .tree-icon.type-folder svg {
+  width: 16px;
+  height: 16px;
+}
+
+.tree-pane .scroll-pane {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+.tree-pane .scroll-pane::-webkit-scrollbar {
+  width: 8px;
+}
+
+.tree-pane .scroll-pane::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.tree-title-tip {
+  position: fixed;
+  z-index: 40;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 16px));
+  margin: 0;
+  padding: 6px 8px;
+  background: #3c3c3c;
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  font-size: 13px;
+  line-height: 1.45;
+  white-space: normal;
+  pointer-events: none;
+}
+
 .tree-row.is-dragging { opacity: 0.45; }
 .tree-row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
 .tree-row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
@@ -826,6 +1242,8 @@ button.save-status {
   background: transparent;
   color: var(--text);
   border-radius: 8px;
+  min-width: 44px;
+  min-height: 44px;
 }
 .organize-actions button:disabled { color: var(--muted); }
 .organize-dock .hint { margin: 0; padding: 8px 12px 0; }
@@ -951,13 +1369,6 @@ button.save-status {
 .rename-actions .button.primary { flex: 1.4; }
 .topbar .button.primary { flex: 0 0 auto; padding: 0 16px; }
 
-@media (min-width: 600px) {
-  .tree-handle { opacity: 0; }
-  .tree-row:hover .tree-handle,
-  .tree-row:focus-within .tree-handle { opacity: 1; }
-  .tree-tools, .organize-dock { display: none; }
-}
-
 /* 手機橫放且鍵盤開著：只留正文。平板與電腦不會加上這個 class。 */
 html.landscape-writing .nav-rail,
 html.landscape-writing .bottom-nav,
@@ -977,6 +1388,534 @@ html.landscape-writing .write-layout .editor-pane {
   min-width: 0;
   min-height: 0;
 }
+
+/* ==========================================================================
+   WO-55：四種版面排法（手機直拿、手機橫拿、中等、寬版）、側欄讓位與專注模式
+   ========================================================================== */
+
+/* 1. 導覽列在各版面下的規則（WO-55） */
+html[data-layout="phone-portrait"] .nav-rail { display: none; }
+html[data-layout="phone-portrait"] .bottom-nav { display: flex; }
+
+html[data-layout="phone-landscape"] .nav-rail { display: none; }
+html[data-layout="phone-landscape"] .bottom-nav { display: none; }
+
+html[data-layout="medium"] .nav-rail { display: none; }
+html[data-layout="medium"] .bottom-nav { display: flex; }
+
+/* WO-78：鍵盤開著時優先於直拿／中等的底部分頁顯示規則 */
+html.keyboard-open[data-layout="phone-portrait"] .bottom-nav,
+html.keyboard-open[data-layout="medium"] .bottom-nav {
+  display: none;
+}
+
+html[data-layout="wide"] .nav-rail { display: flex; width: 72px; min-width: 72px; }
+html[data-layout="wide"] .bottom-nav { display: none; }
+
+/* 頂列按鈕在各版面下的基礎顯示／隱藏 */
+.topbar-tree-button { display: none; }
+.topbar-stats { display: none; }
+.focus-enter-button { display: none; }
+.tree-close-button { display: none; }
+.focus-exit-button { display: none; }
+.focus-bottom-status { display: none; }
+.floating-tree-trigger { display: none; }
+.write-aside { display: none; }
+
+/* 2. ① 手機直拿（phone-portrait）：全螢幕，維持現行 */
+html[data-layout="phone-portrait"] .back-button { display: grid; }
+html[data-layout="phone-portrait"] .topbar-tree-button { display: none; }
+html[data-layout="phone-portrait"] .write-layout.has-chapter .tree-pane { display: none; }
+html[data-layout="phone-portrait"] .write-layout.has-chapter .editor-pane { display: flex; }
+html[data-layout="phone-portrait"] .write-layout:not(.has-chapter) .tree-close-button {
+  display: none !important;
+}
+
+/* 3. ② 手機橫拿（phone-landscape）：
+   打字時藏標題列、側欄、分頁，只留正文。
+   「目錄」「看卡片」為正文兩側 44×44 圓形浮動鈕（只有圖示＋朗讀文字）。
+   側邊抽屜／面板打開時，正文縮窄讓位，而非覆蓋。
+*/
+html[data-layout="phone-landscape"] .back-button { display: none; }
+html[data-layout="phone-landscape"] .topbar-tree-button { display: none; }
+html[data-layout="phone-landscape"] .view-cards-button { display: none !important; }
+
+html[data-layout="phone-landscape"] .write-layout:not(.has-chapter) .tree-pane {
+  display: flex !important;
+  flex-direction: column;
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1;
+  border-right: none;
+}
+
+html[data-layout="phone-landscape"] .write-layout:not(.has-chapter) .editor-pane {
+  display: none !important;
+}
+
+html[data-layout="phone-landscape"] .write-layout:not(.has-chapter) .tree-close-button {
+  display: none !important;
+}
+
+/* 44×44 圓形浮動鈕（手機橫拿） */
+html[data-layout="phone-landscape"] .floating-tree-trigger,
+html[data-layout="phone-landscape"] .landscape-cards-trigger {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 80;
+  padding: 0;
+}
+
+html[data-layout="phone-landscape"] .floating-tree-trigger {
+  left: 12px;
+}
+
+html[data-layout="phone-landscape"] .landscape-cards-trigger {
+  right: 12px;
+}
+
+html[data-layout="phone-landscape"] .floating-button-label,
+html[data-layout="phone-landscape"] .landscape-cards-trigger > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+html[data-layout="phone-landscape"] .write-layout {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+html[data-layout="phone-landscape"] .tree-pane {
+  display: none;
+  flex: 0 0 320px;
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  z-index: 50;
+}
+
+html[data-layout="phone-landscape"] .tree-pane.is-open,
+html[data-layout="phone-landscape"] .write-layout.tree-open .tree-pane,
+html[data-layout="phone-landscape"] .write-layout.has-chapter.tree-open .tree-pane,
+html[data-layout="phone-landscape"][data-side-panel-left="true"] .tree-pane {
+  display: flex !important;
+  flex-direction: column;
+}
+
+html[data-layout="phone-landscape"] .tree-close-button {
+  display: grid !important;
+}
+
+html[data-layout="phone-landscape"] .editor-pane,
+html[data-layout="phone-landscape"] .write-layout.has-chapter .editor-pane {
+  display: flex !important;
+  flex: 1;
+  min-width: 0;
+  transition: margin-right 0.2s ease;
+}
+
+/* 讓位樣式（手機橫拿）：正文框讓位 290px 緊貼面板左緣，正文於剩餘寬度置中 */
+html[data-layout="phone-landscape"] .editor.yield-right,
+html[data-layout="phone-landscape"] .editor-pane.yield-right {
+  margin-right: 290px;
+}
+
+/* 讓位只算一次：當子層 .editor 位於已讓位的 .editor-pane 內時，不重複套用 margin */
+html[data-layout="phone-landscape"] .editor-pane.yield-right .editor.yield-right,
+html[data-layout="phone-landscape"] .editor-pane.yield-right .editor {
+  margin-right: 0 !important;
+}
+
+/* 手機橫拿開看卡片時，左側目錄浮動鈕與卡片浮動鈕暫藏，避免壓在正文字上 */
+html[data-layout="phone-landscape"] .write-layout.aside-open .floating-tree-trigger,
+html[data-layout="phone-landscape"] .write-layout.yield-right .floating-tree-trigger,
+html[data-layout="phone-landscape"] .editor.yield-right .floating-tree-trigger,
+html[data-layout="phone-landscape"] .write-layout.aside-open .landscape-cards-trigger,
+html[data-layout="phone-landscape"] .write-layout.yield-right .landscape-cards-trigger,
+html[data-layout="phone-landscape"] .editor.yield-right .landscape-cards-trigger {
+  display: none !important;
+}
+
+html[data-layout="phone-landscape"] .writing-cards-overlay {
+  display: none !important;
+}
+
+html[data-layout="phone-landscape"] .writing-cards-drawer {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: auto;
+  width: 290px;
+  max-width: 50vw;
+  height: 100%;
+  max-height: 100%;
+  border-top: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+}
+
+/* WO-68：手機橫拿直排分頁。
+   只在目錄頁、目錄抽屜打開時與其他分頁顯示（由 Workspace 加 data-landscape-rail），
+   排在目錄抽屜左邊；正文照樣讓位，打字（鍵盤開著）與專注模式仍藏起。 */
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] {
+  flex-direction: row;
+}
+
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] > .nav-rail {
+  display: flex;
+  flex-direction: column;
+  width: 72px;
+  min-width: 72px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  background: var(--panel);
+  border-right: 1px solid var(--border);
+  padding-top: 8px;
+  padding-bottom: var(--safe-bottom);
+}
+
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] > .nav-rail a {
+  flex-shrink: 0;
+}
+
+html.landscape-writing[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] > .nav-rail {
+  display: none;
+}
+
+/* 目錄抽屜打開時，左側浮動「展開目錄」鈕會疊在直排分頁上，先收起；抽屜用右上 × 收合後再出現 */
+html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] .write-layout.tree-open .floating-tree-trigger {
+  display: none !important;
+}
+
+/* 4. ③ 中等（medium）：
+   正文置中，字級 20，左右邊界 40，行寬上限 30 字。
+   左上「目錄」開左側約 340 寬抽屜（讓位、點章名跳章後自動收）、右上「看卡片」。保留下方分頁。
+*/
+html[data-layout="medium"] .back-button { display: none; }
+html[data-layout="medium"] .topbar-tree-button { display: grid; }
+html[data-layout="medium"] .tree-close-button { display: grid; }
+html[data-layout="medium"] .write-layout:not(.has-chapter) .tree-close-button {
+  display: none !important;
+}
+
+html[data-layout="medium"] .write-layout {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+html[data-layout="medium"] .write-layout:not(.has-chapter) .tree-pane {
+  display: flex !important;
+  flex-direction: column;
+  width: 100% !important;
+  min-width: 0 !important;
+  flex: 1;
+  border-right: none;
+}
+
+html[data-layout="medium"] .write-layout:not(.has-chapter) .editor-pane {
+  display: none !important;
+}
+
+html[data-layout="medium"] .tree-pane {
+  display: none;
+  flex: 0 0 340px;
+  width: 340px;
+  min-width: 340px;
+  max-width: 340px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+  z-index: 50;
+}
+
+html[data-layout="medium"] .tree-pane.is-open,
+html[data-layout="medium"] .write-layout.tree-open .tree-pane,
+html[data-layout="medium"] .write-layout.has-chapter.tree-open .tree-pane,
+html[data-layout="medium"][data-side-panel-left="true"] .tree-pane {
+  display: flex !important;
+  flex-direction: column;
+}
+
+html[data-layout="medium"] .editor-pane,
+html[data-layout="medium"] .write-layout.has-chapter .editor-pane {
+  display: flex !important;
+  flex: 1;
+  min-width: 0;
+  transition: margin-right 0.2s ease;
+}
+
+/* 讓位樣式（中等）：正文框讓位 380px 緊貼面板左緣，正文於剩餘寬度置中 */
+html[data-layout="medium"] .editor.yield-right,
+html[data-layout="medium"] .editor-pane.yield-right {
+  margin-right: 380px;
+}
+
+/* 讓位只算一次：當子層 .editor 位於已讓位的 .editor-pane 內時，不重複套用 margin */
+html[data-layout="medium"] .editor-pane.yield-right .editor.yield-right,
+html[data-layout="medium"] .editor-pane.yield-right .editor {
+  margin-right: 0 !important;
+}
+
+html[data-layout="medium"] .writing-cards-overlay {
+  display: none !important;
+}
+
+html[data-layout="medium"] .writing-cards-drawer {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  left: auto;
+  width: 380px;
+  max-width: 45vw;
+  height: 100%;
+  max-height: 100%;
+  border-top: 0;
+  border-left: 1px solid var(--border);
+  border-radius: 0;
+  box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+}
+
+/* 5. ④ 寬版（wide）：
+   左目錄常駐可收（320）｜中間正文（最多 36 字置中）｜右側欄（320，WO-56放卡片內容，本張先留好位置與開關）；
+   導覽改最左 72 寬窄欄；1024–1279 左右一次只開一邊，≥1280 三欄可全開。
+*/
+html[data-layout="wide"] .workspace {
+  flex-direction: row;
+}
+
+html[data-layout="wide"] .back-button {
+  display: none;
+}
+
+html[data-layout="wide"] .tree-close-button {
+  display: grid !important;
+}
+
+/* 寬版左目錄收起時，頁首左邊出現目錄按鈕可再打開 */
+html[data-layout="wide"][data-side-panel-left="false"] .topbar-tree-button,
+html[data-layout="wide"] .write-layout.tree-closed .topbar-tree-button,
+html[data-layout="wide"] .write-layout:not(.tree-open) .topbar-tree-button,
+html[data-layout="wide"] .write-layout.has-chapter.tree-closed .topbar-tree-button,
+html[data-layout="wide"] .write-layout.has-chapter:not(.tree-open) .topbar-tree-button {
+  display: grid !important;
+}
+
+/* 寬版左目錄展開時，頁首目錄按鈕隱藏（目錄常駐在左） */
+html[data-layout="wide"][data-side-panel-left="true"] .topbar-tree-button,
+html[data-layout="wide"] .write-layout.tree-open .topbar-tree-button,
+html[data-layout="wide"] .write-layout.has-chapter.tree-open .topbar-tree-button {
+  display: none !important;
+}
+
+html[data-layout="wide"] .topbar-stats {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-left: auto;
+}
+
+html[data-layout="wide"] .focus-enter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+html[data-layout="wide"] .focus-enter-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+}
+
+html[data-layout="wide"] .write-layout {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
+/* 寬版左目錄：不論有沒有選章（has-chapter），sidePanels.left 為 true 時目錄固定 320 寬顯示在左側 */
+html[data-layout="wide"] .tree-pane,
+html[data-layout="wide"] .write-layout .tree-pane,
+html[data-layout="wide"] .write-layout.has-chapter .tree-pane,
+html[data-layout="wide"] .write-layout:not(.has-chapter) .tree-pane {
+  display: flex !important;
+  flex-direction: column;
+  flex: 0 0 320px !important;
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
+  flex-shrink: 0 !important;
+  border-right: 1px solid var(--border);
+  background: var(--bg);
+}
+
+/* 寬版左目錄收起時（sidePanels.left 為 false，或 .is-closed / .tree-closed） */
+html[data-layout="wide"] .tree-pane.is-closed,
+html[data-layout="wide"] .write-layout.tree-closed .tree-pane,
+html[data-layout="wide"] .write-layout.has-chapter.tree-closed .tree-pane,
+html[data-layout="wide"][data-side-panel-left="false"] .tree-pane,
+html[data-layout="wide"][data-side-panel-left="false"] .write-layout.has-chapter .tree-pane {
+  display: none !important;
+}
+
+/* 寬版正文區塊：不論有沒有選章，均佔滿剩餘空間（未選章時顯示右邊提示） */
+html[data-layout="wide"] .editor-pane,
+html[data-layout="wide"] .write-layout .editor-pane,
+html[data-layout="wide"] .write-layout.has-chapter .editor-pane,
+html[data-layout="wide"] .write-layout:not(.has-chapter) .editor-pane {
+  display: flex !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+}
+
+html[data-layout="wide"] .editor-empty.wide-hint {
+  display: flex !important;
+}
+
+/* 右側欄（320） */
+html[data-layout="wide"] .write-aside {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 320px;
+  width: 320px;
+  min-width: 320px;
+  max-width: 320px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+}
+
+html[data-layout="wide"] .write-aside.is-closed,
+html[data-layout="wide"][data-side-panel-right="false"] .write-aside {
+  display: none !important;
+}
+
+.write-aside-header {
+  min-height: 56px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.write-aside-header h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.write-aside-body {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+html[data-layout="wide"] .writing-cards-overlay {
+  display: none !important;
+}
+
+/* 6. 寬版專注模式（Focus Mode）：
+   一鍵收起左右兩欄、導覽窄欄與頁首，只剩正文；
+   右上淡淡的離開按鈕；
+   最下方一行淡淡的今天字數與存檔狀態；
+   離開後恢復進去前哪幾欄開著。不加任何快捷鍵（不做 Esc）。
+*/
+html[data-focus-mode="true"] .nav-rail,
+html[data-focus-mode="true"] .tree-pane,
+html[data-focus-mode="true"] .write-aside,
+html[data-focus-mode="true"] .editor .topbar,
+html[data-focus-mode="true"] .editor-status {
+  display: none !important;
+}
+
+html[data-focus-mode="true"] .focus-exit-button {
+  display: inline-flex;
+  position: fixed;
+  top: 16px;
+  right: 24px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 100;
+  opacity: 0.65;
+  transition: opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+html[data-focus-mode="true"] .focus-exit-button:hover {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+}
+
+html[data-focus-mode="true"] .focus-bottom-status {
+  display: flex;
+  position: fixed;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 50;
+}
+
+.focus-status-sep {
+  opacity: 0.5;
+}
+
 
 .book-title-button {
   position: relative;
@@ -1058,6 +1997,169 @@ html.landscape-writing .write-layout .editor-pane {
   font-size: 13px;
   font-weight: 600;
 }
+h2.settings-kicker {
+  margin: 20px 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* 設定頁內容欄：手機橫拿與中等置中，寬版靠左（WO-94） */
+.settings-page {
+  width: 100%;
+  max-width: 620px;
+}
+html[data-layout="phone-landscape"] .settings-page,
+html[data-layout="medium"] .settings-page {
+  margin-left: auto;
+  margin-right: auto;
+}
+html[data-layout="wide"] .settings-page {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.appearance-section { margin-top: 8px; }
+.input-mode-title {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.input-mode-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.input-mode-option {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  text-align: center;
+}
+.input-mode-option[aria-checked="true"] {
+  border: 2px solid var(--accent);
+  background: var(--accent-soft);
+}
+.input-mode-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.input-mode-option strong {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+.input-mode-option small {
+  display: block;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: normal;
+}
+.input-mode-mark {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  width: 36px;
+  height: 22px;
+}
+.input-mode-mark span {
+  display: block;
+  width: 100%;
+  border-radius: 999px;
+  background: currentColor;
+}
+.input-mode-mark.is-touch { gap: 4px; }
+.input-mode-mark.is-touch span { height: 4px; }
+.input-mode-mark.is-mouse { gap: 3px; }
+.input-mode-mark.is-mouse span { height: 1px; }
+
+/* 正文字級（WO-96）。A−／A＋ 兩種操作方式都至少 44×44，不跟著 --hit-size 縮小。 */
+.body-font-setting {
+  margin: 4px 0 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+.body-font-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.body-font-title {
+  margin: 0;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.body-font-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+  min-width: 0;
+  border-radius: 8px;
+}
+.body-font-control:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.body-font-value {
+  min-width: 108px;
+  text-align: center;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.body-font-step {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  flex: 0 0 44px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+}
+.body-font-step:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.body-font-step:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.body-font-preview {
+  margin: 10px 0 0;
+  color: var(--text);
+  font-weight: 400;
+  line-height: 1.8;
+  letter-spacing: 0.5px;
+}
 .book-name-row {
   width: 100%;
   min-height: 52px;
@@ -1110,3 +2212,701 @@ html.book-title-modal .scroll-pane { overflow: hidden; }
   .daily-bar-fill { transition: none; }
   .undo-meter { animation: none; }
 }
+
+/* ================= 資料集試看版（WO-45） ================= */
+
+.cards-file-notice {
+  padding: 8px 16px;
+  font-size: 13px;
+  color: var(--warning);
+  background: rgba(229, 192, 123, 0.1);
+  border-bottom: 1px solid var(--border);
+  line-height: 1.4;
+}
+
+.category-list,
+.card-list {
+  list-style: none;
+  margin: 0;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.category-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.category-card:active {
+  background: var(--accent-soft);
+}
+
+.category-name {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.category-count {
+  font-size: 12px;
+  color: var(--muted);
+  font-weight: 500;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.card-item {
+  display: flex;
+  align-items: flex-start;
+  min-height: 44px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--panel);
+  text-align: left;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.card-chevron-button {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  margin: -10px 4px -10px -10px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.card-chevron-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.card-chevron-button:active {
+  background: var(--accent-soft);
+}
+
+.card-item-button {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-radius: 4px;
+}
+
+.card-item-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.card-item-button:active {
+  opacity: 0.85;
+}
+
+.card-item-title {
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
+  word-break: break-word;
+  white-space: normal;
+  display: block;
+}
+
+.card-item-summary {
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+  margin-top: 6px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.card-detail-pane {
+  padding: 16px;
+}
+
+.card-detail-article {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 16px;
+}
+
+.card-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.card-color-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  pointer-events: none;
+  display: inline-block;
+}
+
+.card-detail-heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+}
+
+.card-detail-content {
+  font-size: 16px;
+  line-height: 1.8;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ================= 寫作時看卡片面板（WO-50） ================= */
+
+.view-cards-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.view-cards-button:hover,
+.view-cards-button:focus-visible {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.view-cards-label {
+  white-space: nowrap;
+}
+
+.landscape-cards-trigger {
+  display: none;
+}
+
+html.landscape-writing .editor .landscape-cards-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 22px;
+  background: rgba(37, 37, 38, 0.92);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 20;
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
+}
+
+.landscape-cards-trigger:hover,
+.landscape-cards-trigger:focus-visible {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.writing-cards-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 90;
+  animation: fadeIn 0.2s ease-out;
+}
+
+.writing-cards-drawer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 52dvh;
+  max-height: 55dvh;
+  min-height: 240px;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.5);
+  display: flex;
+  flex-direction: column;
+  z-index: 100;
+  animation: slideUp 0.25s ease-out;
+  overflow: hidden;
+}
+
+.writing-cards-header {
+  min-height: 52px;
+  padding: 0 8px 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.writing-cards-header-spacer {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+.writing-cards-title {
+  flex: 1;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.writing-cards-badge {
+  color: var(--accent);
+}
+
+.writing-cards-sep {
+  color: var(--muted);
+}
+
+.writing-cards-close {
+  flex-shrink: 0;
+}
+
+.writing-cards-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 24px;
+}
+
+.writing-cards-drawer .category-list,
+.writing-cards-drawer .card-list {
+  padding: 0;
+  margin: 0;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (min-width: 600px) {
+  .writing-cards-overlay {
+    background: transparent;
+  }
+  .writing-cards-drawer {
+    top: 0;
+    bottom: 0;
+    right: 0;
+    left: auto;
+    width: 400px;
+    max-width: 45vw;
+    height: 100%;
+    max-height: 100%;
+    border-top: 0;
+    border-left: 1px solid var(--border);
+    border-radius: 0;
+    box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+    animation: slideLeft 0.25s ease-out;
+  }
+}
+
+@keyframes slideLeft {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .writing-cards-overlay,
+  .writing-cards-drawer {
+    animation: none;
+  }
+}
+
+/* ==========================================================================
+   WO-56：資料集分頁與看卡片依四種版面調整
+   ========================================================================== */
+
+/* 1. 資料集分頁在各版面下的佈局與樣式 */
+.cards-page {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* 寬版（wide，≥1024）：三層並排（分類 240｜卡片清單 320｜卡片內容，內容區限寬約 720） */
+html[data-layout="wide"] .cards-wide-view {
+  display: flex !important;
+  flex-direction: row !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+html[data-layout="wide"] .cards-wide-view .cards-col-categories {
+  flex: 0 0 240px !important;
+  width: 240px !important;
+  min-width: 240px !important;
+  max-width: 240px !important;
+  border-right: 1px solid var(--border) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--panel) !important;
+}
+
+html[data-layout="wide"] .cards-wide-view .cards-col-list {
+  flex: 0 0 320px !important;
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
+  border-right: 1px solid var(--border) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--bg) !important;
+}
+
+html[data-layout="wide"] .cards-wide-view .cards-col-detail {
+  flex: 1 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--bg) !important;
+}
+
+html[data-layout="wide"] .cards-wide-view .cards-col-detail .card-detail-pane {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  padding: 24px 32px !important;
+}
+
+html[data-layout="wide"] .cards-wide-view .card-detail-article {
+  width: 100% !important;
+  max-width: 720px !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* 中等（medium，600–1023）：兩欄並排（左欄分類 260、右欄卡片清單/內容） */
+html[data-layout="medium"] .cards-medium-view {
+  display: flex !important;
+  flex-direction: row !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+html[data-layout="medium"] .cards-medium-view .cards-col-categories {
+  flex: 0 0 260px !important;
+  width: 260px !important;
+  min-width: 260px !important;
+  max-width: 260px !important;
+  border-right: 1px solid var(--border) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--panel) !important;
+}
+
+html[data-layout="medium"] .cards-medium-view .cards-col-main {
+  flex: 1 !important;
+  min-width: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--bg) !important;
+}
+
+/* 手機橫拿（phone-landscape）：左側抽屜（320 讓位），右側正文讓位區域 */
+html[data-layout="phone-landscape"] .cards-landscape-view {
+  display: flex !important;
+  flex-direction: row !important;
+  width: 100% !important;
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+html[data-layout="phone-landscape"] .workspace:has(.cards-page) {
+  flex-direction: row !important;
+}
+
+html[data-layout="phone-landscape"] .workspace:has(.cards-page) .nav-rail {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 72px !important;
+  min-width: 72px !important;
+  flex-shrink: 0 !important;
+  background: var(--panel) !important;
+  border-right: 1px solid var(--border) !important;
+}
+
+html[data-layout="phone-landscape"] .cards-landscape-view .cards-drawer-pane {
+  flex: 0 0 320px !important;
+  width: 320px !important;
+  min-width: 320px !important;
+  max-width: 320px !important;
+  border-right: 1px solid var(--border) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background: var(--panel) !important;
+  z-index: 10 !important;
+}
+
+html[data-layout="phone-landscape"] .cards-landscape-view .cards-landscape-yield {
+  flex: 1 !important;
+  min-width: 0 !important;
+  padding: 16px 24px !important;
+  overflow-y: auto !important;
+  background: var(--bg) !important;
+}
+
+html[data-layout="phone-landscape"] .cards-manuscript-preview {
+  max-width: calc(30 * (1em + 0.5px)) !important;
+  margin: 0 auto !important;
+  font-size: 18px !important;
+  line-height: 1.8 !important;
+}
+
+html[data-layout="phone-landscape"] .cards-preview-lead {
+  white-space: pre-wrap !important;
+  color: var(--text) !important;
+}
+
+html[data-layout="phone-landscape"] .cards-preview-heading {
+  font-size: 14px !important;
+  font-weight: 700 !important;
+  color: var(--muted) !important;
+  margin-bottom: 12px !important;
+}
+
+html[data-layout="phone-landscape"] .cards-preview-empty {
+  font-size: 15px !important;
+  color: var(--muted) !important;
+  text-align: center !important;
+  margin-top: 40px !important;
+}
+
+/* 2. 寬版 write-aside 內置看卡片抽屜樣式 */
+html[data-layout="wide"] .write-aside .writing-cards-drawer {
+  position: static !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  height: 100% !important;
+  max-height: 100% !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  animation: none !important;
+  background: transparent !important;
+}
+
+html[data-layout="wide"] .write-aside .writing-cards-overlay {
+  display: none !important;
+}
+
+/* 3. 子卡片區塊與按鈕樣式 */
+.cards-subcards-section {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.cards-subcards-heading {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.cards-subcards-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cards-subcard-item {
+  margin: 0;
+}
+
+.cards-subcard-button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: var(--hit-size, 44px);
+  padding: 10px 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  box-sizing: border-box;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.cards-subcard-button:hover,
+.cards-subcard-button:focus-visible {
+  background: var(--hover);
+  border-color: var(--accent);
+}
+
+.cards-subcard-title {
+  font-size: 15px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cards-subcard-chevron {
+  color: var(--muted);
+  font-size: 16px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+/* 4. 只能看標籤與數量標籤 */
+.cards-readonly-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.cards-count-label {
+  font-size: 13px;
+  color: var(--muted);
+  font-weight: normal;
+  margin-left: auto;
+}
+
+/* 5. 空狀態樣式（保證四種版面可操作、不留全黑全白空頁） */
+.cards-empty-state,
+.cards-empty-pane {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 16px;
+  color: var(--muted);
+  text-align: center;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* 6. 選中（is-active）高亮樣式 */
+.category-card.is-active,
+.card-item.is-active .card-item-button {
+  border-color: var(--accent) !important;
+  background: var(--accent-soft) !important;
+}
+
+/* 7. 按鈕點擊熱區對齊 --hit-size（觸控 ≥44px、滑鼠約 36px） */
+.category-card {
+  min-height: var(--hit-size, 44px);
+}
+
+.card-item-button {
+  min-height: var(--hit-size, 44px);
+}
+
+.card-chevron-button {
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
+}
+
+.cards-drawer-close,
+.writing-cards-close {
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
+}
+
+html[data-pointer="mouse"] .category-card,
+html[data-pointer="mouse"] .card-item-button,
+html[data-pointer="mouse"] .cards-subcard-button {
+  min-height: var(--hit-size, 36px);
+}
+
+

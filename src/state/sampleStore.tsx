@@ -77,10 +77,31 @@ import {
   type ChapterNode,
   type DemoProject,
 } from '../data/demo';
+import { DEFAULT_PROJECT_CATEGORY_ORDER_RAW } from '../data/demoCards';
+import { bookArchive, type ArchiveClient } from '../db/chapterArchive';
+import {
+  archiveCardDeletion,
+  archiveCardRestore,
+  deletedFromCard,
+  placeRecoveredCard,
+  type DeletedCardRecord,
+} from '../domain/cardArchive';
+import { isHiddenCategory, resolveVisibleCategories } from '../domain/cardCategories';
+import {
+  deleteCard as deleteCardFromList,
+  updateCard as updateCardInList,
+  type UpdateCardPatch,
+} from '../domain/cardOps';
 import { newChapterId, shapeAfterEdit } from '../domain/openManuscript';
-import { addSceneUnderChapter, createScene, loadProjects, saveProjects } from '../domain/outline';
+import {
+  addSceneUnderChapter,
+  createScene,
+  loadProjects,
+  normalizeLoadedProject,
+  saveProjects,
+} from '../domain/outline';
 
-interface SampleState {
+export interface SampleState {
   projects: DemoProject[];
   recentIds: string[];
   schedule: GoalSchedule;
@@ -103,7 +124,7 @@ interface SampleState {
   >;
 }
 
-type Action =
+export type Action =
   | { type: 'dismiss-recent'; id: string }
   | { type: 'add-project'; id: string; title: string; shape: 'novel' | 'single' }
   | { type: 'remember-place'; projectId: string; nodeId: string; cursor: number }
@@ -134,7 +155,19 @@ type Action =
   | { type: 'rename-book'; projectId: string; title: string; titleSavePending: BookFileMark['titleSavePending'] }
   | { type: 'defer-title-save'; projectId: string }
   | { type: 'note-title-in-file'; projectId: string }
-  | { type: 'promote-stored'; projectId: string; key: string; filename: string };
+  | { type: 'promote-stored'; projectId: string; key: string; filename: string }
+  | { type: 'set-cards'; projectId: string; cards: FileCard[] }
+  | { type: 'update-card'; projectId: string; cardId: string; patch: UpdateCardPatch }
+  | {
+      type: 'set-card-categories';
+      projectId: string;
+      categoryOrder?: string | null;
+      expandedCategories?: string | null;
+      categoriesMeta?: string;
+      cards?: FileCard[];
+    }
+  | { type: 'delete-card'; projectId: string; cardId: string }
+  | { type: 'restore-deleted-card'; projectId: string; record: DeletedCardRecord; atEnd?: boolean };
 
 
 function bookkeepingOf(project: DemoProject): BookFileMark {
@@ -189,12 +222,14 @@ function savedProjects(): DemoProject[] | null {
   }
 }
 
-function createState(now: Date): SampleState {
+export function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
-  const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) => ({
-    ...project,
-    origin: project.origin ?? 'demo',
-  }));
+  const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) =>
+    normalizeLoadedProject({
+      ...project,
+      origin: project.origin ?? 'demo',
+    }),
+  );
   const logs = alignToday(demoLogs(), schedule);
   return {
     projects,
@@ -336,8 +371,12 @@ function syncFileLog(
       info: {
         ...extra.info,
         lastOpenedNodeId: nodeId ?? extra.info.lastOpenedNodeId,
-        dailyTargetWordCount: open.goals.at(-1)?.goal ?? extra.info.dailyTargetWordCount,
-        targetWordCount: project.bookGoal,
+        ...(Object.prototype.propertyIsEnumerable.call(extra.info, 'dailyTargetWordCount')
+          ? { dailyTargetWordCount: open.goals.at(-1)?.goal ?? extra.info.dailyTargetWordCount }
+          : {}),
+        ...(Object.prototype.propertyIsEnumerable.call(extra.info, 'targetWordCount')
+          ? { targetWordCount: project.bookGoal }
+          : {}),
       },
       logs,
     },
@@ -356,7 +395,290 @@ function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
   return { ...state, schedule, demoSchedule: schedule };
 }
 
-function reduce(state: SampleState, action: Action): SampleState {
+export function getProjectCards(state: SampleState, projectId: string): FileCard[] {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return [];
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const extra = state.fileExtras[key];
+    if (extra) return extra.cards;
+  }
+  return project.cards ?? [];
+}
+
+export function getProjectCategorySettings(
+  state: SampleState,
+  projectId: string,
+): {
+  categoryOrder: string | null;
+  expandedCategories: string | null;
+  categoriesMeta: string;
+} {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) {
+    return {
+      categoryOrder: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
+      expandedCategories: null,
+      categoriesMeta: '{}',
+    };
+  }
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const extra = state.fileExtras[key];
+    if (extra) {
+      return {
+        categoryOrder: extra.info.categoryOrder,
+        expandedCategories: extra.info.expandedCategories,
+        categoriesMeta: extra.info.categoriesMeta ?? '{}',
+      };
+    }
+  }
+  return {
+    categoryOrder:
+      project.categoryOrderRaw !== undefined
+        ? project.categoryOrderRaw
+        : DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
+    expandedCategories:
+      project.expandedCategoriesRaw !== undefined ? project.expandedCategoriesRaw : null,
+    categoriesMeta: project.categoriesMetaRaw ?? '{}',
+  };
+}
+
+function mergeCardsPreservingAiChat(
+  existingCards: readonly FileCard[],
+  nextCards: readonly FileCard[],
+): FileCard[] {
+  const nextIds = new Set(nextCards.map((c) => c.id));
+  const missingAiChatCards = existingCards.filter(
+    (c) => isHiddenCategory(c.category) && !nextIds.has(c.id),
+  );
+  if (missingAiChatCards.length === 0) {
+    return [...nextCards];
+  }
+  return [...nextCards, ...missingAiChatCards];
+}
+
+function applyProjectCards(
+  state: SampleState,
+  projectId: string,
+  nextCardsResolver: (currentCards: readonly FileCard[], project: DemoProject) => FileCard[],
+): SampleState {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return state;
+  const currentCards = getProjectCards(state, projectId);
+  const resolved = nextCardsResolver(currentCards, project);
+  const merged = mergeCardsPreservingAiChat(currentCards, resolved);
+
+  const key = project.dbKey ?? project.id;
+  const extra = state.fileExtras[key];
+  const nextFileExtras = extra
+    ? {
+        ...state.fileExtras,
+        [key]: {
+          ...extra,
+          cards: merged,
+        },
+      }
+    : state.fileExtras;
+
+  return {
+    ...state,
+    projects: mapProject(state.projects, projectId, (current) => ({
+      ...current,
+      updatedLabel: '剛剛',
+      cards: merged,
+    })),
+    fileExtras: nextFileExtras,
+  };
+}
+
+export function buildFileProjectInfo(state: SampleState, project: DemoProject): FileProjectInfo {
+  const key = project.dbKey ?? project.id;
+  const extra =
+    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
+  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+
+  if (extra?.info) {
+    const src = extra.info;
+    const isEnum = (propKey: keyof FileProjectInfo): boolean =>
+      Object.prototype.propertyIsEnumerable.call(src, propKey);
+
+    const info: FileProjectInfo = { ...src };
+
+    if (isEnum('title') || project.title !== (src.title ?? '未命名稿子')) {
+      info.title = project.title;
+    }
+    if (isEnum('targetWordCount') || project.bookGoal !== (src.targetWordCount ?? 100000)) {
+      info.targetWordCount = project.bookGoal;
+    }
+    if (isEnum('dailyTargetWordCount') || goal !== (src.dailyTargetWordCount ?? 1000)) {
+      info.dailyTargetWordCount = goal;
+    }
+    if (project.categoryOrderRaw !== undefined && project.categoryOrderRaw !== src.categoryOrder) {
+      info.categoryOrder = project.categoryOrderRaw;
+    }
+    if (
+      project.expandedCategoriesRaw !== undefined &&
+      project.expandedCategoriesRaw !== src.expandedCategories
+    ) {
+      info.expandedCategories = project.expandedCategoriesRaw;
+    }
+    if (
+      isEnum('categoriesMeta') ||
+      (project.categoriesMetaRaw !== undefined &&
+        project.categoriesMetaRaw !== (src.categoriesMeta ?? '{}'))
+    ) {
+      info.categoriesMeta = project.categoriesMetaRaw ?? src.categoriesMeta ?? '{}';
+    }
+    if (project.lastOpenedNodeId !== undefined && project.lastOpenedNodeId !== src.lastOpenedNodeId) {
+      info.lastOpenedNodeId = project.lastOpenedNodeId ?? null;
+    }
+    if (
+      isEnum('lastCursorPosition') ||
+      (project.lastCursor !== undefined && project.lastCursor !== (src.lastCursorPosition ?? 0))
+    ) {
+      info.lastCursorPosition = src.lastCursorPosition ?? project.lastCursor ?? 0;
+    }
+    return info;
+  }
+
+  return {
+    title: project.title,
+    logline: '',
+    currentTheme: '',
+    globalFontFamily: '',
+    globalFontSize: 12,
+    editorFontFamily: '',
+    editorFontSize: 16,
+    targetWordCount: project.bookGoal,
+    dailyTargetWordCount: goal,
+    categoryOrder: project.categoryOrderRaw !== undefined ? project.categoryOrderRaw : null,
+    expandedCategories:
+      project.expandedCategoriesRaw !== undefined ? project.expandedCategoriesRaw : null,
+    categoriesMeta: project.categoriesMetaRaw ?? '{}',
+    lastOpenedNodeId: project.lastOpenedNodeId ?? null,
+    lastCursorPosition: project.lastCursor ?? 0,
+  };
+}
+
+export async function deleteProjectCardWithArchive(
+  state: SampleState,
+  dispatch: (action: Action) => void,
+  projectId: string,
+  cardId: string,
+  options?: {
+    deletedAt?: number;
+    recordId?: string;
+    archive?: ArchiveClient;
+  },
+): Promise<DeletedCardRecord | null> {
+  const cards = getProjectCards(state, projectId);
+  const deletedAt = options?.deletedAt ?? Date.now();
+  const recordId = options?.recordId ?? `del-card-${deletedAt}-${cardId}`;
+  const record = deletedFromCard(cards, cardId, deletedAt, recordId);
+  if (!record) return null;
+
+  dispatch({ type: 'delete-card', projectId, cardId });
+  const archive = options?.archive ?? bookArchive;
+  await archive.update(projectId, (current) => archiveCardDeletion(current, record), 'delete');
+  return record;
+}
+
+export async function restoreProjectCardFromArchive(
+  state: SampleState,
+  dispatch: (action: Action) => void,
+  projectId: string,
+  recordOrId: DeletedCardRecord | string,
+  options?: {
+    atEnd?: boolean;
+    archive?: ArchiveClient;
+  },
+): Promise<FileCard[] | null> {
+  const archive = options?.archive ?? bookArchive;
+  let record: DeletedCardRecord | undefined;
+  if (typeof recordOrId === 'string') {
+    const bookData = await archive.read(projectId);
+    record = (bookData.deletedCards ?? []).find(
+      (item) => item.id === recordOrId || item.rootCardId === recordOrId,
+    );
+  } else {
+    record = recordOrId;
+  }
+  if (!record) return null;
+
+  const currentCards = getProjectCards(state, projectId);
+  const settings = getProjectCategorySettings(state, projectId);
+  const visibleIds = resolveVisibleCategories({
+    categoryOrder: settings.categoryOrder,
+    categoriesMeta: settings.categoriesMeta,
+    cards: currentCards,
+  }).map((c) => c.id);
+  const nextCards = placeRecoveredCard(currentCards, record, {
+    atEnd: options?.atEnd ?? false,
+    validCategoryIds: visibleIds,
+  });
+
+  dispatch({
+    type: 'restore-deleted-card',
+    projectId,
+    record,
+    atEnd: options?.atEnd ?? false,
+  });
+  await archive.update(projectId, (current) => archiveCardRestore(current, record.id), 'restore');
+  return nextCards;
+}
+
+export function buildPromotedFileExtras(
+  state: SampleState,
+  project: DemoProject,
+  key: string,
+): { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] } {
+  const existing =
+    state.fileExtras[key] ??
+    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ??
+    state.fileExtras[project.id];
+  if (existing) return existing;
+
+  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  return {
+    info: {
+      title: project.title,
+      logline: '',
+      currentTheme: '',
+      globalFontFamily: '',
+      globalFontSize: 12,
+      editorFontFamily: '',
+      editorFontSize: 16,
+      targetWordCount: project.bookGoal,
+      dailyTargetWordCount: goal,
+      categoryOrder: project.categoryOrderRaw !== undefined ? project.categoryOrderRaw : null,
+      expandedCategories:
+        project.expandedCategoriesRaw !== undefined ? project.expandedCategoriesRaw : null,
+      categoriesMeta: project.categoriesMetaRaw ?? '{}',
+      lastOpenedNodeId: project.lastOpenedNodeId ?? null,
+      lastCursorPosition: project.lastCursor ?? 0,
+    },
+    cards: project.cards
+      ? project.cards.map((card) => ({
+          ...card,
+          ...(card.extraColumns ? { extraColumns: { ...card.extraColumns } } : {}),
+        }))
+      : [],
+    logs: state.logs.map((log) => ({
+      date: log.date,
+      duration: log.duration,
+      word_count: log.word_count,
+      ai_continuation_count: log.ai_continuation_count,
+      ai_continuation_chars: log.ai_continuation_chars,
+      ai_chat_count: log.ai_chat_count,
+      ai_details: log.ai_details ?? '{}',
+      paste_large_count: log.paste_large_count,
+      delete_large_count: log.delete_large_count,
+    })),
+  };
+}
+
+export function reduce(state: SampleState, action: Action): SampleState {
   const now = new Date();
   switch (action.type) {
     case 'toast':
@@ -409,38 +731,7 @@ function reduce(state: SampleState, action: Action): SampleState {
       const project = state.projects.find((item) => item.id === action.projectId);
       if (!project) return state;
       const key = project.dbKey ?? action.key;
-      const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
-      const existing = state.fileExtras[key];
-      const extras = existing ?? {
-        info: {
-          title: project.title,
-          logline: '',
-          currentTheme: '',
-          globalFontFamily: '',
-          globalFontSize: 12,
-          editorFontFamily: '',
-          editorFontSize: 16,
-          targetWordCount: project.bookGoal,
-          dailyTargetWordCount: goal,
-          categoryOrder: null,
-          expandedCategories: null,
-          categoriesMeta: '{}',
-          lastOpenedNodeId: project.lastOpenedNodeId ?? null,
-          lastCursorPosition: project.lastCursor ?? 0,
-        },
-        cards: [],
-        logs: state.logs.map((log) => ({
-          date: log.date,
-          duration: log.duration,
-          word_count: log.word_count,
-          ai_continuation_count: log.ai_continuation_count,
-          ai_continuation_chars: log.ai_continuation_chars,
-          ai_chat_count: log.ai_chat_count,
-          ai_details: log.ai_details ?? '{}',
-          paste_large_count: log.paste_large_count,
-          delete_large_count: log.delete_large_count,
-        })),
-      };
+      const extras = buildPromotedFileExtras(state, project, key);
       return {
         ...state,
         projects: mapProject(state.projects, action.projectId, (current) => ({
@@ -465,8 +756,12 @@ function reduce(state: SampleState, action: Action): SampleState {
         updatedLabel: '剛剛',
         bookGoal: 100000,
         shape: action.shape,
-        lastOpenedNodeId: single ? chapterId : null,
+        lastOpenedNodeId: chapterId,
         lastCursor: 0,
+        cards: [],
+        categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
+        expandedCategoriesRaw: null,
+        categoriesMetaRaw: '{}',
         nodes: [
           {
             id: chapterId,
@@ -491,7 +786,7 @@ function reduce(state: SampleState, action: Action): SampleState {
           ...project,
           nodes: updateNode(project.nodes, action.nodeId, (node) => ({
             ...node,
-            expanded: !node.expanded,
+            expanded: node.expanded === false,
           })),
         })),
       };
@@ -505,15 +800,29 @@ function reduce(state: SampleState, action: Action): SampleState {
           ),
         })),
       };
-    case 'set-book-goal':
+    case 'set-book-goal': {
+      const targetProject = state.projects.find((item) => item.id === action.projectId);
+      const key = targetProject?.dbKey ?? targetProject?.id;
+      const extra = key ? state.fileExtras[key] : undefined;
       return {
         ...state,
         projects: mapProject(state.projects, action.projectId, (project) => ({
           ...project,
           bookGoal: action.bookGoal,
         })),
+        fileExtras:
+          key && extra
+            ? {
+                ...state.fileExtras,
+                [key]: {
+                  ...extra,
+                  info: { ...extra.info, targetWordCount: action.bookGoal },
+                },
+              }
+            : state.fileExtras,
         toast: '已更新全書目標',
       };
+    }
     case 'commit-text': {
       const project = state.projects.find((item) => item.id === action.projectId);
       const node = project ? findNode(project.nodes, action.nodeId) : null;
@@ -558,8 +867,26 @@ function reduce(state: SampleState, action: Action): SampleState {
         fileExtras: bumpFileLog(state, dayKey, (log) => ({ ...log, duration: log.duration + action.seconds })),
       };
     }
-    case 'set-goal':
-      return { ...keepSchedule(state, changeGoal(state.schedule, action.goal, now)), toast: '已更新今日目標' };
+    case 'set-goal': {
+      const nextState = keepSchedule(state, changeGoal(state.schedule, action.goal, now));
+      const active = nextState.projects.find((item) => item.id === nextState.activeProjectId);
+      const key = active?.dbKey ?? active?.id;
+      const extra = active?.origin === 'file' && key ? nextState.fileExtras[key] : undefined;
+      return {
+        ...nextState,
+        fileExtras:
+          key && extra
+            ? {
+                ...nextState.fileExtras,
+                [key]: {
+                  ...extra,
+                  info: { ...extra.info, dailyTargetWordCount: action.goal },
+                },
+              }
+            : nextState.fileExtras,
+        toast: '已更新今日目標',
+      };
+    }
     case 'set-hour':
       return {
         ...keepSchedule(state, changeDayEndHour(state.schedule, action.hour, now)),
@@ -597,10 +924,18 @@ function reduce(state: SampleState, action: Action): SampleState {
       };
     case 'attach-file': {
       if (action.quiet && state.projects.some((item) => item.id === action.project.id)) return state;
+      const cardsCopy = action.extras.cards.map((card) => ({
+        ...card,
+        ...(card.extraColumns ? { extraColumns: { ...card.extraColumns } } : {}),
+      }));
       const project: DemoProject = {
         ...action.project,
         lastOpenedNodeId: action.project.lastOpenedNodeId ?? action.extras.info.lastOpenedNodeId,
         lastCursor: action.project.lastCursor ?? action.extras.info.lastCursorPosition,
+        cards: cardsCopy,
+        categoryOrderRaw: action.extras.info.categoryOrder,
+        expandedCategoriesRaw: action.extras.info.expandedCategories,
+        categoriesMetaRaw: action.extras.info.categoriesMeta,
       };
       const projects = [project, ...state.projects.filter((item) => item.id !== project.id)];
       return {
@@ -608,12 +943,108 @@ function reduce(state: SampleState, action: Action): SampleState {
         projects,
         recentIds: [action.project.id, ...state.recentIds.filter((id) => id !== action.project.id)],
         goalById: { ...state.goalById, [action.project.id]: action.schedule },
-        fileExtras: { ...state.fileExtras, [project.dbKey ?? project.id]: action.extras },
+        fileExtras: {
+          ...state.fileExtras,
+          [project.dbKey ?? project.id]: {
+            ...action.extras,
+            cards: cardsCopy,
+          },
+        },
         activeProjectId: action.quiet ? state.activeProjectId : project.id,
         schedule: action.quiet ? state.schedule : action.schedule,
         logs: action.quiet ? state.logs : fileLogsToRows(action.extras.logs),
         toast: action.quiet ? state.toast : '已匯入檔案',
       };
+    }
+    case 'set-cards':
+      return applyProjectCards(state, action.projectId, () => action.cards);
+    case 'update-card': {
+      const currentCards = getProjectCards(state, action.projectId);
+      const target = currentCards.find((c) => c.id === action.cardId);
+      if (!target || isHiddenCategory(target.category)) return state;
+      const updated = updateCardInList(currentCards, action.cardId, action.patch);
+      return applyProjectCards(state, action.projectId, () => updated);
+    }
+    case 'set-card-categories': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const currentCards = getProjectCards(state, action.projectId);
+      const nextCards =
+        action.cards !== undefined
+          ? mergeCardsPreservingAiChat(currentCards, action.cards)
+          : currentCards;
+      const nextOrder =
+        action.categoryOrder !== undefined
+          ? action.categoryOrder
+          : (project.categoryOrderRaw ?? null);
+      const nextExpanded =
+        action.expandedCategories !== undefined
+          ? action.expandedCategories
+          : (project.expandedCategoriesRaw ?? null);
+      const nextMeta =
+        action.categoriesMeta !== undefined
+          ? action.categoriesMeta
+          : (project.categoriesMetaRaw ?? '{}');
+
+      const key = project.dbKey ?? project.id;
+      const extra = state.fileExtras[key];
+      let nextFileExtras = state.fileExtras;
+      if (extra) {
+        const nextInfo: FileProjectInfo = { ...extra.info };
+        if (action.categoryOrder !== undefined) {
+          nextInfo.categoryOrder = action.categoryOrder;
+        }
+        if (action.expandedCategories !== undefined) {
+          nextInfo.expandedCategories = action.expandedCategories;
+        }
+        if (action.categoriesMeta !== undefined) {
+          nextInfo.categoriesMeta = action.categoriesMeta;
+        }
+        nextFileExtras = {
+          ...state.fileExtras,
+          [key]: {
+            ...extra,
+            info: nextInfo,
+            cards: nextCards,
+          },
+        };
+      }
+
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          updatedLabel: '剛剛',
+          cards: nextCards,
+          ...(action.categoryOrder !== undefined ? { categoryOrderRaw: nextOrder } : {}),
+          ...(action.expandedCategories !== undefined
+            ? { expandedCategoriesRaw: nextExpanded }
+            : {}),
+          ...(action.categoriesMeta !== undefined ? { categoriesMetaRaw: nextMeta } : {}),
+        })),
+        fileExtras: nextFileExtras,
+      };
+    }
+    case 'delete-card': {
+      const currentCards = getProjectCards(state, action.projectId);
+      const target = currentCards.find((c) => c.id === action.cardId);
+      if (!target || isHiddenCategory(target.category)) return state;
+      const remaining = deleteCardFromList(currentCards, action.cardId);
+      return applyProjectCards(state, action.projectId, () => remaining);
+    }
+    case 'restore-deleted-card': {
+      const currentCards = getProjectCards(state, action.projectId);
+      const settings = getProjectCategorySettings(state, action.projectId);
+      const visibleIds = resolveVisibleCategories({
+        categoryOrder: settings.categoryOrder,
+        categoriesMeta: settings.categoriesMeta,
+        cards: currentCards,
+      }).map((c) => c.id);
+      const restored = placeRecoveredCard(currentCards, action.record, {
+        atEnd: action.atEnd ?? false,
+        validCategoryIds: visibleIds,
+      });
+      return applyProjectCards(state, action.projectId, () => restored);
     }
     case 'set-nodes':
       return {
@@ -661,6 +1092,34 @@ interface SampleActions {
   setBookGoal: (projectId: string, bookGoal: number) => void;
   addScene: (projectId: string, chapterId: string) => void;
   setNodes: (projectId: string, nodes: DemoProject['nodes']) => void;
+  setCards: (projectId: string, cards: FileCard[]) => void;
+  updateCard: (projectId: string, cardId: string, patch: UpdateCardPatch) => void;
+  setCardCategories: (
+    projectId: string,
+    payload: {
+      categoryOrder?: string | null;
+      expandedCategories?: string | null;
+      categoriesMeta?: string;
+      cards?: FileCard[];
+    },
+  ) => void;
+  deleteCard: (
+    projectId: string,
+    cardId: string,
+    options?: {
+      deletedAt?: number;
+      recordId?: string;
+      archive?: ArchiveClient;
+    },
+  ) => Promise<DeletedCardRecord | null>;
+  restoreDeletedCard: (
+    projectId: string,
+    recordOrId: DeletedCardRecord | string,
+    options?: {
+      atEnd?: boolean;
+      archive?: ArchiveClient;
+    },
+  ) => Promise<FileCard[] | null>;
   focusProject: (id: string) => void;
   attachImported: (payload: {
     project: DemoProject;
@@ -720,24 +1179,9 @@ async function snapshotManuscript(
   persist = true,
 ): Promise<{ key: string; bytes: Uint8Array }> {
   const key = project.dbKey ?? project.id;
-  const extra = project.dbKey ? state.fileExtras[project.dbKey] : undefined;
-  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
-  const info: FileProjectInfo = {
-    title: project.title,
-    logline: extra?.info.logline ?? '',
-    currentTheme: extra?.info.currentTheme ?? '',
-    globalFontFamily: extra?.info.globalFontFamily ?? '',
-    globalFontSize: extra?.info.globalFontSize ?? 12,
-    editorFontFamily: extra?.info.editorFontFamily ?? '',
-    editorFontSize: extra?.info.editorFontSize ?? 16,
-    targetWordCount: project.bookGoal,
-    dailyTargetWordCount: goal,
-    categoryOrder: extra?.info.categoryOrder ?? null,
-    expandedCategories: extra?.info.expandedCategories ?? null,
-    categoriesMeta: extra?.info.categoriesMeta ?? '{}',
-    lastOpenedNodeId: extra?.info.lastOpenedNodeId ?? project.lastOpenedNodeId ?? null,
-    lastCursorPosition: extra?.info.lastCursorPosition ?? project.lastCursor ?? 0,
-  };
+  const extra =
+    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
+  const info = buildFileProjectInfo(state, project);
   const logs: FileLog[] = extra?.logs ?? state.logs.map((log) => ({
     date: log.date,
     duration: log.duration,
@@ -755,7 +1199,7 @@ async function snapshotManuscript(
     project.title,
     info,
     project.nodes,
-    extra?.cards ?? [],
+    extra?.cards ?? project.cards ?? [],
     logs,
     bookkeepingOf(project),
     persist,
@@ -869,7 +1313,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         project.dbKey!,
         localDbFilename(project.title, project.filename),
         project.title,
-        { ...extra.info, title: project.title, targetWordCount: project.bookGoal },
+        buildFileProjectInfo(state, project),
         project.nodes,
         extra.cards,
         extra.logs,
@@ -948,6 +1392,15 @@ export function SampleProvider({ children }: { children: ReactNode }) {
       addScene: (projectId, chapterId) =>
         dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
       setNodes: (projectId, nodes) => dispatch({ type: 'set-nodes', projectId, nodes }),
+      setCards: (projectId, cards) => dispatch({ type: 'set-cards', projectId, cards }),
+      updateCard: (projectId, cardId, patch) =>
+        dispatch({ type: 'update-card', projectId, cardId, patch }),
+      setCardCategories: (projectId, payload) =>
+        dispatch({ type: 'set-card-categories', projectId, ...payload }),
+      deleteCard: (projectId, cardId, options) =>
+        deleteProjectCardWithArchive(stateRef.current, dispatch, projectId, cardId, options),
+      restoreDeletedCard: (projectId, recordOrId, options) =>
+        restoreProjectCardFromArchive(stateRef.current, dispatch, projectId, recordOrId, options),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {

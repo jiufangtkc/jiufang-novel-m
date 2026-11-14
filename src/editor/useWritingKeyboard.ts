@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { PHONE_LANDSCAPE_MAX_HEIGHT } from '../layout';
 
 /** 寬度達到這個值就當成電腦版，聚焦也不收起底部分頁。 */
 export const DESKTOP_LAYOUT_WIDTH = 768;
@@ -18,8 +19,8 @@ export function shouldUseCompactWritingLayout(input: {
   return true;
 }
 
-/** 手機螢幕短邊上限。iPhone 最大約 440，平板短邊從 768 起。 */
-export const PHONE_SHORT_EDGE_MAX = 500;
+/** 手機螢幕短邊上限。iPhone 最大約 440，平板短邊從 768 起。對齊 WO-54 橫拿門檻（500）。 */
+export const PHONE_SHORT_EDGE_MAX = PHONE_LANDSCAPE_MAX_HEIGHT;
 
 /**
  * 橫放時可見高度低於這個值，才當成鍵盤開著。

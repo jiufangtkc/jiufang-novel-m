@@ -111,4 +111,174 @@ describe('章節目錄文案', () => {
     expect(treeMoreSummary(TREE_KIND_CHAPTER, 0, 2, '3,280')).toBe('章 · 2 幕 · 共 3,280 字');
     expect(treeMoreSummary(TREE_KIND_VOLUME, 3, 2, '3,280')).toBe('卷 · 3 章 · 2 幕 · 共 3,280 字');
   });
+
+  it('資料集試看版文案（WO-45、WO-50 定案）', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.SAMPLE_CARDS_NOTICE).toBe('範例卡片，之後會換成這份稿子的卡片');
+    expect(copy.CARDS_HEADING).toBe('資料集');
+    expect(copy.BACK_TO_CATEGORIES_ARIA).toBe('返回分類清單');
+    expect(copy.BACK_TO_CARDS_ARIA).toBe('返回卡片清單');
+    expect(copy.categoryRowAria('角色', 5)).toBe('角色，5 張卡片');
+    expect(copy.cardCollapseAria('沈雨晴')).toBe('收合「沈雨晴」子卡片');
+    expect(copy.cardExpandAria('沈雨晴')).toBe('展開「沈雨晴」子卡片');
+    expect(copy.cardDetailAria('沈雨晴')).toBe('看「沈雨晴」卡片內容');
+    expect(copy.VIEW_CARDS_BUTTON).toBe('看卡片');
+    expect(copy.CLOSE_CARDS_ARIA).toBe('關閉資料集');
+    expect(copy.EMPTY_CARD_CONTENT_MESSAGE).toBe('這張卡片還沒有內容。');
+    expect(copy.UNTITLED_CARD_TITLE).toBe('未命名卡片');
+    expect(copy.displayCardTitle('沈雨晴')).toBe('沈雨晴');
+    expect(copy.displayCardTitle('')).toBe('未命名卡片');
+    expect(copy.displayCardTitle('   ')).toBe('未命名卡片');
+    expect(copy.displayCardTitle(null)).toBe('未命名卡片');
+    expect(copy.cardDetailAria('')).toBe('看「未命名卡片」卡片內容');
+    expect(copy.cardDetailAria('   ')).toBe('看「未命名卡片」卡片內容');
+  });
+
+  it('WO-56：四種版面資料集定案文字', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.CARDS_READONLY_BADGE).toBe('只能看');
+    expect(copy.CARDS_EMPTY_CATEGORY_HINT).toBe('請選擇分類');
+    expect(copy.CARDS_EMPTY_IN_CATEGORY_HINT).toBe('這個分類還沒有卡片。');
+    expect(copy.CARDS_EMPTY_CARD_HINT).toBe('請選擇卡片');
+    expect(copy.CARDS_COLUMN_CATEGORIES).toBe('分類');
+    expect(copy.CARDS_COLUMN_CARDS).toBe('卡片清單');
+    expect(copy.CARDS_COLUMN_CONTENT).toBe('卡片內容');
+    expect(copy.CARDS_PREVIEW_EMPTY_HINT).toBe('這份稿子還沒有正文。');
+    expect(copy.cardsSubcardsCountLabel(2)).toBe('子卡片\u30002 張');
+    expect(copy.cardsCountLabel(4)).toBe('4 張');
+  });
+
+  it('WO-57：介面用字常數定案（專注模式、收合目錄、展開目錄、資料集）', async () => {
+    const copy = await import('./userFacing');
+    expect(copy.FOCUS_MODE_ENTER_BUTTON).toBe('專注模式');
+    expect(copy.FOCUS_MODE_EXIT_BUTTON).toBe('離開專注模式');
+    expect(copy.CLOSE_CHAPTER_TREE_ARIA).toBe('收合目錄');
+    expect(copy.FLOATING_CHAPTER_TREE_ARIA).toBe('展開目錄');
+    expect(copy.CARDS_PANEL_ARIA).toBe('資料集');
+    expect(copy.OPEN_CHAPTER_TREE_ARIA).toBe('展開目錄');
+    expect(copy.BACK_TO_CHAPTER_TREE_ARIA).toBe('返回目錄');
+    expect(copy.TREE_DRAWER_BUTTON).toBe('目錄');
+    expect(copy.VIEW_CARDS_BUTTON).toBe('看卡片');
+    expect(copy.CLOSE_CARDS_ARIA).toBe('關閉資料集');
+  });
+
+  it('WO-57：今天字數統計標籤（有目標、無目標、四位數千分位、0 字驗證）', async () => {
+    const { todayWordsLabel } = await import('./userFacing');
+
+    // 1. 有每日目標：全形斜線「／」，四位數以上加千分位
+    expect(todayWordsLabel(620, 1000)).toBe('今天 620／1,000 字');
+    expect(todayWordsLabel(1234, 10000)).toBe('今天 1,234／10,000 字');
+    expect(todayWordsLabel(0, 1000)).toBe('今天 0／1,000 字');
+    expect(todayWordsLabel(12345, 20000)).toBe('今天 12,345／20,000 字');
+    expect(todayWordsLabel('620', '1,000')).toBe('今天 620／1,000 字');
+    expect(todayWordsLabel('1,234', 10000)).toBe('今天 1,234／10,000 字');
+
+    // 2. 沒設每日目標（無 goal 或 goal 為 null / undefined / 0）：顯示「今天 N 字」
+    expect(todayWordsLabel(620)).toBe('今天 620 字');
+    expect(todayWordsLabel(620, null)).toBe('今天 620 字');
+    expect(todayWordsLabel(620, undefined)).toBe('今天 620 字');
+    expect(todayWordsLabel(620, 0)).toBe('今天 620 字');
+    expect(todayWordsLabel(0)).toBe('今天 0 字');
+    expect(todayWordsLabel(0, null)).toBe('今天 0 字');
+    expect(todayWordsLabel(1234)).toBe('今天 1,234 字');
+    expect(todayWordsLabel(12345)).toBe('今天 12,345 字');
+    expect(todayWordsLabel('1,234')).toBe('今天 1,234 字');
+  });
+
+  it('WO-59：資料集與底列用字定案（CARDS_PREVIEW_EMPTY_HINT、cardsSubcardsCountLabel 全形空白、DailyProgressBar 標籤函式）', async () => {
+    const copy = await import('./userFacing');
+
+    // 1. CARDS_PREVIEW_EMPTY_HINT 定案為「這份稿子還沒有正文。」
+    expect(copy.CARDS_PREVIEW_EMPTY_HINT).toBe('這份稿子還沒有正文。');
+
+    // 2. cardsSubcardsCountLabel(n) 中間使用全形空白 U+3000
+    expect(copy.cardsSubcardsCountLabel(3)).toBe('子卡片\u30003 張');
+    expect(copy.cardsSubcardsCountLabel(3)).toBe('子卡片\u{3000}3 張');
+    expect(copy.cardsSubcardsCountLabel(1)).toBe('子卡片\u30001 張');
+    expect(copy.cardsSubcardsCountLabel(1000)).toBe('子卡片\u30001,000 張');
+
+    // 3. dailyProgressWordsLabel 未達標與達標前後綴、四位數千分位
+    expect(copy.dailyProgressWordsLabel(300, false)).toBe('今天寫了 300 字');
+    expect(copy.dailyProgressWordsLabel(300, true)).toBe('✦ 今天寫了 300 字，已達標');
+    expect(copy.dailyProgressWordsLabel(12345, false)).toBe('今天寫了 12,345 字');
+    expect(copy.dailyProgressWordsLabel(12345, true)).toBe('✦ 今天寫了 12,345 字，已達標');
+    expect(copy.dailyProgressWordsLabel(0, false)).toBe('今天寫了 0 字');
+
+    // 4. dailyProgressGoalLabel 每日目標與千分位
+    expect(copy.dailyProgressGoalLabel(1000)).toBe('每日目標 1,000 字');
+    expect(copy.dailyProgressGoalLabel(10000)).toBe('每日目標 10,000 字');
+    expect(copy.dailyProgressGoalLabel(500)).toBe('每日目標 500 字');
+
+    // 5. WO-56 其餘文字保持不變
+    expect(copy.CARDS_READONLY_BADGE).toBe('只能看');
+    expect(copy.CARDS_EMPTY_CATEGORY_HINT).toBe('請選擇分類');
+    expect(copy.CARDS_EMPTY_IN_CATEGORY_HINT).toBe('這個分類還沒有卡片。');
+    expect(copy.CARDS_EMPTY_CARD_HINT).toBe('請選擇卡片');
+    expect(copy.CARDS_COLUMN_CATEGORIES).toBe('分類');
+    expect(copy.CARDS_COLUMN_CARDS).toBe('卡片清單');
+    expect(copy.CARDS_COLUMN_CONTENT).toBe('卡片內容');
+    expect(copy.cardsCountLabel(4)).toBe('4 張');
+  });
+
+  it('WO-60：統計匯入匯出預留與檔案頁分組用字定案', async () => {
+    const copy = await import('./userFacing');
+
+    // 1. 檔案頁三組標題
+    expect(copy.FILES_GROUP_SAVE).toBe('存檔');
+    expect(copy.FILES_GROUP_OPEN_CLOSE).toBe('開啟與關閉');
+    expect(copy.FILES_GROUP_IMPORT_EXPORT).toBe('匯入與匯出');
+    expect(copy.FILES_GROUP_OPEN_CLOSE).not.toBe('開稿');
+
+    // 2. 準備中標籤與提示
+    expect(copy.PREPARING_BADGE).toBe('準備中');
+    expect(copy.FEATURE_IN_PREPARATION).toBe('功能還在準備中。');
+
+    // 3. 檔案頁按鈕與說明文字
+    expect(copy.IMPORT_TEXT_FILE_BUTTON).toBe('匯入文字檔');
+    expect(copy.IMPORT_TEXT_FILE_HINT).toBe('把文字檔的內容加進這份稿子');
+    expect(copy.EXPORT_FULL_TEXT_BUTTON).toBe('匯出全文');
+    expect(copy.EXPORT_FULL_TEXT_HINT).toBe('把整份稿子匯出成一個 TXT 或 Markdown 檔');
+
+    // 4. 統計頁區塊與說明小字
+    expect(copy.STATS_IMPORT_EXPORT_HEADING).toBe('匯入與匯出');
+    expect(copy.STATS_IMPORT_EXPORT_SCOPE_HINT).toBe('只算匯入文字檔、匯出全文的次數');
+    expect(copy.STATS_IMPORT_COUNT_LABEL).toBe('匯入 次數');
+    expect(copy.STATS_EXPORT_COUNT_LABEL).toBe('匯出 次數');
+
+    // 5. 紀錄卡匯入匯出標籤（全形空白與預設破折號）
+    expect(copy.logImportCountLabel()).toBe('匯入\u3000— 次');
+    expect(copy.logImportCountLabel(null)).toBe('匯入\u3000— 次');
+    expect(copy.logImportCountLabel('—')).toBe('匯入\u3000— 次');
+    expect(copy.logImportCountLabel(3)).toBe('匯入\u30003 次');
+    expect(copy.logImportCountLabel(1000)).toBe('匯入\u30001,000 次');
+
+    expect(copy.logExportCountLabel()).toBe('匯出\u3000— 次');
+    expect(copy.logExportCountLabel(null)).toBe('匯出\u3000— 次');
+    expect(copy.logExportCountLabel('—')).toBe('匯出\u3000— 次');
+    expect(copy.logExportCountLabel(2)).toBe('匯出\u30002 次');
+    expect(copy.logExportCountLabel(2000)).toBe('匯出\u30002,000 次');
+
+    // 6. 新文字絕不可含有「.db」或「開稿」
+    const newTexts = [
+      copy.FILES_GROUP_SAVE,
+      copy.FILES_GROUP_OPEN_CLOSE,
+      copy.FILES_GROUP_IMPORT_EXPORT,
+      copy.PREPARING_BADGE,
+      copy.FEATURE_IN_PREPARATION,
+      copy.IMPORT_TEXT_FILE_BUTTON,
+      copy.IMPORT_TEXT_FILE_HINT,
+      copy.EXPORT_FULL_TEXT_BUTTON,
+      copy.EXPORT_FULL_TEXT_HINT,
+      copy.STATS_IMPORT_EXPORT_HEADING,
+      copy.STATS_IMPORT_EXPORT_SCOPE_HINT,
+      copy.STATS_IMPORT_COUNT_LABEL,
+      copy.STATS_EXPORT_COUNT_LABEL,
+      copy.logImportCountLabel(),
+      copy.logExportCountLabel(),
+    ];
+    for (const text of newTexts) {
+      expect(text).not.toContain('.db');
+      expect(text).not.toContain('開稿');
+    }
+  });
 });

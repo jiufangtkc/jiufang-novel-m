@@ -1,0 +1,378 @@
+.card-editor-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background-color: var(--panel, #1e1e1e);
+  color: var(--text, #d4d4d4);
+  box-sizing: border-box;
+}
+
+.card-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border, #333);
+  min-height: 48px;
+}
+
+.card-editor-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.card-editor-saved-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted, #8c8c8c);
+}
+
+.card-preview-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-preview-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-editor-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.card-preview-body {
+  gap: 20px;
+}
+
+.card-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-detail-heading {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text, #ffffff);
+}
+
+.card-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.card-editor-preview-content {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text, #d4d4d4);
+}
+
+.card-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-editor-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted, #8c8c8c);
+}
+
+.card-editor-input {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 1rem;
+  background-color: var(--input-bg, #141414);
+  color: var(--text, #d4d4d4);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.card-editor-input:focus {
+  outline: none;
+  border-color: var(--primary, #007acc);
+}
+
+.card-editor-color-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  background-color: var(--input-bg, #141414);
+  color: var(--text, #d4d4d4);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.card-editor-color-btn:hover {
+  background-color: var(--button-hover, #2a2a2a);
+}
+
+.card-color-indicator-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: inline-block;
+}
+
+.card-editor-color-hex {
+  margin-left: auto;
+  font-family: monospace;
+  color: var(--text-muted, #8c8c8c);
+}
+
+.card-editor-textarea {
+  flex: 1;
+  min-height: 200px;
+  padding: 12px;
+  font-size: 1rem;
+  line-height: 1.6;
+  background-color: var(--input-bg, #141414);
+  color: var(--text, #d4d4d4);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.card-editor-textarea:focus {
+  outline: none;
+  border-color: var(--primary, #007acc);
+}
+
+.card-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border, #333);
+  background-color: var(--panel, #1e1e1e);
+}
+
+.card-editor-thumb-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.card-editor-done-btn {
+  min-height: 44px;
+  min-width: 100px;
+  padding: 0 20px;
+  background-color: var(--primary, #007acc);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-done-btn:hover {
+  background-color: var(--primary-hover, #0062a3);
+}
+
+.card-editor-cancel-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  background-color: transparent;
+  color: var(--text-muted, #8c8c8c);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-cancel-btn:hover {
+  background-color: var(--button-bg, #2a2a2a);
+  color: var(--text, #d4d4d4);
+}
+
+.card-editor-edit-btn {
+  min-height: 44px;
+  min-width: 80px;
+  padding: 0 16px;
+  background-color: var(--primary, #007acc);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-edit-btn:hover {
+  background-color: var(--primary-hover, #0062a3);
+}
+
+.card-editor-more-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 8px;
+  background-color: transparent;
+  color: var(--text-muted, #8c8c8c);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-more-btn:hover {
+  background-color: var(--button-bg, #2a2a2a);
+  color: var(--text, #d4d4d4);
+}
+
+.card-preview-thumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.card-editor-thumb-edit-btn {
+  flex: 1;
+  min-height: 48px;
+  height: 48px;
+  background-color: var(--primary, #007acc);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-thumb-edit-btn:hover {
+  background-color: var(--primary-hover, #0062a3);
+}
+
+.card-editor-thumb-more-btn {
+  min-width: 48px;
+  min-height: 48px;
+  height: 48px;
+  background-color: var(--button-bg, #2a2a2a);
+  color: var(--text, #d4d4d4);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-thumb-more-btn:hover {
+  background-color: var(--button-hover, #383838);
+}
+
+/* 子卡片清單樣式 */
+.cards-subcards-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border, #333);
+}
+
+.cards-subcards-heading {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted, #8c8c8c);
+  margin-bottom: 8px;
+}
+
+.cards-subcards-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cards-subcard-item {
+  margin: 0;
+  padding: 0;
+}
+
+.cards-subcard-button {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  background-color: var(--button-bg, #252525);
+  color: var(--text, #d4d4d4);
+  border: 1px solid var(--border, #3c3c3c);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.cards-subcard-button:hover {
+  background-color: var(--button-hover, #333);
+}
+
+.cards-subcard-title {
+  font-size: 0.95rem;
+}
+
+.cards-subcard-chevron {
+  color: var(--text-muted, #8c8c8c);
+  font-size: 1.1rem;
+}
+
+/* 橫拿排版：標題與顏色並排 */
+.card-editor-row-landscape {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.card-editor-row-landscape .card-editor-field-title {
+  flex: 1;
+}
+
+.card-editor-row-landscape .card-editor-field-color {
+  width: 200px;
+}

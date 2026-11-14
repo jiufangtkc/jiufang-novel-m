@@ -1,9 +1,27 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
-import { BackIcon } from '../components/Icons';
+import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
-import { EDITOR_PLACEHOLDER, TREE_NEXT_CHAPTER, TREE_PREV_CHAPTER } from '../copy/userFacing';
+import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
+import {
+  FOCUS_MODE_LANDSCAPE_ENTER_ARIA,
+  FOCUS_MODE_THUMB_ENTER_LABEL,
+} from '../copy/focusModeCopy';
+import {
+  EDITOR_PLACEHOLDER,
+  FLOATING_CHAPTER_TREE_ARIA,
+  FLOATING_VIEW_CARDS_ARIA,
+  FOCUS_MODE_ENTER_BUTTON,
+  FOCUS_MODE_EXIT_BUTTON,
+  BACK_TO_CHAPTER_TREE_ARIA,
+  OPEN_CHAPTER_TREE_ARIA,
+  todayWordsLabel,
+  TREE_DRAWER_BUTTON,
+  TREE_NEXT_CHAPTER,
+  TREE_PREV_CHAPTER,
+  VIEW_CARDS_BUTTON,
+} from '../copy/userFacing';
 import { bookArchive } from '../db/chapterArchive';
 import type { ChapterNode } from '../data/demo';
 import { canPickLocalFiles } from '../db/browserDisk';
@@ -12,12 +30,34 @@ import { sessionVersions, VERSION_INTERVAL_MS, withVersion } from '../domain/cha
 import { countManuscriptWords } from '../domain/manuscriptWords';
 import { latestSaveTimestamp } from '../domain/saveClock';
 import { countWords } from '../domain/wordCount';
+import {
+  captureCaretSnapshot,
+  COMPOSITION_TIMEOUT_MS,
+  handleCardsPointerDown,
+  restoreCaretSnapshot,
+  shouldCancelPendingOpen,
+  type WritingCaretSnapshot,
+} from '../domain/writingCards';
 import { revealCaret } from '../editor/caret';
 import { focusWritingBody } from '../editor/focusWriting';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
+import {
+  applyBodyFontCaretAnchor,
+  bodyFontCaretNeedsScroll,
+  rememberBodyFontCaret,
+} from '../layout/bodyFontScale';
+import {
+  CompositionActionQueue,
+  handleEditorLayoutChange,
+  INITIAL_LANDSCAPE_EXIT_STATE,
+  LANDSCAPE_EXIT_TIMEOUT_MS,
+  landscapeExitReducer,
+  useLayout,
+} from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
 import { editorSaveStatus } from './editorSaveStatus';
+import './focusMode.css';
 
 export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
   const navigate = useNavigate();
@@ -59,16 +99,171 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   const prevId = project ? neighborChapterId(project.nodes, chapter.id, -1) : null;
   const nextId = project ? neighborChapterId(project.nodes, chapter.id, 1) : null;
 
+  const [isCardsOpen, setIsCardsOpen] = useState(false);
+  const {
+    mode: layoutMode,
+    sidePanels,
+    openPanel,
+    closePanel,
+    togglePanel,
+    focusMode,
+    enterFocusMode,
+    exitFocusMode,
+    bodyFontScale,
+  } = useLayout();
+  const bodyFontScaleRef = useRef(bodyFontScale);
+  bodyFontScaleRef.current = bodyFontScale;
+  const prevLayoutModeRef = useRef(layoutMode);
+  const prevFocusModeRef = useRef(focusMode);
+  const compositionQueue = useRef(new CompositionActionQueue()).current;
+  const caretSnapshotRef = useRef<WritingCaretSnapshot | null>(null);
+  const capturedSnapshotRef = useRef<WritingCaretSnapshot | null>(null);
+  const isComposingRef = useRef(false);
+  const pendingOpenAfterCompositionRef = useRef(false);
+  const pendingTimerRef = useRef<number | null>(null);
+
+  const [landscapeExitState, setLandscapeExitState] = useState(INITIAL_LANDSCAPE_EXIT_STATE);
+  const landscapeExitTimerRef = useRef<number | null>(null);
+
+  const clearLandscapeExitTimer = () => {
+    if (landscapeExitTimerRef.current !== null) {
+      window.clearTimeout(landscapeExitTimerRef.current);
+      landscapeExitTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    if (!focusMode) {
+      clearLandscapeExitTimer();
+      setLandscapeExitState(INITIAL_LANDSCAPE_EXIT_STATE);
+    }
+  }, [focusMode, layoutMode]);
+
+  useEffect(() => {
+    return () => {
+      clearLandscapeExitTimer();
+    };
+  }, []);
+
+  const handleExitClick = () => {
+    if (layoutMode === 'phone-landscape') {
+      const result = landscapeExitReducer(landscapeExitState, { type: 'click' });
+      setLandscapeExitState(result.nextState);
+      if (result.shouldExit) {
+        clearLandscapeExitTimer();
+        exitFocusMode();
+      } else {
+        clearLandscapeExitTimer();
+        landscapeExitTimerRef.current = window.setTimeout(() => {
+          setLandscapeExitState((prev) => landscapeExitReducer(prev, { type: 'collapse' }).nextState);
+        }, LANDSCAPE_EXIT_TIMEOUT_MS);
+      }
+    } else {
+      exitFocusMode();
+    }
+  };
+
+  const clearPendingComposition = () => {
+    pendingOpenAfterCompositionRef.current = false;
+    if (pendingTimerRef.current !== null) {
+      window.clearTimeout(pendingTimerRef.current);
+      pendingTimerRef.current = null;
+    }
+  };
+
+  const setPendingComposition = () => {
+    clearPendingComposition();
+    pendingOpenAfterCompositionRef.current = true;
+    pendingTimerRef.current = window.setTimeout(() => {
+      clearPendingComposition();
+    }, COMPOSITION_TIMEOUT_MS);
+  };
+
+  useEffect(() => {
+    return () => {
+      clearPendingComposition();
+    };
+  }, [chapter.id]);
+
+  const handleButtonPointerDown = (e: React.PointerEvent) => {
+    const isTextareaActive = Boolean(
+      ref.current && (document.activeElement === ref.current || focused),
+    );
+    const result = handleCardsPointerDown(isComposingRef.current);
+    if (result.preventDefault) {
+      e.preventDefault();
+      setPendingComposition();
+      capturedSnapshotRef.current = captureCaretSnapshot(ref.current, true);
+    } else {
+      capturedSnapshotRef.current = captureCaretSnapshot(ref.current, isTextareaActive);
+    }
+  };
+
+  const openCards = () => {
+    if (pendingOpenAfterCompositionRef.current) return;
+    const snapshot =
+      capturedSnapshotRef.current ?? captureCaretSnapshot(ref.current, focused);
+    capturedSnapshotRef.current = null;
+    caretSnapshotRef.current = snapshot;
+    setIsCardsOpen(true);
+    openPanel('right');
+  };
+
+  const closeCards = () => {
+    clearPendingComposition();
+    setIsCardsOpen(false);
+    closePanel('right');
+    restoreCaretSnapshot(ref.current, caretSnapshotRef.current);
+    caretSnapshotRef.current = null;
+    capturedSnapshotRef.current = null;
+  };
+
+  const toggleCards = () => {
+    if (isCardsOpen || sidePanels.right) {
+      closeCards();
+    } else {
+      openCards();
+    }
+  };
+
+  useEffect(() => {
+    if (sidePanels.right && !isCardsOpen) {
+      setIsCardsOpen(true);
+    } else if (!sidePanels.right && isCardsOpen) {
+      setIsCardsOpen(false);
+    }
+  }, [sidePanels.right, isCardsOpen]);
+
   const placedCursor = useRef<string | null>(null);
   useLayoutEffect(() => {
-    if (placedCursor.current === chapter.id) return;
     const el = ref.current;
     if (!el || !project) return;
-    placedCursor.current = chapter.id;
-    if (project.lastOpenedNodeId !== chapter.id) return;
-    const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
-    el.setSelectionRange(cursor, cursor);
-  }, [chapter.id, project, ref]);
+    if (placedCursor.current !== chapter.id) {
+      placedCursor.current = chapter.id;
+      if (project.lastOpenedNodeId === chapter.id) {
+        const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
+        el.setSelectionRange(cursor, cursor);
+      }
+    }
+    // 字級變了才把游標那一行捲回原來的高度。平常打字不進這裡。
+    // 組字中先排隊，不改選取、不改文字。
+    if (!bodyFontCaretNeedsScroll(bodyFontScale, el.selectionStart ?? 0)) return;
+    handleEditorLayoutChange({
+      textarea: el,
+      isComposing: isComposingRef.current,
+      queue: compositionQueue,
+      revealFn: (node) => {
+        applyBodyFontCaretAnchor(node, bodyFontScaleRef.current);
+      },
+    });
+  }, [chapter.id, project, bodyFontScale, ref]);
+
+  useLayoutEffect(() => {
+    const textarea = ref.current;
+    return () => {
+      if (textarea) rememberBodyFontCaret(textarea, bodyFontScaleRef.current);
+    };
+  }, [ref]);
 
   useEffect(() => {
     const textarea = ref.current;
@@ -119,6 +314,30 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     if ((keyboardOpen || keyboard.landscape) && ref.current) revealCaret(ref.current);
   }, [keyboardOpen, keyboard.landscape, ref]);
 
+  useLayoutEffect(() => {
+    if (prevLayoutModeRef.current !== layoutMode) {
+      prevLayoutModeRef.current = layoutMode;
+      handleEditorLayoutChange({
+        textarea: ref.current,
+        isComposing: isComposingRef.current,
+        queue: compositionQueue,
+        revealFn: revealCaret,
+      });
+    }
+  }, [layoutMode, ref]);
+
+  useLayoutEffect(() => {
+    if (prevFocusModeRef.current !== focusMode) {
+      prevFocusModeRef.current = focusMode;
+      handleEditorLayoutChange({
+        textarea: ref.current,
+        isComposing: isComposingRef.current,
+        queue: compositionQueue,
+        revealFn: revealCaret,
+      });
+    }
+  }, [focusMode, ref]);
+
   useEffect(() => {
     if (!focusWriting || didFocusBody.current) return;
     if (focusWritingBody(ref.current)) didFocusBody.current = true;
@@ -134,19 +353,117 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     navigate(`/p/${projectId}/write/${id}`);
   }
 
+  const isYieldLeft =
+    (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.left;
+  const isYieldRight =
+    (layoutMode === 'phone-landscape' || layoutMode === 'medium') &&
+    (sidePanels.right || isCardsOpen);
+
   return (
-    <div className={keyboardOpen ? 'editor is-keyboard' : 'editor'} data-testid="editor">
+    <div
+      className={[
+        keyboardOpen ? 'editor is-keyboard' : 'editor',
+        focusMode ? 'is-focus-mode' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      data-testid="editor"
+      data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
+      data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
+    >
+      <button
+        type="button"
+        className={['focus-exit-button', landscapeExitState.expanded ? 'is-expanded' : '']
+          .filter(Boolean)
+          .join(' ')}
+        aria-label={FOCUS_MODE_EXIT_BUTTON}
+        onClick={handleExitClick}
+        data-testid="exit-focus-mode"
+      >
+        {FOCUS_MODE_EXIT_BUTTON}
+      </button>
       <header className="topbar">
         <button
           type="button"
           className="icon-button back-button"
-          aria-label="返回目錄"
+          aria-label={BACK_TO_CHAPTER_TREE_ARIA}
           onClick={() => navigate(`/p/${projectId}/write`)}
+          data-testid="back-button"
         >
           <BackIcon />
         </button>
+        <button
+          type="button"
+          className="icon-button topbar-tree-button"
+          aria-label={OPEN_CHAPTER_TREE_ARIA}
+          onClick={() => togglePanel('left')}
+          data-testid="toggle-tree-topbar"
+        >
+          <ListTreeIcon size={20} />
+          <span className="tree-toggle-label">{TREE_DRAWER_BUTTON}</span>
+        </button>
         <h1>{chapter.title}</h1>
+        <div className="topbar-stats" data-testid="topbar-stats">
+          <span className="topbar-words" data-testid="topbar-words">
+            {todayWordsLabel(todayWords, goal)}
+          </span>
+          <span className="topbar-save" data-testid="topbar-save">
+            {saveStatus.label}
+          </span>
+        </div>
+        <button
+          type="button"
+          className="focus-enter-button"
+          aria-label={FOCUS_MODE_ENTER_BUTTON}
+          onClick={enterFocusMode}
+          data-testid="enter-focus-mode"
+        >
+          <FocusIcon size={18} />
+          <span className="focus-enter-label">{FOCUS_MODE_ENTER_BUTTON}</span>
+        </button>
+        <button
+          type="button"
+          className="view-cards-button"
+          aria-label={VIEW_CARDS_BUTTON}
+          onPointerDown={handleButtonPointerDown}
+          onClick={toggleCards}
+          data-testid="toggle-cards-topbar"
+        >
+          <CardsIcon size={20} />
+          <span className="view-cards-label">{VIEW_CARDS_BUTTON}</span>
+        </button>
       </header>
+      <button
+        type="button"
+        className="floating-tree-trigger"
+        aria-label={FLOATING_CHAPTER_TREE_ARIA}
+        onClick={() => togglePanel('left')}
+        data-testid="toggle-tree-floating"
+      >
+        <ListTreeIcon size={20} />
+        <span className="floating-button-label">{FLOATING_CHAPTER_TREE_ARIA}</span>
+      </button>
+      <button
+        type="button"
+        className="landscape-cards-trigger"
+        aria-label={FLOATING_VIEW_CARDS_ARIA}
+        onPointerDown={handleButtonPointerDown}
+        onClick={toggleCards}
+        data-testid="toggle-cards-landscape"
+      >
+        <CardsIcon size={18} />
+        <span>{VIEW_CARDS_BUTTON}</span>
+      </button>
+      <button
+        type="button"
+        className="landscape-focus-trigger"
+        aria-label={FOCUS_MODE_LANDSCAPE_ENTER_ARIA}
+        onClick={enterFocusMode}
+        data-testid="toggle-focus-landscape"
+      >
+        <FocusIcon size={18} />
+        <span className="floating-button-label">{FOCUS_MODE_LANDSCAPE_ENTER_ARIA}</span>
+      </button>
       <textarea
         ref={ref}
         className="editor-input"
@@ -162,8 +479,27 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         aria-label="正文"
         enterKeyHint="enter"
         onFocus={() => setFocused(true)}
+        onCompositionStart={() => {
+          isComposingRef.current = true;
+          compositionQueue.startComposition();
+        }}
+        onCompositionEnd={() => {
+          isComposingRef.current = false;
+          compositionQueue.endComposition();
+          if (pendingOpenAfterCompositionRef.current) {
+            clearPendingComposition();
+            const snapshot =
+              capturedSnapshotRef.current ?? captureCaretSnapshot(ref.current, true);
+            capturedSnapshotRef.current = null;
+            caretSnapshotRef.current = snapshot;
+            setIsCardsOpen(true);
+          }
+        }}
         onBlur={() => {
           setFocused(false);
+          if (shouldCancelPendingOpen('blur')) {
+            clearPendingComposition();
+          }
           const el = ref.current;
           if (el) actions.rememberPlace(projectId, chapter.id, el.selectionStart ?? 0);
         }}
@@ -203,7 +539,60 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
             {TREE_NEXT_CHAPTER}
           </button>
         </div>
+        <div className="thumb-bar" data-testid="thumb-bar">
+          <button
+            type="button"
+            className="thumb-button thumb-tree-button"
+            aria-label={
+              layoutMode === 'phone-portrait' ? BACK_TO_CHAPTER_TREE_ARIA : OPEN_CHAPTER_TREE_ARIA
+            }
+            onClick={() =>
+              layoutMode === 'phone-portrait'
+                ? navigate(`/p/${projectId}/write`)
+                : togglePanel('left')
+            }
+            data-testid="thumb-tree-button"
+          >
+            <ListTreeIcon size={18} />
+            <span>{TREE_DRAWER_BUTTON}</span>
+          </button>
+          <button
+            type="button"
+            className="thumb-button thumb-cards-button"
+            aria-label={VIEW_CARDS_BUTTON}
+            onPointerDown={handleButtonPointerDown}
+            onClick={toggleCards}
+            data-testid="thumb-cards-button"
+          >
+            <CardsIcon size={18} />
+            <span>{VIEW_CARDS_BUTTON}</span>
+          </button>
+          <button
+            type="button"
+            className="thumb-button thumb-focus-button"
+            aria-label={FOCUS_MODE_THUMB_ENTER_LABEL}
+            onClick={enterFocusMode}
+            data-testid="thumb-focus-button"
+          >
+            <FocusIcon size={18} />
+            <span>{FOCUS_MODE_THUMB_ENTER_LABEL}</span>
+          </button>
+        </div>
       </footer>
+      {(!focusMode || (layoutMode !== 'phone-portrait' && layoutMode !== 'phone-landscape')) && (
+        <div className="focus-bottom-status" data-testid="focus-bottom-status">
+          <span>{todayWordsLabel(todayWords, goal)}</span>
+          <span className="focus-status-sep">·</span>
+          <span>{saveStatus.label}</span>
+        </div>
+      )}
+      {isCardsOpen && !focusMode && layoutMode !== 'wide' && (
+        <WritingCardsDrawer
+          projectId={projectId}
+          isDesktopFile={project?.origin === 'file'}
+          onClose={closeCards}
+        />
+      )}
     </div>
   );
 }

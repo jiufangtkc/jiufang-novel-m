@@ -47,5 +47,12 @@ describe('連續天數與統計', () => {
     expect(summary.achievementCount).toBe(2);
     expect(summary.todayWords).toBe(1000);
     expect(summary.totalHoursLabel).toBe('2.0');
+    expect(summary.importExport).toEqual({
+      available: false,
+      importCount: null,
+      exportCount: null,
+      importDisplay: '—',
+      exportDisplay: '—',
+    });
   });
 });

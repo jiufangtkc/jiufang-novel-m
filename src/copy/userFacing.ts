@@ -1,3 +1,5 @@
+import { formatInteger } from '../domain/formatNumber';
+
 /** 九方審過的介面文案（改前改後表 V1）。 */
 
 export const MANUSCRIPT_NOT_FOUND = '找不到這份稿子。請回首頁重新開啟。';
@@ -218,3 +220,154 @@ export function treeMoreSummary(kind: string, chapters: number, scenes: number, 
   if (kind === TREE_KIND_SCENE) return `${kind} · 共 ${words} 字`;
   return `${kind} · ${scenes} 幕 · 共 ${words} 字`;
 }
+
+/** 第 3 階段資料集卡片試看版（WO-45、WO-50）。 */
+export const SAMPLE_CARDS_NOTICE = '範例卡片，之後會換成這份稿子的卡片';
+export const CARDS_HEADING = '資料集';
+export const BACK_TO_CATEGORIES_ARIA = '返回分類清單';
+export const BACK_TO_CARDS_ARIA = '返回卡片清單';
+export const EMPTY_CARD_CONTENT_MESSAGE = '這張卡片還沒有內容。';
+export const UNTITLED_CARD_TITLE = '未命名卡片';
+
+/**
+ * 取得卡片標題；若為空字串或僅含空白字元，則顯示「未命名卡片」（九方 14:34 定案）。
+ */
+export function displayCardTitle(title?: string | null): string {
+  if (!title) return UNTITLED_CARD_TITLE;
+  const trimmed = title.trim();
+  return trimmed.length > 0 ? trimmed : UNTITLED_CARD_TITLE;
+}
+
+export function categoryRowAria(name: string, count: number): string {
+  return `${name}，${count} 張卡片`;
+}
+
+export function cardCollapseAria(title: string): string {
+  return `收合「${displayCardTitle(title)}」子卡片`;
+}
+
+export function cardExpandAria(title: string): string {
+  return `展開「${displayCardTitle(title)}」子卡片`;
+}
+
+export function cardDetailAria(title: string): string {
+  return `看「${displayCardTitle(title)}」卡片內容`;
+}
+
+/** 寫作時看卡片（WO-50，暫用名稱列入待審文字）。 */
+export const VIEW_CARDS_BUTTON = '看卡片';
+export const CLOSE_CARDS_ARIA = '關閉資料集';
+
+/** 寫作頁與版面按鈕文案（九方 2026-11-11 定案）。 */
+export const TREE_DRAWER_BUTTON = '目錄';
+/** 手機直拿寫作頁拇指區：回到目錄頁（與頂列返回相同，非展開抽屜）。 */
+export const BACK_TO_CHAPTER_TREE_ARIA = '返回目錄';
+export const OPEN_CHAPTER_TREE_ARIA = '展開目錄';
+export const CLOSE_CHAPTER_TREE_ARIA = '收合目錄';
+export const FOCUS_MODE_ENTER_BUTTON = '專注模式';
+export const FOCUS_MODE_EXIT_BUTTON = '離開專注模式';
+export const FLOATING_CHAPTER_TREE_ARIA = '展開目錄';
+export const FLOATING_VIEW_CARDS_ARIA = '看卡片';
+export const CARDS_PANEL_ARIA = '資料集';
+
+/** 今天字數統計標籤（九方 2026-11-11 定案）。有每日目標顯示「今天 N／M 字」，無目標顯示「今天 N 字」。四位數以上加千分位。 */
+export function todayWordsLabel(words: number | string, goal?: number | string | null): string {
+  const displayWords = typeof words === 'number' ? formatInteger(words) : words;
+  const hasGoal =
+    goal !== undefined &&
+    goal !== null &&
+    goal !== '' &&
+    (typeof goal !== 'number' || (Number.isFinite(goal) && goal > 0));
+
+  if (hasGoal) {
+    const displayGoal = typeof goal === 'number' ? formatInteger(goal) : goal;
+    return `今天 ${displayWords}／${displayGoal} 字`;
+  }
+  return `今天 ${displayWords} 字`;
+}
+
+/** 資料集與看卡片依四種版面調整（九方 2026-11-11 定案）。 */
+export const CARDS_READONLY_BADGE = '只能看';
+export const CARDS_EMPTY_CATEGORY_HINT = '請選擇分類';
+/** 已選分類但此分類尚無卡片時的說明（WO-73）。 */
+export const CARDS_EMPTY_IN_CATEGORY_HINT = '這個分類還沒有卡片。';
+export const CARDS_EMPTY_CARD_HINT = '請選擇卡片';
+export const CARDS_COLUMN_CATEGORIES = '分類';
+export const CARDS_COLUMN_CARDS = '卡片清單';
+export const CARDS_COLUMN_CONTENT = '卡片內容';
+
+/** 手機橫拿資料集右側預覽在整份稿子皆無正文時之提示（九方 2026-11-11 定案）。 */
+export const CARDS_PREVIEW_EMPTY_HINT = '這份稿子還沒有正文。';
+
+/** 子卡片數量標籤（九方 2026-11-11 定案）。中間為全形空白（U+3000）。 */
+export function cardsSubcardsCountLabel(count: number): string {
+  return `子卡片\u3000${formatInteger(count)} 張`;
+}
+
+/** 分類或卡片數量標籤（九方 2026-11-11 定案）。 */
+export function cardsCountLabel(count: number): string {
+  return `${count} 張`;
+}
+
+/**
+ * 每日進度條底列字數標籤（九方 2026-11-11 定案）。
+ * 未達標：「今天寫了 N 字」；達標時：「✦ 今天寫了 N 字，已達標」。四位數以上加千分位。
+ */
+export function dailyProgressWordsLabel(words: number | string, met: boolean): string {
+  const formatted = typeof words === 'number' ? formatInteger(words) : words;
+  return met ? `✦ 今天寫了 ${formatted} 字，已達標` : `今天寫了 ${formatted} 字`;
+}
+
+/**
+ * 每日進度條底列目標標籤（九方 2026-11-11 定案）。
+ * 顯示「每日目標 N 字」。四位數以上加千分位。
+ */
+export function dailyProgressGoalLabel(goal: number | string): string {
+  const formatted = typeof goal === 'number' ? formatInteger(goal) : goal;
+  return `每日目標 ${formatted} 字`;
+}
+
+/**
+ * WO-60 統計與寫作紀錄預留匯入匯出次數、檔案頁三組分組標題（九方 2026-11-12 定案）。
+ */
+export const FILES_GROUP_SAVE = '存檔';
+export const FILES_GROUP_OPEN_CLOSE = '開啟與關閉';
+export const FILES_GROUP_IMPORT_EXPORT = '匯入與匯出';
+export const PREPARING_BADGE = '準備中';
+export const FEATURE_IN_PREPARATION = '功能還在準備中。';
+
+export const IMPORT_TEXT_FILE_BUTTON = '匯入文字檔';
+export const IMPORT_TEXT_FILE_HINT = '把文字檔的內容加進這份稿子';
+export const EXPORT_FULL_TEXT_BUTTON = '匯出全文';
+export const EXPORT_FULL_TEXT_HINT = '把整份稿子匯出成一個 TXT 或 Markdown 檔';
+
+export const STATS_IMPORT_EXPORT_HEADING = '匯入與匯出';
+export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔、匯出全文的次數';
+export const STATS_IMPORT_COUNT_LABEL = '匯入 次數';
+export const STATS_EXPORT_COUNT_LABEL = '匯出 次數';
+
+/**
+ * 寫作過程紀錄卡匯入次數標籤。中間使用全形空白（U+3000）。
+ * 未開放或未指定次數時顯示「匯入　— 次」。
+ */
+export function logImportCountLabel(count?: number | string | null): string {
+  if (count === null || count === undefined || count === '—') {
+    return '匯入\u3000— 次';
+  }
+  const formatted = typeof count === 'number' ? formatInteger(count) : count;
+  return `匯入\u3000${formatted} 次`;
+}
+
+/**
+ * 寫作過程紀錄卡匯出次數標籤。中間使用全形空白（U+3000）。
+ * 未開放或未指定次數時顯示「匯出　— 次」。
+ */
+export function logExportCountLabel(count?: number | string | null): string {
+  if (count === null || count === undefined || count === '—') {
+    return '匯出\u3000— 次';
+  }
+  const formatted = typeof count === 'number' ? formatInteger(count) : count;
+  return `匯出\u3000${formatted} 次`;
+}
+
+

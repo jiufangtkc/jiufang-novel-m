@@ -78,4 +78,16 @@ describe('舊版儲存排隊', () => {
     await second;
     expect(stored.deleted.map((item) => item.id)).toEqual(['b', 'a']);
   });
+
+  it('WO-53：讀取舊版沒有 deletedCards 欄位的紀錄時，自動補為空陣列', async () => {
+    const backing: ArchiveBacking = {
+      async read() {
+        return { versions: {}, deleted: [] } as unknown as ReturnType<typeof emptyArchive>;
+      },
+      async write() {},
+    };
+    const client = createArchiveClient(backing);
+    const loaded = await client.read('legacy-book');
+    expect(loaded.deletedCards).toEqual([]);
+  });
 });

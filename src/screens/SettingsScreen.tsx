@@ -1,31 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
 import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
+import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
+import { AppearanceSettings } from './AppearanceSettings';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
-
-function useWideLayout(): boolean {
-  const [wide, setWide] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 600px)').matches : false,
-  );
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 600px)');
-    const apply = () => setWide(media.matches);
-    apply();
-    media.addEventListener('change', apply);
-    return () => media.removeEventListener('change', apply);
-  }, []);
-  return wide;
-}
 
 export function SettingsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
   const { state, actions } = useSample();
-  const wide = useWideLayout();
+  const { isAtLeastMedium, mode, pointer, deviceKind, setInputMode, bodyFontScale, setBodyFontScale } = useLayout();
+  const wide = isAtLeastMedium;
   const rename = useBookRename(project);
   const [editing, setEditing] = useState(false);
   const goalNow = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
@@ -85,18 +74,26 @@ export function SettingsScreen() {
           </select>
           <span className="hint">預設是午夜 12 點。改了只影響之後的寫作日，已經算好的日子不變。</span>
         </label>
+        <AppearanceSettings
+          pointer={pointer}
+          deviceKind={deviceKind}
+          bodyFontScale={bodyFontScale}
+          layoutMode={mode}
+          onChange={setInputMode}
+          onBodyFontScale={setBodyFontScale}
+        />
         <Link className="setting-row" to={`/p/${project.id}/logs`}>
           <span>
             <strong>寫作過程紀錄</strong>
             <small>每日字數、寫作時間、大量文字出現</small>
           </span>
         </Link>
-        <a className="setting-row" href="/fonts/OFL.txt">
+        <Link className="setting-row" to={`/p/${project.id}/font-license`} data-testid="font-license-link">
           <span>
             <strong>芫荽字型授權</strong>
             <small>SIL Open Font License 1.1，作者 But Ko／Fontworks</small>
           </span>
-        </a>
+        </Link>
       </div>
       {editing && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setEditing(false)}>

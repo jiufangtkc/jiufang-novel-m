@@ -1,0 +1,185 @@
+/**
+ * WO-60 統計匯入匯出預留與檔案頁分組樣式
+ * 包含準備中標籤、淡色預留樣式、檔案頁三組排版與寬版統計頁雙欄排版
+ */
+
+/* 準備中徽章 */
+.badge-preparing {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.2;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  font-weight: 500;
+  vertical-align: middle;
+}
+
+/* 準備中整塊淡色狀態 */
+.is-preparing {
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+/* 檔案頁分組樣式 */
+.files-page {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.files-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.files-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+}
+
+.files-group-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.02em;
+  margin: 0;
+}
+
+.setting-title-with-badge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-row.is-preparing {
+  opacity: 0.6;
+}
+
+.setting-row.is-preparing:hover {
+  background-color: var(--surface);
+}
+
+.setting-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+/* 統計頁：匯入與匯出區塊 */
+.stat-import-export-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stat-import-export-panel.is-preparing {
+  opacity: 0.7;
+}
+
+.stat-import-export-panel .panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stat-import-export-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: 14px;
+}
+
+.stat-import-export-row:last-of-type {
+  border-bottom: none;
+}
+
+.stat-import-export-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+}
+
+.stat-import-export-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.stat-import-export-value {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--muted);
+  letter-spacing: 0.05em;
+}
+
+.stat-import-export-hint {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 統計頁寬版雙欄並排排法 */
+.stats-page.is-wide {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 24px;
+  align-items: start;
+  max-width: 1200px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+.stats-main-column {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.stats-logs-column {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background-color: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.stats-logs-heading {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+  margin: 0 0 4px;
+}
+
+/* 寫作過程紀錄卡：匯入與匯出列淡色 */
+.log-metric-preparing {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  opacity: 0.65;
+  color: var(--muted);
+}
+
+.log-metric-preparing .badge-preparing {
+  flex-shrink: 0;
+}
