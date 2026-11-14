@@ -12,6 +12,7 @@ import {
   FLOATING_VIEW_CARDS_ARIA,
   FOCUS_MODE_ENTER_BUTTON,
   FOCUS_MODE_EXIT_BUTTON,
+  BACK_TO_CHAPTER_TREE_ARIA,
   OPEN_CHAPTER_TREE_ARIA,
   todayWordsLabel,
   TREE_DRAWER_BUTTON,
@@ -42,6 +43,14 @@ const sampleChapter: ChapterNode = {
   progress: 'Draft',
   expanded: true,
 };
+
+/** WO-80：直拿拇指區目錄鈕行為不同，結構比對時略過該按鈕屬性差異。 */
+function normalizeEditorThumbTreeButton(html: string): string {
+  return html.replace(
+    /<button type="button" class="thumb-button thumb-tree-button"[^>]*>/g,
+    '<button type="button" class="thumb-button thumb-tree-button" data-normalized>',
+  );
+}
 
 function renderEditorWithLayout(
   mode: LayoutMode,
@@ -257,11 +266,15 @@ describe('WO-55：元件結構恆定驗證（renderToStaticMarkup）', () => {
       expect(html).toContain('data-testid="focus-bottom-status"');
     }
 
-    // 四種版面之 HTML 輸出完全一致
-    expect(portraitHtml).toBe(landscapeHtml);
-    expect(portraitHtml).toBe(mediumHtml);
-    expect(portraitHtml).toBe(wideOneSideHtml);
-    expect(portraitHtml).toBe(wideBothHtml);
+    // 四種版面之 HTML 輸出一致（WO-80 直拿拇指區目錄鈕屬性除外）
+    const layouts = [portraitHtml, landscapeHtml, mediumHtml, wideOneSideHtml, wideBothHtml].map(
+      normalizeEditorThumbTreeButton,
+    );
+    const [portraitNorm, landscapeNorm, mediumNorm, wideOneNorm, wideBothNorm] = layouts;
+    expect(portraitNorm).toBe(landscapeNorm);
+    expect(portraitNorm).toBe(mediumNorm);
+    expect(portraitNorm).toBe(wideOneNorm);
+    expect(portraitNorm).toBe(wideBothNorm);
   });
 
   it('WO-55：看卡片面板在四種版面下是同一元件結構', () => {
@@ -483,7 +496,9 @@ describe('WO-55：第 3 輪修正驗證（滑鼠列距 36～38 與拖曳把手�
 
     // 滑鼠模式下把手以 position: absolute 疊在列右側，平常 opacity: 0 不佔位
     expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?position:\s*absolute/);
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?right:\s*calc\(var\(--hit-size,\s*36px\)\s*\+\s*4px\)/);
+    expect(css).toMatch(
+      /html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?right:\s*calc\(2\s*\*\s*var\(--hit-size,\s*36px\)\s*\+\s*8px\)/,
+    );
     expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?opacity:\s*0/);
 
     // 滑過列（hover/focus-within）才浮現把手供拖曳
@@ -602,6 +617,35 @@ describe('WO-57：版面用字定案畫面輸出與原始碼驗證', () => {
       expect(content, `${rel} 不應包含「資料集面板」`).not.toContain('資料集面板');
       expect(content, `${rel} 不應包含「今日 {」或「今日 \${」寫法`).not.toMatch(/今日\s*(\$)?\{/);
     }
+  });
+});
+
+describe('WO-80：手機直拿拇指區目錄返回目錄頁', () => {
+  it('WO-80：直拿拇指區目錄鈕朗讀為「返回目錄」，非直拿維持「展開目錄」', () => {
+    const portrait = renderEditorWithLayout('phone-portrait');
+    expect(portrait).toMatch(
+      /class="thumb-button thumb-tree-button"[^>]*aria-label="返回目錄"[^>]*data-testid="thumb-tree-button"/,
+    );
+
+    const landscape = renderEditorWithLayout('phone-landscape');
+    expect(landscape).toMatch(
+      /class="thumb-button thumb-tree-button"[^>]*aria-label="展開目錄"[^>]*data-testid="thumb-tree-button"/,
+    );
+  });
+
+  it('WO-80：BACK_TO_CHAPTER_TREE_ARIA 定義為「返回目錄」', () => {
+    expect(BACK_TO_CHAPTER_TREE_ARIA).toBe('返回目錄');
+  });
+});
+
+describe('WO-86：寬版滑鼠目錄列把手不重疊進度與更多', () => {
+  it('WO-86：滑鼠把手定位在進度與「⋯」左側，並提高進度／更多的層級', () => {
+    const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
+    expect(css).toMatch(
+      /html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?right:\s*calc\(2\s*\*\s*var\(--hit-size,\s*36px\)\s*\+\s*8px\)/,
+    );
+    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row\s+\.tree-progress[\s\S]*?z-index:\s*6/);
+    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row\s+\.icon-button[\s\S]*?z-index:\s*6/);
   });
 });
 

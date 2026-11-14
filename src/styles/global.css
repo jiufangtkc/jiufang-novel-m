@@ -928,7 +928,8 @@ html[data-pointer="touch"] .tree-pane.is-organizing .tree-handle,
 /* 滑鼠模式：拖曳把手平常不佔位，滑過該列才以絕對定位浮現於列右側，不擠壓章名 */
 html[data-pointer="mouse"] .tree-handle {
   position: absolute;
-  right: calc(var(--hit-size, 36px) + 4px);
+  /* WO-86：把手在「⋯」左側，不覆蓋進度標記與更多按鈕 */
+  right: calc(2 * var(--hit-size, 36px) + 8px);
   top: 50%;
   transform: translateY(-50%);
   width: var(--hit-size, 36px);
@@ -939,8 +940,14 @@ html[data-pointer="mouse"] .tree-handle {
   pointer-events: none;
   background: var(--bg);
   border-radius: 4px;
-  z-index: 5;
+  z-index: 4;
   transition: opacity 0.15s ease;
+}
+
+html[data-pointer="mouse"] .tree-row .tree-progress,
+html[data-pointer="mouse"] .tree-row .icon-button {
+  position: relative;
+  z-index: 6;
 }
 
 html[data-pointer="mouse"] .tree-row:hover .tree-handle,

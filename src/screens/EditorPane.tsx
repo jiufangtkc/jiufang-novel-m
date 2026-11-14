@@ -14,6 +14,7 @@ import {
   FLOATING_VIEW_CARDS_ARIA,
   FOCUS_MODE_ENTER_BUTTON,
   FOCUS_MODE_EXIT_BUTTON,
+  BACK_TO_CHAPTER_TREE_ARIA,
   OPEN_CHAPTER_TREE_ARIA,
   todayWordsLabel,
   TREE_DRAWER_BUTTON,
@@ -357,7 +358,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         <button
           type="button"
           className="icon-button back-button"
-          aria-label="返回目錄"
+          aria-label={BACK_TO_CHAPTER_TREE_ARIA}
           onClick={() => navigate(`/p/${projectId}/write`)}
           data-testid="back-button"
         >
@@ -514,8 +515,14 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
           <button
             type="button"
             className="thumb-button thumb-tree-button"
-            aria-label={TREE_DRAWER_BUTTON}
-            onClick={() => togglePanel('left')}
+            aria-label={
+              layoutMode === 'phone-portrait' ? BACK_TO_CHAPTER_TREE_ARIA : OPEN_CHAPTER_TREE_ARIA
+            }
+            onClick={() =>
+              layoutMode === 'phone-portrait'
+                ? navigate(`/p/${projectId}/write`)
+                : togglePanel('left')
+            }
             data-testid="thumb-tree-button"
           >
             <ListTreeIcon size={18} />

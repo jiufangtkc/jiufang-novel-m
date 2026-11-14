@@ -260,6 +260,8 @@ export const CLOSE_CARDS_ARIA = '關閉資料集';
 
 /** 寫作頁與版面按鈕文案（九方 2026-11-11 定案）。 */
 export const TREE_DRAWER_BUTTON = '目錄';
+/** 手機直拿寫作頁拇指區：回到目錄頁（與頂列返回相同，非展開抽屜）。 */
+export const BACK_TO_CHAPTER_TREE_ARIA = '返回目錄';
 export const OPEN_CHAPTER_TREE_ARIA = '展開目錄';
 export const CLOSE_CHAPTER_TREE_ARIA = '收合目錄';
 export const FOCUS_MODE_ENTER_BUTTON = '專注模式';
