@@ -1139,6 +1139,12 @@ html[data-layout="phone-landscape"] .bottom-nav { display: none; }
 html[data-layout="medium"] .nav-rail { display: none; }
 html[data-layout="medium"] .bottom-nav { display: flex; }
 
+/* WO-78：鍵盤開著時優先於直拿／中等的底部分頁顯示規則 */
+html.keyboard-open[data-layout="phone-portrait"] .bottom-nav,
+html.keyboard-open[data-layout="medium"] .bottom-nav {
+  display: none;
+}
+
 html[data-layout="wide"] .nav-rail { display: flex; width: 72px; min-width: 72px; }
 html[data-layout="wide"] .bottom-nav { display: none; }
 
