@@ -13,7 +13,9 @@ import {
   changeDayEndHour,
   changeGoal,
   countAchievements,
+  createSchedule,
   glowing,
+  withClock,
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
@@ -110,6 +112,8 @@ export interface SampleState {
   activeProjectId: string | null;
   logs: WritingLogRow[];
   demoLogs: WritingLogRow[];
+  /** WO-69：新開稿子（還沒升格成檔案）各自的寫作紀錄；每日目標結算狀態放在 goalById。 */
+  logsById: Record<string, WritingLogRow[]>;
   toast: string | null;
   /** 匯入檔的卡片與寫作紀錄，另存時原樣帶出。 */
   fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
@@ -240,6 +244,7 @@ export function createState(now: Date): SampleState {
     activeProjectId: null,
     logs,
     demoLogs: logs,
+    logsById: {},
     toast: null,
     fileExtras: {},
     saveMeta: {},
@@ -383,6 +388,68 @@ function syncFileLog(
   };
 }
 
+/** WO-69：內建範例書（【範例】霧港紀事等）共用範例寫作紀錄；其他稿子各有自己的紀錄。 */
+const SAMPLE_BOOK_IDS = new Set(DEMO_PROJECTS.map((project) => project.id));
+
+function isSampleBook(project: DemoProject): boolean {
+  return project.origin !== 'file' && SAMPLE_BOOK_IDS.has(project.id);
+}
+
+/** WO-69：新稿子的空白寫作狀態。每日目標與一天結束時刻沿用目前設定，紀錄與達成次數從 0 開始。 */
+function freshSchedule(state: SampleState, now: Date): GoalSchedule {
+  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  return withClock(createSchedule({ dayEndHour: state.schedule.dayEndHour, defaultGoal: goal }), now);
+}
+
+/** WO-69：目前 state.schedule／state.logs 代表的是不是這份稿子。沒有開著的稿子時代表範例書。 */
+function isCurrentTracking(state: SampleState, project: DemoProject): boolean {
+  return state.activeProjectId ? state.activeProjectId === project.id : isSampleBook(project);
+}
+
+/** WO-69：讀出某份稿子自己的每日目標結算狀態與寫作紀錄，不借用其他稿子的。 */
+function trackingOf(
+  state: SampleState,
+  project: DemoProject,
+  now: Date,
+): { schedule: GoalSchedule; logs: WritingLogRow[] } {
+  if (isCurrentTracking(state, project)) return { schedule: state.schedule, logs: state.logs };
+  if (project.origin === 'file') {
+    const extra = state.fileExtras[project.dbKey ?? ''];
+    return {
+      schedule: state.goalById[project.id] ?? state.schedule,
+      logs: extra ? fileLogsToRows(extra.logs) : state.logs,
+    };
+  }
+  if (isSampleBook(project)) return { schedule: state.demoSchedule, logs: state.demoLogs };
+  return {
+    schedule: state.goalById[project.id] ?? freshSchedule(state, now),
+    logs: state.logsById[project.id] ?? [],
+  };
+}
+
+/** WO-69：把某份稿子的結算狀態與紀錄寫回它自己的位置；是目前那份才一併更新畫面用的 schedule／logs。 */
+function storeTracking(
+  state: SampleState,
+  project: DemoProject,
+  schedule: GoalSchedule,
+  logs: WritingLogRow[],
+): SampleState {
+  const current = isCurrentTracking(state, project);
+  let next: SampleState = current ? { ...state, schedule, logs } : state;
+  if (project.origin === 'file') {
+    next = { ...next, goalById: { ...next.goalById, [project.id]: schedule } };
+  } else if (isSampleBook(project)) {
+    next = { ...next, demoSchedule: schedule, demoLogs: logs };
+  } else {
+    next = {
+      ...next,
+      goalById: { ...next.goalById, [project.id]: schedule },
+      logsById: { ...next.logsById, [project.id]: logs },
+    };
+  }
+  return next;
+}
+
 function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
   const active = state.projects.find((project) => project.id === state.activeProjectId);
   if (active?.origin === 'file' && state.activeProjectId) {
@@ -392,7 +459,35 @@ function keepSchedule(state: SampleState, schedule: GoalSchedule): SampleState {
       goalById: { ...state.goalById, [state.activeProjectId]: schedule },
     };
   }
+  // WO-69：新開稿子的目標與結算狀態只存在自己那份，不寫進範例書。
+  if (active && !isSampleBook(active)) {
+    return { ...state, schedule, goalById: { ...state.goalById, [active.id]: schedule } };
+  }
   return { ...state, schedule, demoSchedule: schedule };
+}
+
+/** WO-69：更新目前這份稿子的寫作紀錄，同時寫回它自己的位置。 */
+function keepLogs(state: SampleState, logs: WritingLogRow[]): SampleState {
+  const active = state.projects.find((project) => project.id === state.activeProjectId);
+  if (active?.origin === 'file') return { ...state, logs };
+  if (active && !isSampleBook(active)) {
+    return { ...state, logs, logsById: { ...state.logsById, [active.id]: logs } };
+  }
+  return { ...state, logs, demoLogs: logs };
+}
+
+function toFileLogs(logs: readonly WritingLogRow[]): FileLog[] {
+  return logs.map((log) => ({
+    date: log.date,
+    duration: log.duration,
+    word_count: log.word_count,
+    ai_continuation_count: log.ai_continuation_count,
+    ai_continuation_chars: log.ai_continuation_chars,
+    ai_chat_count: log.ai_chat_count,
+    ai_details: log.ai_details ?? '{}',
+    paste_large_count: log.paste_large_count,
+    delete_large_count: log.delete_large_count,
+  }));
 }
 
 export function getProjectCards(state: SampleState, projectId: string): FileCard[] {
@@ -496,7 +591,9 @@ export function buildFileProjectInfo(state: SampleState, project: DemoProject): 
   const key = project.dbKey ?? project.id;
   const extra =
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
-  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  // WO-69：用這份稿子自己的每日目標。
+  const own = trackingOf(state, project, new Date()).schedule;
+  const goal = own.open?.goals.at(-1)?.goal ?? own.defaultGoal;
 
   if (extra?.info) {
     const src = extra.info;
@@ -639,7 +736,9 @@ export function buildPromotedFileExtras(
     state.fileExtras[project.id];
   if (existing) return existing;
 
-  const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
+  // WO-69：升格成檔案時只帶這份稿子自己的目標與寫作紀錄。
+  const own = trackingOf(state, project, new Date());
+  const goal = own.schedule.open?.goals.at(-1)?.goal ?? own.schedule.defaultGoal;
   return {
     info: {
       title: project.title,
@@ -664,17 +763,7 @@ export function buildPromotedFileExtras(
           ...(card.extraColumns ? { extraColumns: { ...card.extraColumns } } : {}),
         }))
       : [],
-    logs: state.logs.map((log) => ({
-      date: log.date,
-      duration: log.duration,
-      word_count: log.word_count,
-      ai_continuation_count: log.ai_continuation_count,
-      ai_continuation_chars: log.ai_continuation_chars,
-      ai_chat_count: log.ai_chat_count,
-      ai_details: log.ai_details ?? '{}',
-      paste_large_count: log.paste_large_count,
-      delete_large_count: log.delete_large_count,
-    })),
+    logs: toFileLogs(own.logs),
   };
 }
 
@@ -741,7 +830,10 @@ export function reduce(state: SampleState, action: Action): SampleState {
           filename: current.filename || action.filename,
         })),
         fileExtras: { ...state.fileExtras, [key]: extras },
-        goalById: { ...state.goalById, [project.id]: state.goalById[project.id] ?? state.schedule },
+        goalById: {
+          ...state.goalById,
+          [project.id]: state.goalById[project.id] ?? trackingOf(state, project, now).schedule,
+        },
       };
     }
     case 'dismiss-recent':
@@ -776,6 +868,9 @@ export function reduce(state: SampleState, action: Action): SampleState {
         ...state,
         projects: [project, ...state.projects],
         recentIds: [action.id, ...state.recentIds],
+        // WO-69：新稿子有自己的空白寫作紀錄與結算狀態，不借範例書的。
+        goalById: { ...state.goalById, [action.id]: freshSchedule(state, now) },
+        logsById: { ...state.logsById, [action.id]: [] },
         toast: '已開新稿子',
       };
     }
@@ -831,8 +926,10 @@ export function reduce(state: SampleState, action: Action): SampleState {
         project.origin === 'file'
           ? countManuscriptWords(action.text) - countManuscriptWords(node.content ?? '')
           : classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
-      const schedule = applyWordDelta(state.schedule, deltaWords, now);
-      const next = keepSchedule(state, schedule);
+      // WO-69：字數只記進被改的那份稿子自己的紀錄，不記到其他稿子或範例書。
+      const own = trackingOf(state, project, now);
+      const schedule = applyWordDelta(own.schedule, deltaWords, now);
+      const next = storeTracking(state, project, schedule, alignToday(own.logs, schedule));
       const projects = mapProject(next.projects, action.projectId, (current) => ({
         ...current,
         updatedLabel: '剛剛',
@@ -842,7 +939,6 @@ export function reduce(state: SampleState, action: Action): SampleState {
       return {
         ...next,
         projects,
-        logs: alignToday(next.logs, schedule),
         fileExtras: extras,
       };
     }
@@ -853,7 +949,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
       const logs = alignToday(state.logs, state.schedule).map((log) =>
         log.date === dayKey ? applyLargeEvent(log, action.delta) : log,
       );
-      return { ...state, logs, fileExtras: bumpFileLog(state, dayKey, (log) => applyLargeToFile(log, action.delta)) };
+      return { ...keepLogs(state, logs), fileExtras: bumpFileLog(state, dayKey, (log) => applyLargeToFile(log, action.delta)) };
     }
     case 'add-duration': {
       if (!state.schedule.open || action.seconds <= 0) return state;
@@ -862,8 +958,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
         log.date === dayKey ? withAddedDuration(log, action.seconds) : log,
       );
       return {
-        ...state,
-        logs,
+        ...keepLogs(state, logs),
         fileExtras: bumpFileLog(state, dayKey, (log) => ({ ...log, duration: log.duration + action.seconds })),
       };
     }
@@ -905,11 +1000,20 @@ export function reduce(state: SampleState, action: Action): SampleState {
           logs: extra ? fileLogsToRows(extra.logs) : state.logs,
         };
       }
+      // WO-69：範例書讀範例紀錄；新開稿子讀自己的紀錄（沒有就從 0 開始）。
+      const own = isSampleBook(project)
+        ? { schedule: state.demoSchedule, logs: state.demoLogs }
+        : {
+            schedule: state.goalById[project.id] ?? freshSchedule(state, now),
+            logs: state.logsById[project.id] ?? [],
+          };
       return {
         ...state,
         activeProjectId: project.id,
-        schedule: state.demoSchedule,
-        logs: state.demoLogs,
+        schedule: own.schedule,
+        logs: own.logs,
+        goalById: isSampleBook(project) ? state.goalById : { ...state.goalById, [project.id]: own.schedule },
+        logsById: isSampleBook(project) ? state.logsById : { ...state.logsById, [project.id]: own.logs },
       };
     }
     case 'remember-place':
@@ -1173,33 +1277,33 @@ function browserSaveEnv(): SaveEnvironment {
   };
 }
 
+/** WO-69：另存或暫存時要寫進檔案的內容。寫作紀錄只取這份稿子自己的。 */
+export function manuscriptSnapshotParts(
+  state: SampleState,
+  project: DemoProject,
+): { key: string; info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] } {
+  const key = project.dbKey ?? project.id;
+  const extra =
+    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
+  const info = buildFileProjectInfo(state, project);
+  // 還沒有檔案紀錄時，只寫這份稿子自己的紀錄，不借目前畫面上別份稿子的。
+  const logs: FileLog[] = extra?.logs ?? toFileLogs(trackingOf(state, project, new Date()).logs);
+  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs };
+}
+
 async function snapshotManuscript(
   state: SampleState,
   project: DemoProject,
   persist = true,
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const key = project.dbKey ?? project.id;
-  const extra =
-    (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
-  const info = buildFileProjectInfo(state, project);
-  const logs: FileLog[] = extra?.logs ?? state.logs.map((log) => ({
-    date: log.date,
-    duration: log.duration,
-    word_count: log.word_count,
-    ai_continuation_count: log.ai_continuation_count,
-    ai_continuation_chars: log.ai_continuation_chars,
-    ai_chat_count: log.ai_chat_count,
-    ai_details: log.ai_details ?? '{}',
-    paste_large_count: log.paste_large_count,
-    delete_large_count: log.delete_large_count,
-  }));
+  const { key, info, cards, logs } = manuscriptSnapshotParts(state, project);
   const bytes = await saveBookBytes(
     key,
     projectSaveFilename(project.title, project.filename),
     project.title,
     info,
     project.nodes,
-    extra?.cards ?? project.cards ?? [],
+    cards,
     logs,
     bookkeepingOf(project),
     persist,
