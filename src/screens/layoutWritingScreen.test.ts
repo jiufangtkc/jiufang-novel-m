@@ -491,20 +491,18 @@ describe('WO-55：第 3 輪修正驗證（滑鼠列距 36～38 與拖曳把手�
     expect(css).toMatch(/html\[data-pointer="touch"\]\s+\.tree-pane\.is-organizing\s+\.tree-handle[\s\S]*?opacity:\s*1\s*!important/);
   });
 
-  it('WO-55：滑鼠模式拖曳把手以絕對定位疊在列右側，平常不佔位且滑過不擠壓章名', () => {
+  it('WO-55／WO-86：滑鼠模式把手嵌在進度與「⋯」之間，平常寬度 0、滑過才展開', () => {
     const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
 
-    // 滑鼠模式下把手以 position: absolute 疊在列右側，平常 opacity: 0 不佔位
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?position:\s*absolute/);
     expect(css).toMatch(
-      /html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?right:\s*calc\(2\s*\*\s*var\(--hit-size,\s*36px\)\s*\+\s*8px\)/,
+      /html\[data-pointer="mouse"\]\s+\.tree-pane:not\(\.is-organizing\)\s+\.tree-handle[\s\S]*?width:\s*0/,
     );
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?opacity:\s*0/);
-
-    // 滑過列（hover/focus-within）才浮現把手供拖曳
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row:hover\s+\.tree-handle/);
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row:hover\s+\.tree-handle[\s\S]*?opacity:\s*1/);
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row:hover\s+\.tree-handle[\s\S]*?pointer-events:\s*auto/);
+    expect(css).toMatch(
+      /html\[data-pointer="mouse"\]\s+\.tree-pane:not\(\.is-organizing\)\s+\.tree-row:hover\s+\.tree-handle[\s\S]*?pointer-events:\s*auto/,
+    );
+    expect(css).not.toMatch(
+      /html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?position:\s*absolute[\s\S]*?right:\s*calc\(2\s*\*\s*var\(--hit-size/,
+    );
   });
 });
 
@@ -639,13 +637,14 @@ describe('WO-80：手機直拿拇指區目錄返回目錄頁', () => {
 });
 
 describe('WO-86：寬版滑鼠目錄列把手不重疊進度與更多', () => {
-  it('WO-86：滑鼠把手定位在進度與「⋯」左側，並提高進度／更多的層級', () => {
-    const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
-    expect(css).toMatch(
-      /html\[data-pointer="mouse"\]\s+\.tree-handle[\s\S]*?right:\s*calc\(2\s*\*\s*var\(--hit-size,\s*36px\)\s*\+\s*8px\)/,
-    );
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row\s+\.tree-progress[\s\S]*?z-index:\s*6/);
-    expect(css).toMatch(/html\[data-pointer="mouse"\]\s+\.tree-row\s+\.icon-button[\s\S]*?z-index:\s*6/);
+  it('WO-86：ChapterTree 把手在 DOM 上位於進度與「⋯」之間', () => {
+    const src = readFileSync(new URL('./ChapterTree.tsx', import.meta.url), 'utf8');
+    const progressIdx = src.indexOf('className="tree-progress"');
+    const handleIdx = src.indexOf("'tree-handle'");
+    const moreIdx = src.indexOf('className="icon-button"', progressIdx);
+    expect(progressIdx).toBeGreaterThan(0);
+    expect(handleIdx).toBeGreaterThan(progressIdx);
+    expect(moreIdx).toBeGreaterThan(handleIdx);
   });
 });
 

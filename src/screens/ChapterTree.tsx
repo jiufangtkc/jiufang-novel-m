@@ -140,19 +140,6 @@ export function ChapterTree({
               ) : (
                 <span className="tree-progress-spacer" />
               )}
-              {organizing ? null : (
-                <button
-                  type="button"
-                  className="icon-button"
-                  aria-label={`${node.title}的更多操作`}
-                  onClick={() => {
-                    onPick(node.id);
-                    onMore(node.id);
-                  }}
-                >
-                  <MoreIcon size={18} />
-                </button>
-              )}
               <button
                 type="button"
                 className={organizing || desktop ? 'tree-handle' : 'tree-handle is-hidden'}
@@ -166,6 +153,19 @@ export function ChapterTree({
               >
                 <GripIcon size={18} />
               </button>
+              {organizing ? null : (
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`${node.title}的更多操作`}
+                  onClick={() => {
+                    onPick(node.id);
+                    onMore(node.id);
+                  }}
+                >
+                  <MoreIcon size={18} />
+                </button>
+              )}
             </div>
             {hasChildren && node.expanded !== false && (
               <ChapterTree
