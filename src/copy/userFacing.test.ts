@@ -155,6 +155,7 @@ describe('章節目錄文案', () => {
     expect(copy.FLOATING_CHAPTER_TREE_ARIA).toBe('展開目錄');
     expect(copy.CARDS_PANEL_ARIA).toBe('資料集');
     expect(copy.OPEN_CHAPTER_TREE_ARIA).toBe('展開目錄');
+    expect(copy.BACK_TO_CHAPTER_TREE_ARIA).toBe('返回目錄');
     expect(copy.TREE_DRAWER_BUTTON).toBe('目錄');
     expect(copy.VIEW_CARDS_BUTTON).toBe('看卡片');
     expect(copy.CLOSE_CARDS_ARIA).toBe('關閉資料集');

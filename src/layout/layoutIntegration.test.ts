@@ -23,6 +23,13 @@ const sampleChapter: ChapterNode = {
   expanded: true,
 };
 
+function normalizeEditorThumbTreeButton(html: string): string {
+  return html.replace(
+    /<button type="button" class="thumb-button thumb-tree-button"[^>]*>/g,
+    '<button type="button" class="thumb-button thumb-tree-button" data-normalized>',
+  );
+}
+
 function renderEditorWithLayout(
   mode: LayoutMode,
   wideColumns: WideColumns | null = null,
@@ -118,11 +125,15 @@ describe('WO-54：換版面不卸載正文與面板元件結構驗證', () => {
       expect(html).toContain('data-testid="toggle-cards-landscape"');
     }
 
-    // 正文編輯區的結構在所有版面下完全相同
-    expect(portraitHtml).toBe(landscapeHtml);
-    expect(portraitHtml).toBe(mediumHtml);
-    expect(portraitHtml).toBe(wideOneSideHtml);
-    expect(portraitHtml).toBe(wideBothHtml);
+    // 正文編輯區的結構在所有版面下相同（WO-80 直拿拇指區目錄鈕屬性除外）
+    const layouts = [portraitHtml, landscapeHtml, mediumHtml, wideOneSideHtml, wideBothHtml].map(
+      normalizeEditorThumbTreeButton,
+    );
+    const [portraitNorm, landscapeNorm, mediumNorm, wideOneNorm, wideBothNorm] = layouts;
+    expect(portraitNorm).toBe(landscapeNorm);
+    expect(portraitNorm).toBe(mediumNorm);
+    expect(portraitNorm).toBe(wideOneNorm);
+    expect(portraitNorm).toBe(wideBothNorm);
   });
 
   it('WO-54：四種版面下看卡片面板（WritingCardsDrawer）具有相同的元件結構', () => {
