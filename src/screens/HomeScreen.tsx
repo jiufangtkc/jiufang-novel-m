@@ -119,7 +119,7 @@ export function HomeScreen() {
               event.preventDefault();
               const id = actions.addProject(title, shape);
               setCreating(false);
-              navigate(shape === 'single' ? writePath(id, newChapterId(id)) : writePath(id));
+              navigate(writePath(id, newChapterId(id)));
             }}
           >
             <h2 id="new-project-title">開新稿子</h2>
