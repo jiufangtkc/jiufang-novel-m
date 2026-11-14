@@ -30,33 +30,35 @@ html[data-pointer="touch"] {
   --tree-indent: 16px;
 }
 
-/* 版面骨架選擇器與各版面正文限寬用字數（WO-54、WO-55）
- * 公式：max-width: calc(N * (1em + 0.5px))（正文有 0.5px 字距），置中。
- * 手機直拿 N=19、手機橫拿與中等 N=30、寬版 N=36。左右邊界：手機直 16、中等約 40。
+/* 版面骨架選擇器與各版面正文限寬用字數（WO-54、WO-55、WO-72）
+ * 上限取「N 字寬」和「這一欄看得到的寬度」較小的那個：
+ * max-width: min(calc(N * (1em + 0.5px)), 100%)
+ * 100% 是正文欄自己的寬度（左右留白在框內；側欄先把這一欄擠窄）。
+ * 沒被擠窄時仍是：直拿 19、橫拿與中等 30、寬版 36。頁面放大後不可再比畫面寬。
  */
 html[data-layout="phone-portrait"] .editor-input {
-  max-width: calc(19 * (1em + 0.5px));
+  max-width: min(calc(19 * (1em + 0.5px)), 100%);
   font-size: 18px;
   padding-left: 16px;
   padding-right: 16px;
 }
 
 html[data-layout="phone-landscape"] .editor-input {
-  max-width: calc(30 * (1em + 0.5px));
+  max-width: min(calc(30 * (1em + 0.5px)), 100%);
   font-size: 18px;
   padding-left: 16px;
   padding-right: 16px;
 }
 
 html[data-layout="medium"] .editor-input {
-  max-width: calc(30 * (1em + 0.5px));
+  max-width: min(calc(30 * (1em + 0.5px)), 100%);
   font-size: 20px;
   padding-left: 40px;
   padding-right: 40px;
 }
 
 html[data-layout="wide"] .editor-input {
-  max-width: calc(36 * (1em + 0.5px));
+  max-width: min(calc(36 * (1em + 0.5px)), 100%);
   font-size: 18px;
   padding-left: 40px;
   padding-right: 40px;
@@ -136,6 +138,8 @@ a { color: var(--accent); }
 
 .topbar {
   min-height: 56px;
+  min-width: 0;
+  max-width: 100%;
   padding: 0 12px 0 16px;
   display: flex;
   align-items: center;
@@ -146,6 +150,7 @@ a { color: var(--accent); }
 
 .topbar h1 {
   flex: 1;
+  min-width: 0;
   margin: 0;
   font-size: 18px;
   font-weight: 700;
@@ -428,12 +433,23 @@ a { color: var(--accent); }
 .badge[data-progress="Final"] { color: #06d6a0; background: rgba(6, 214, 160, 0.15); border-color: rgba(6, 214, 160, 0.6); }
 .badge[data-progress="Discarded"] { color: #ef476f; background: rgba(239, 71, 111, 0.15); border-color: rgba(239, 71, 111, 0.6); }
 
-.editor { background: var(--editor); }
+.editor {
+  background: var(--editor);
+  min-width: 0;
+  max-width: 100%;
+}
 .editor .topbar { background: var(--panel); }
+
+/* 直拿把這一欄當成容器，頁面放大、欄變窄時才改拇指區排法（WO-72） */
+html[data-layout="phone-portrait"] .editor {
+  container-type: inline-size;
+  container-name: writing-editor;
+}
 
 .editor-input {
   flex: 1;
   width: 100%;
+  min-width: 0;
   min-height: 0;
   resize: none;
   border: 0;
@@ -453,6 +469,8 @@ a { color: var(--accent); }
 
 .editor-status {
   flex-shrink: 0;
+  min-width: 0;
+  max-width: 100%;
   background: var(--panel);
   border-top: 1px solid var(--border);
   padding: 16px 16px 10px;

@@ -27,6 +27,8 @@ html[data-layout="phone-portrait"] .thumb-bar {
   justify-content: center;
   align-items: center;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   box-sizing: border-box;
 }
 
@@ -59,6 +61,64 @@ html[data-layout="phone-portrait"] .thumb-focus-button {
 .thumb-button:active {
   background: rgba(255, 255, 255, 0.08);
   border-color: var(--accent, #38bdf8);
+}
+
+/* 直拿欄寬不到一般手機時（頁面放大，或很窄的直拿）：三顆鈕改成圖在上、字在下，
+   並收左右留白，讓每顆仍至少 44×44、且都留在畫面裡。390 左右的 100% 不進這段。
+   這段要排在 .thumb-button 基本樣式之後，放大時才蓋得過字級與不換行。 */
+@container writing-editor (max-width: 340px) {
+  html[data-layout="phone-portrait"] .view-cards-button {
+    display: none;
+  }
+
+  html[data-layout="phone-portrait"] .editor-status {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .daily-bar-heading {
+    flex-wrap: wrap;
+  }
+
+  .daily-bar-heading > span {
+    white-space: nowrap;
+  }
+
+  .status-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .status-cluster {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .save-status {
+    margin-left: 0;
+  }
+
+  .thumb-bar {
+    gap: 4px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .thumb-button {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    max-width: none;
+    min-width: 44px;
+    width: auto;
+    height: auto;
+    min-height: 48px;
+    padding: 4px 2px;
+    font-size: 12px;
+    line-height: 1.15;
+    white-space: normal;
+    text-align: center;
+  }
 }
 
 /* 手機直拿時，隱藏跳章按鈕讓位給拇指區 */
