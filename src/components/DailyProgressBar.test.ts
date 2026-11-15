@@ -13,6 +13,7 @@ import { DEMO_CARDS, type DemoCard } from '../data/demoCards';
 import { type LayoutMode, LayoutProvider } from '../layout';
 import { CardsScreen, type CardsScreenProps } from '../screens/CardsScreen';
 import * as sampleStore from '../state/sampleStore';
+import { SampleProvider } from '../state/sampleStore';
 import { DailyProgressBar } from './DailyProgressBar';
 import { WritingCardsDrawer } from './WritingCardsDrawer';
 
@@ -232,12 +233,12 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
   it('WO-59：WritingCardsDrawer 畫面輸出：子卡片 0 張時不出現標題、有子卡片時顯示「子卡片　3 張」（全形空白）', () => {
     // 1. 子卡片為 0 張時：整個標題不顯示
     const htmlZero = renderToStaticMarkup(
-      createElement(WritingCardsDrawer, {
+      createElement(SampleProvider, null, createElement(WritingCardsDrawer, {
         projectId: 'fog',
         onClose: () => {},
         initialCategoryId: 'character',
         initialCardId: '20000000-0000-4000-8000-000000000003',
-      }),
+      })),
     );
     expect(htmlZero).not.toContain('data-testid="cards-subcards-section"');
     expect(htmlZero).not.toContain('cards-subcards-heading');
@@ -282,12 +283,12 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
     try {
       DEMO_CARDS.push(...tempSubcards);
       const htmlThree = renderToStaticMarkup(
-        createElement(WritingCardsDrawer, {
+        createElement(SampleProvider, null, createElement(WritingCardsDrawer, {
           projectId: 'fog',
           onClose: () => {},
           initialCategoryId: 'character',
           initialCardId: parentId,
-        }),
+        })),
       );
       expect(htmlThree).toContain('data-testid="cards-subcards-section"');
       expect(htmlThree).toContain('子卡片\u30003 張');

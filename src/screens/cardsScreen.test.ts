@@ -173,22 +173,47 @@ describe('CardsScreen 畫面與驗收標準（WO-45、WO-50 定案）', () => {
     expect(html).toContain('自訂分類001，3 張卡片');
   });
 
-  it('從電腦版 .db 開啟的稿件會顯示「範例卡片，之後會換成這份稿子的卡片」', () => {
+  it('WO-75：範例卡片提示只在內建範例書出現，條件不再看是否從檔案開啟', () => {
     const source = readFileSync(new URL('./CardsScreen.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('isDesktopFile');
+    expect(source).toContain('isBuiltinSampleBook');
     expect(source).toContain('cards-file-notice');
-    expect(source).toContain('SAMPLE_CARDS_NOTICE');
+    expect(source).not.toMatch(/\{isDesktopFile && \(\s*<[^>]*cards-file-notice/);
     expect(SAMPLE_CARDS_NOTICE).toBe('範例卡片，之後會換成這份稿子的卡片');
 
-    // 實際 DOM 靜態渲染驗證
-    const html = renderCardsScreen('/p/desktop-project/cards');
-    expect(html).toContain('cards-file-notice');
-    expect(html).toContain(SAMPLE_CARDS_NOTICE);
+    // 內建範例書：資料集各層都顯示提示
+    for (const path of ['/p/fog/cards']) {
+      const html = renderCardsScreen(path);
+      expect(html).toContain('cards-file-notice');
+      expect(html).toContain(SAMPLE_CARDS_NOTICE);
+    }
+    const sampleLayer2 = renderCardsScreen('/p/fog/cards', { initialCategoryId: 'character' });
+    expect(sampleLayer2).toContain(SAMPLE_CARDS_NOTICE);
+    const sampleLayer3 = renderCardsScreen('/p/fog/cards', {
+      initialCategoryId: 'character',
+      initialCardId: DEMO_CARDS.find((c) => c.category === 'character')!.id,
+    });
+    expect(sampleLayer3).toContain(SAMPLE_CARDS_NOTICE);
   });
 
-  it('範例書不會顯示電腦版專用的暫用提示小字', () => {
-    const html = renderCardsScreen('/p/fog/cards');
-    expect(html).not.toContain(SAMPLE_CARDS_NOTICE);
+  it('WO-75：從檔案開啟的稿件（空的、已有自己卡片）與新稿都不顯示範例卡片提示', () => {
+    for (const projectId of [
+      'desktop-project',
+      'desktop-project-with-cards',
+      'mobile-new-project',
+      'mobile-project-with-cards',
+    ]) {
+      const layer1 = renderCardsScreen(`/p/${projectId}/cards`);
+      expect(layer1, projectId).not.toContain(SAMPLE_CARDS_NOTICE);
+      expect(layer1, projectId).not.toContain('cards-file-notice');
+      const layer2 = renderCardsScreen(`/p/${projectId}/cards`, { initialCategoryId: 'character' });
+      expect(layer2, projectId).not.toContain(SAMPLE_CARDS_NOTICE);
+    }
+    const layer3 = renderCardsScreen('/p/desktop-project-with-cards/cards', {
+      initialCategoryId: 'character',
+      initialCardId: 'file-card-1',
+    });
+    expect(layer3).toContain('自訂檔案角色卡片');
+    expect(layer3).not.toContain(SAMPLE_CARDS_NOTICE);
   });
 
   it('子卡片層級每層左縮 16px，最多 3 層', () => {

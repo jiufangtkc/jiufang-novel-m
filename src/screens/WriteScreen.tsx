@@ -94,7 +94,11 @@ import {
   treeMovedToast,
   treeSelectedHint,
 } from '../copy/userFacing';
-import { CloseIcon } from '../components/Icons';
+import { CloseIcon, ListTreeIcon } from '../components/Icons';
+import { BookSearchPanel } from '../components/BookSearchPanel';
+import { SearchIcon } from '../components/BookSearchPanelParts';
+import { useBookSearch } from '../components/BookSearchPanelState';
+import { BOOK_SEARCH_TAB_SEARCH, BOOK_SEARCH_TAB_TREE, BOOK_SEARCH_TITLE } from '../copy/bookSearchCopy';
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
@@ -149,6 +153,9 @@ export function WriteScreen() {
   const dragSession = useRef<DragState>({ dragId: null, drop: null });
   const undoAction = useRef<(() => void) | null>(null);
   nodesRef.current = project?.nodes ?? [];
+  // WO-63：全書搜尋。放在寫作頁，換章不會不見；離開寫作頁就一起清掉。
+  const search = useBookSearch(project, chapterId);
+  const searchInLeft = search.open && search.side === 'left';
 
   const showOrganize = organizing;
 
@@ -567,6 +574,7 @@ export function WriteScreen() {
         sidePanels.left ? 'tree-open' : 'tree-closed',
         sidePanels.right ? 'aside-open' : 'aside-closed',
         focusMode ? 'is-focus-mode' : '',
+        search.open ? `is-searching search-${search.side}` : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -610,7 +618,36 @@ export function WriteScreen() {
             </button>
           )}
         </header>
-        <div className="scroll-pane" ref={scrollRef}>
+        {showOrganize ? null : (
+          <div className="tree-search-tabs" role="tablist" aria-label={BOOK_SEARCH_TITLE} data-testid="tree-search-tabs">
+            <button
+              type="button"
+              role="tab"
+              className="tree-search-tab"
+              aria-selected={!searchInLeft}
+              data-testid="tree-tab-tree"
+              onClick={() => {
+                if (searchInLeft) search.closeSearch();
+              }}
+            >
+              <ListTreeIcon size={16} />
+              {BOOK_SEARCH_TAB_TREE}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className="tree-search-tab"
+              aria-selected={searchInLeft}
+              data-testid="tree-tab-search"
+              onClick={search.openSearch}
+            >
+              <SearchIcon size={16} />
+              {BOOK_SEARCH_TAB_SEARCH}
+            </button>
+          </div>
+        )}
+        {searchInLeft ? <BookSearchPanel search={search} variant="left" /> : null}
+        <div className="scroll-pane" ref={scrollRef} hidden={searchInLeft}>
           <ChapterTree
             projectId={book.id}
             nodes={book.nodes}
@@ -648,7 +685,7 @@ export function WriteScreen() {
             </button>
           ) : null}
         </div>
-        {undo ? (
+        {undo && !searchInLeft ? (
           <div className="undo-bar" data-testid="tree-undo" key={undo.token}>
             <span>{undo.text}</span>
             <button
@@ -660,7 +697,7 @@ export function WriteScreen() {
             <span className="undo-meter" />
           </div>
         ) : null}
-        {showOrganize ? (
+        {searchInLeft ? null : showOrganize ? (
           <div className="organize-dock">
             <p className="hint">{picked ? treeSelectedHint(picked.title) : TREE_DRAG_HINT}</p>
             <div className="organize-actions">
@@ -697,7 +734,7 @@ export function WriteScreen() {
             </button>
           </div>
         )}
-        {desktop && !showOrganize ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
+        {desktop && !showOrganize && !searchInLeft ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
       </section>
       <section
         className={['editor-pane', yieldClasses].filter(Boolean).join(' ')}
@@ -706,7 +743,7 @@ export function WriteScreen() {
         data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
       >
         {chapter ? (
-          <EditorPane key={`${chapter.id}:${editorEpoch}`} projectId={book.id} chapter={chapter} />
+          <EditorPane key={`${chapter.id}:${editorEpoch}`} projectId={book.id} chapter={chapter} search={search} />
         ) : chapterId ? (
           <div className="editor-empty">
             <p>{CHAPTER_NOT_FOUND}</p>
@@ -725,11 +762,13 @@ export function WriteScreen() {
         {sidePanels.right && (
           <WritingCardsDrawer
             projectId={book.id}
-            isDesktopFile={book.origin === 'file'}
             onClose={() => closePanel('right')}
           />
         )}
       </aside>
+      {search.side !== 'left' ? (
+        <BookSearchPanel search={search} variant={search.side} compact={layoutMode === 'phone-landscape'} />
+      ) : null}
 
       {menuNode && menu?.kind === 'progress' ? (
         <Sheet title={TREE_PROGRESS} testId="progress-menu" closeOnEscape onClose={() => setMenu(null)}>

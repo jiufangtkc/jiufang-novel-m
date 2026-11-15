@@ -11,19 +11,21 @@ import {
   CARDS_READONLY_BADGE,
   cardsSubcardsCountLabel,
   categoryRowAria,
+  CARDS_EMPTY_IN_CATEGORY_HINT,
   CLOSE_CARDS_ARIA,
   displayCardTitle,
   SAMPLE_CARDS_NOTICE,
+  WRITING_CARDS_EMPTY_BOOK_HINT,
 } from '../copy/userFacing';
-import { DEMO_CARD_CATEGORIES, DEMO_CARDS } from '../data/demoCards';
 import {
   buildCardTree,
   cardsViewReducer,
   cardVisualStyles,
   countCardsInCategory,
-  filterVisibleCategories,
   flattenVisibleCards,
 } from '../domain/cards';
+import { useProject, useSample } from '../state/sampleStore';
+import { readWritingCardsData } from './writingCardsData';
 import {
   getStoredWritingCardsView,
   saveStoredWritingCardsView,
@@ -31,7 +33,6 @@ import {
 
 export interface WritingCardsDrawerProps {
   projectId: string;
-  isDesktopFile?: boolean;
   initialCategoryId?: string | null;
   initialCardId?: string | null;
   initialCollapsedIds?: Iterable<string>;
@@ -43,17 +44,25 @@ export interface WritingCardsDrawerProps {
  * - 標題寫「資料集」
  * - 只能看、不能改：絕不出現編輯、新增、刪除、排序、改色等按鈕，亦無變灰按鈕
  * - AI 對話紀錄分類完全隱藏
- * - 預設開啟「角色」分類，記住同一稿件上次閱讀位置
+ * - 讀目前這份稿子的分類與卡片（與資料集同一份資料）；沒有卡片就顯示說明，不塞範例卡片（WO-74）
+ * - 範例卡片提示只在內建範例書出現（WO-75）
+ * - 記住同一稿件上次閱讀位置
  * - 支援多層：分類清單（第 1 層）→ 卡片清單（第 2 層）→ 卡片排版內容（第 3 層，以 CardMarkdownView 渲染）
  */
 export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   projectId,
-  isDesktopFile = false,
   initialCategoryId,
   initialCardId,
   initialCollapsedIds,
   onClose,
 }) => {
+  const { state: sampleState } = useSample();
+  const project = useProject(projectId);
+  const { cards: bookCards, categories, isSample } = readWritingCardsData(
+    sampleState,
+    projectId,
+    project,
+  );
   const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
   const stored = getStoredWritingCardsView(projectId, sessionStorage);
 
@@ -92,12 +101,11 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
     dispatch({ type: 'TOGGLE_COLLAPSE', cardId });
   };
 
-  const categories = filterVisibleCategories(DEMO_CARD_CATEGORIES);
   const currentCategory = selectedCategoryId
     ? categories.find((c) => c.id === selectedCategoryId) ?? null
     : null;
   const currentCard = selectedCardId
-    ? DEMO_CARDS.find((c) => c.id === selectedCardId) ?? null
+    ? bookCards.find((c) => c.id === selectedCardId) ?? null
     : null;
 
   // 第 3 層：卡片排版內容預覽（只能看，使用 CardMarkdownView）
@@ -107,7 +115,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
       currentCategory?.name ??
       categories.find((c) => c.id === currentCard.category)?.name ??
       CARDS_HEADING;
-    const subcards = DEMO_CARDS.filter((c) => c.parent_id === currentCard.id).sort(
+    const subcards = bookCards.filter((c) => c.parent_id === currentCard.id).sort(
       (a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id),
     );
 
@@ -150,7 +158,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
             </button>
           </header>
 
-          {isDesktopFile && (
+          {isSample && (
             <div className="cards-file-notice" data-testid="cards-file-notice">
               {SAMPLE_CARDS_NOTICE}
             </div>
@@ -210,7 +218,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
 
   // 第 2 層：分類下的卡片清單
   if (currentCategory) {
-    const cardTree = buildCardTree(DEMO_CARDS, currentCategory.id);
+    const cardTree = buildCardTree(bookCards, currentCategory.id);
     const rows = flattenVisibleCards(cardTree, collapsedIds);
 
     return (
@@ -252,13 +260,18 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
             </button>
           </header>
 
-          {isDesktopFile && (
+          {isSample && (
             <div className="cards-file-notice" data-testid="cards-file-notice">
               {SAMPLE_CARDS_NOTICE}
             </div>
           )}
 
           <div className="writing-cards-scroll">
+            {rows.length === 0 && (
+              <p className="empty-note" data-testid="category-cards-empty">
+                {CARDS_EMPTY_IN_CATEGORY_HINT}
+              </p>
+            )}
             <ul className="card-list" data-testid="category-card-list">
               {rows.map((row) => {
                 const visual = cardVisualStyles(row.card.color);
@@ -350,16 +363,21 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
           </button>
         </header>
 
-        {isDesktopFile && (
+        {isSample && (
           <div className="cards-file-notice" data-testid="cards-file-notice">
             {SAMPLE_CARDS_NOTICE}
           </div>
         )}
 
         <div className="writing-cards-scroll">
+          {bookCards.length === 0 && (
+            <p className="empty-note" data-testid="writing-cards-empty">
+              {WRITING_CARDS_EMPTY_BOOK_HINT}
+            </p>
+          )}
           <ul className="category-list" data-testid="category-list">
             {categories.map((cat) => {
-              const count = countCardsInCategory(DEMO_CARDS, cat.id);
+              const count = countCardsInCategory(bookCards, cat.id);
               return (
                 <li key={cat.id}>
                   <button

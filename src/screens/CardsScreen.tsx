@@ -75,6 +75,7 @@ import { deletedFromCard, type DeletedCardRecord } from '../domain/cardArchive';
 import { type FileCard } from '../db/projectFile';
 import { bookArchive } from '../db/chapterArchive';
 import { useLayout } from '../layout';
+import { isBuiltinSampleBook } from '../domain/builtinSampleBook';
 import { getProjectCards, getProjectCategorySettings, useProject, useSample } from '../state/sampleStore';
 import { loadTreePlace } from './treeScroll';
 
@@ -230,6 +231,8 @@ export function CardsScreen(props: CardsScreenProps = {}) {
   }
 
   const isDesktopFile = project.origin === 'file';
+  // WO-75：範例卡片提示只在內建範例書出現，與是否從檔案開啟無關
+  const isSampleNotice = isBuiltinSampleBook(project);
   const isBuiltinDemoProject = DEMO_PROJECTS.some(
     (demo) => demo.id === project.id || demo.id === projectId,
   );
@@ -942,7 +945,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
               <header className="topbar">
                 <h2>{CARDS_COLUMN_CATEGORIES}</h2>
               </header>
-              {isDesktopFile && (
+              {isSampleNotice && (
                 <div className="cards-file-notice" data-testid="cards-file-notice">
                   {SAMPLE_CARDS_NOTICE}
                 </div>
@@ -1044,7 +1047,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
               <header className="topbar">
                 <h1>{CARDS_HEADING}</h1>
               </header>
-              {isDesktopFile && (
+              {isSampleNotice && (
                 <div className="cards-file-notice" data-testid="cards-file-notice">
                   {SAMPLE_CARDS_NOTICE}
                 </div>
@@ -1181,7 +1184,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   <CloseIcon />
                 </button>
               </header>
-              {isDesktopFile && (
+              {isSampleNotice && (
                 <div className="cards-file-notice" data-testid="cards-file-notice">
                   {SAMPLE_CARDS_NOTICE}
                 </div>
@@ -1215,7 +1218,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   <CloseIcon />
                 </button>
               </header>
-              {isDesktopFile && (
+              {isSampleNotice && (
                 <div className="cards-file-notice" data-testid="cards-file-notice">
                   {SAMPLE_CARDS_NOTICE}
                 </div>
@@ -1239,7 +1242,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   <CloseIcon />
                 </button>
               </header>
-              {isDesktopFile && (
+              {isSampleNotice && (
                 <div className="cards-file-notice" data-testid="cards-file-notice">
                   {SAMPLE_CARDS_NOTICE}
                 </div>
@@ -1341,7 +1344,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           <h1>{categoryName}</h1>
         </header>
 
-        {isDesktopFile && (
+        {isSampleNotice && (
           <div className="cards-file-notice" data-testid="cards-file-notice">
             {SAMPLE_CARDS_NOTICE}
           </div>
@@ -1376,7 +1379,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           {renderAddCardButton()}
         </header>
 
-        {isDesktopFile && (
+        {isSampleNotice && (
           <div className="cards-file-notice" data-testid="cards-file-notice">
             {SAMPLE_CARDS_NOTICE}
           </div>
@@ -1398,7 +1401,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
         <h1>{CARDS_HEADING}</h1>
       </header>
 
-      {isDesktopFile && (
+      {isSampleNotice && (
         <div className="cards-file-notice" data-testid="cards-file-notice">
           {SAMPLE_CARDS_NOTICE}
         </div>

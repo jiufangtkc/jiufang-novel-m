@@ -1,14 +1,17 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   BACK_TO_CARDS_ARIA,
   BACK_TO_CATEGORIES_ARIA,
   CARDS_HEADING,
+  CARDS_READONLY_BADGE,
   CLOSE_CARDS_ARIA,
+  CARDS_EMPTY_IN_CATEGORY_HINT,
   SAMPLE_CARDS_NOTICE,
   VIEW_CARDS_BUTTON,
+  WRITING_CARDS_EMPTY_BOOK_HINT,
 } from '../copy/userFacing';
 import type { ChapterNode } from '../data/demo';
 import { SampleProvider } from '../state/sampleStore';
@@ -17,6 +20,56 @@ import {
   WritingCardsDrawer,
   type WritingCardsDrawerProps,
 } from '../components/WritingCardsDrawer';
+
+const OWN_CARDS = [
+  {
+    id: 'own-1',
+    parent_id: null,
+    category: 'character',
+    title: '【範例】測試稿自己的角色',
+    content: '這是這份測試稿自己的角色內容',
+    color: '#3C3F41',
+    is_collapsed: 0,
+    sort_order: 1,
+  },
+  {
+    id: 'own-2',
+    parent_id: 'own-1',
+    category: 'character',
+    title: '自己的子卡片',
+    content: '子卡片內容',
+    color: '#3C3F41',
+    is_collapsed: 0,
+    sort_order: 2,
+  },
+];
+
+// 新稿、手機自己的稿、從檔案開啟的稿；看卡片要讀這份稿子自己的卡片
+vi.mock('../state/sampleStore', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../state/sampleStore')>();
+  const base = { updatedLabel: '剛剛', bookGoal: 50000, nodes: [] };
+  return {
+    ...actual,
+    useProject: (projectId: string | undefined) => {
+      if (projectId === 'new-book') {
+        return { ...base, id: 'new-book', title: '【範例】新稿測試', cards: [] };
+      }
+      if (projectId === 'own-book') {
+        return { ...base, id: 'own-book', title: '【範例】自己的測試稿', cards: OWN_CARDS };
+      }
+      if (projectId === 'reopened-file') {
+        return {
+          ...base,
+          id: 'reopened-file',
+          title: '【範例】另存再開測試稿',
+          origin: 'file',
+          cards: OWN_CARDS,
+        };
+      }
+      return actual.useProject(projectId);
+    },
+  };
+});
 
 const mockChapter: ChapterNode = {
   id: 'ch-test-1',
@@ -49,7 +102,9 @@ function renderEditorPane(projectId = 'fog', chapter = mockChapter): string {
 }
 
 function renderDrawer(props: WritingCardsDrawerProps): string {
-  return renderToStaticMarkup(createElement(WritingCardsDrawer, props));
+  return renderToStaticMarkup(
+    createElement(SampleProvider, null, createElement(WritingCardsDrawer, props)),
+  );
 }
 
 describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
@@ -142,21 +197,69 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
     expect(layer1).not.toContain('ai_chat');
   });
 
-  it('電腦版稿件顯示提示小字，一般稿件不顯示', () => {
-    const normalHtml = renderDrawer({
-      projectId: 'fog',
-      isDesktopFile: false,
-      initialCategoryId: null,
-      onClose: () => {},
-    });
-    expect(normalHtml).not.toContain(SAMPLE_CARDS_NOTICE);
+  it('WO-75：提示小字只在內建範例書出現；新稿、自己的稿、另存再開的檔都沒有', () => {
+    const sample = renderDrawer({ projectId: 'fog', initialCategoryId: null, onClose: () => {} });
+    expect(sample).toContain(SAMPLE_CARDS_NOTICE);
+    expect(
+      renderDrawer({ projectId: 'fog', initialCategoryId: 'character', onClose: () => {} }),
+    ).toContain(SAMPLE_CARDS_NOTICE);
+    expect(
+      renderDrawer({
+        projectId: 'fog',
+        initialCategoryId: 'character',
+        initialCardId: '20000000-0000-4000-8000-000000000003',
+        onClose: () => {},
+      }),
+    ).toContain(SAMPLE_CARDS_NOTICE);
 
-    const desktopHtml = renderDrawer({
-      projectId: 'desktop-proj',
-      isDesktopFile: true,
-      initialCategoryId: null,
-      onClose: () => {},
-    });
-    expect(desktopHtml).toContain(SAMPLE_CARDS_NOTICE);
+    for (const projectId of ['new-book', 'own-book', 'reopened-file']) {
+      for (const initialCategoryId of [null, 'character']) {
+        const html = renderDrawer({ projectId, initialCategoryId, onClose: () => {} });
+        expect(html, `${projectId}/${initialCategoryId}`).not.toContain(SAMPLE_CARDS_NOTICE);
+      }
+    }
+  });
+
+  it('WO-74：新稿沒有卡片時是空的並有一句說明，不出現範例角色', () => {
+    const layer1 = renderDrawer({ projectId: 'new-book', initialCategoryId: null, onClose: () => {} });
+    expect(layer1).toContain(WRITING_CARDS_EMPTY_BOOK_HINT);
+    expect(layer1).toContain('角色，0 張卡片');
+    expect(layer1).not.toContain('沈雨晴');
+    expect(layer1).not.toContain('【範例】');
+
+    const layer2 = renderDrawer({ projectId: 'new-book', initialCategoryId: 'character', onClose: () => {} });
+    expect(layer2).toContain(CARDS_EMPTY_IN_CATEGORY_HINT);
+    expect(layer2).not.toContain('沈雨晴');
+  });
+
+  it('WO-74：看卡片讀這份稿子自己的卡片、張數與子卡片，沒有範例卡片', () => {
+    for (const projectId of ['own-book', 'reopened-file']) {
+      const layer1 = renderDrawer({ projectId, initialCategoryId: null, onClose: () => {} });
+      expect(layer1).not.toContain(WRITING_CARDS_EMPTY_BOOK_HINT);
+      expect(layer1).toContain('角色，2 張卡片');
+      expect(layer1).toContain('本書綱要，0 張卡片');
+      expect(layer1).not.toContain('自訂分類001');
+
+      const layer2 = renderDrawer({ projectId, initialCategoryId: 'character', onClose: () => {} });
+      expect(layer2).toContain('【範例】測試稿自己的角色');
+      expect(layer2).toContain('自己的子卡片');
+      expect(layer2).not.toContain('沈雨晴');
+
+      const layer3 = renderDrawer({
+        projectId,
+        initialCategoryId: 'character',
+        initialCardId: 'own-1',
+        onClose: () => {},
+      });
+      expect(layer3).toContain('這是這份測試稿自己的角色內容');
+      expect(layer3).toContain('子卡片');
+      expect(layer3).toContain(CARDS_READONLY_BADGE);
+    }
+  });
+
+  it('WO-74：內建範例書仍顯示原有範例卡片', () => {
+    const layer1 = renderDrawer({ projectId: 'fog', initialCategoryId: null, onClose: () => {} });
+    expect(layer1).toContain('角色，5 張卡片');
+    expect(layer1).not.toContain(WRITING_CARDS_EMPTY_BOOK_HINT);
   });
 });

@@ -289,6 +289,8 @@ export function todayWordsLabel(words: number | string, goal?: number | string |
 /** 資料集與看卡片依四種版面調整（九方 2026-11-11 定案）。 */
 export const CARDS_READONLY_BADGE = '只能看';
 export const CARDS_EMPTY_CATEGORY_HINT = '請選擇分類';
+/** WO-74：寫作頁看卡片，這份稿子還沒有任何卡片時的說明。 */
+export const WRITING_CARDS_EMPTY_BOOK_HINT = '這份稿子還沒有卡片，可到資料集新增。';
 /** 已選分類但此分類尚無卡片時的說明（WO-73）。 */
 export const CARDS_EMPTY_IN_CATEGORY_HINT = '這個分類還沒有卡片。';
 export const CARDS_EMPTY_CARD_HINT = '請選擇卡片';
