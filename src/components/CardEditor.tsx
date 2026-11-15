@@ -76,8 +76,12 @@ export interface CardEditorProps {
   onDelete?: () => void;
   /** 初始是否開啟選色面板（供靜態渲染與測試使用） */
   initialPickingColor?: boolean;
-  /** WO-64：讓外層在「點正文、往下滑收起」時取得目前草稿，先存卡片再離開 */
+  /** WO-64：讓外層在「點正文、往下滑收起」時取得目前草稿（WO-65 起只暫存，不寫回卡片） */
   draftRef?: React.MutableRefObject<(() => CardEditorSavePayload) | null>;
+  /** WO-65：以編輯模式打開時，接著用上次還沒按「完成」的標題、內容、顏色 */
+  initialDraft?: CardEditorSavePayload | null;
+  /** WO-65：標題、內容、顏色每次改動都立刻交給外層暫存（不是正式存卡片） */
+  onDraftChange?: (draft: CardEditorSavePayload) => void;
 }
 
 export function CardEditor({
@@ -98,13 +102,42 @@ export function CardEditor({
   onDelete,
   initialPickingColor = false,
   draftRef,
+  initialDraft,
+  onDraftChange,
 }: CardEditorProps) {
   const [internalMode, setInternalMode] = useState<'preview' | 'edit'>(initialMode);
   const currentMode = controlledMode ?? internalMode;
 
-  const [title, setTitle] = useState(card.title);
-  const [content, setContent] = useState(card.content);
-  const [color, setColor] = useState(card.color || DEFAULT_CARD_COLOR);
+  // WO-65：一打開就是編輯中、而且有暫存時，接著用暫存的字；預覽一律顯示卡片已存的內容
+  const seed = currentMode === 'edit' && initialDraft ? initialDraft : null;
+  const [title, setTitleState] = useState(seed ? seed.title : card.title);
+  const [content, setContentState] = useState(seed ? seed.content : card.content);
+  const [color, setColorState] = useState(seed ? seed.color || DEFAULT_CARD_COLOR : card.color || DEFAULT_CARD_COLOR);
+  const latest = React.useRef({ title, content, color });
+  latest.current = { title, content, color };
+  const onDraftChangeRef = React.useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  const emitDraft = (patch: Partial<{ title: string; content: string; color: string }>) => {
+    const next = { ...latest.current, ...patch };
+    latest.current = next;
+    onDraftChangeRef.current?.({
+      title: next.title,
+      content: next.content,
+      color: formatCardColorForSave(next.color),
+    });
+  };
+  const setTitle = (value: string) => {
+    setTitleState(value);
+    emitDraft({ title: value });
+  };
+  const setContent = (value: string) => {
+    setContentState(value);
+    emitDraft({ content: value });
+  };
+  const setColor = (value: string) => {
+    setColorState(value);
+    emitDraft({ color: value });
+  };
   const [isPickingColor, setIsPickingColor] = useState(initialPickingColor);
 
   if (draftRef) {
@@ -115,9 +148,9 @@ export function CardEditor({
   React.useEffect(() => {
     if (prevCardIdRef.current !== card.id) {
       prevCardIdRef.current = card.id;
-      setTitle(card.title);
-      setContent(card.content);
-      setColor(card.color || DEFAULT_CARD_COLOR);
+      setTitleState(card.title);
+      setContentState(card.content);
+      setColorState(card.color || DEFAULT_CARD_COLOR);
       if (!controlledMode) {
         setInternalMode(initialMode);
       }
@@ -136,10 +169,10 @@ export function CardEditor({
   };
 
   const handleCancel = () => {
-    // 復原為原始卡片內容（取消／未改不產生變更）
-    setTitle(card.title);
-    setContent(card.content);
-    setColor(card.color || DEFAULT_CARD_COLOR);
+    // 復原為原始卡片內容（取消／未改不產生變更）；這是明確放棄，不再暫存
+    setTitleState(card.title);
+    setContentState(card.content);
+    setColorState(card.color || DEFAULT_CARD_COLOR);
     setIsPickingColor(false);
     onCancel?.();
     switchMode('preview');
