@@ -179,7 +179,7 @@ export function CardEditor({
     <div
       className={`card-editor-pane card-detail-article card-editor-mode-${currentMode}${
         colorPickerBeside ? ' is-color-picker-beside' : ''
-      }`}
+      }${isPickingColor ? ' is-picking-color' : ''}`}
       data-testid="card-editor-pane"
       data-layout={layoutMode}
       data-mode={currentMode}

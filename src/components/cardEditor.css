@@ -6,6 +6,24 @@
   background-color: var(--panel, #1e1e1e);
   color: var(--text, #d4d4d4);
   box-sizing: border-box;
+  container-type: inline-size;
+  container-name: card-editor-pane;
+  position: relative;
+}
+
+/* WO-92 返工：挑色時隱藏表單頁尾，避免橫拿誤按編輯的「完成」 */
+.card-editor-pane.is-picking-color .card-editor-footer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.card-editor-pane.is-picking-color .card-editor-main {
+  pointer-events: none;
+}
+
+.card-editor-pane.is-picking-color .card-color-picker-wrapper,
+.card-editor-pane.is-picking-color .card-color-picker-wrapper * {
+  pointer-events: auto;
 }
 
 .card-editor-main {
@@ -16,14 +34,64 @@
   min-width: 0;
 }
 
-/* WO-92：寬版挑色面板放在編輯欄旁邊 */
-.card-editor-pane.is-color-picker-beside {
-  flex-direction: row;
-  align-items: stretch;
+/* WO-92：寬版挑色面板放在編輯欄旁邊（容器夠寬時） */
+@container card-editor-pane (min-width: 800px) {
+  .card-editor-pane.is-color-picker-beside {
+    flex-direction: row;
+    align-items: stretch;
+  }
+
+  .card-editor-pane.is-color-picker-beside > .card-editor-main {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
 }
 
-.card-editor-pane.is-color-picker-beside > .card-editor-main {
-  flex: 1 1 auto;
+/* WO-92 返工：容器不足（1280 資料集第三欄、寫作側欄約 360）改置中浮出，動作列留在視窗內 */
+@container card-editor-pane (max-width: 799px) {
+  .card-editor-pane.is-color-picker-beside {
+    flex-direction: column;
+  }
+
+  .card-editor-pane.is-color-picker-beside .card-color-picker-aside {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    flex: none;
+    max-width: none;
+    width: auto;
+    border-left: none;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .card-editor-pane.is-color-picker-beside .card-color-picker-aside > .card-color-picker {
+    max-height: 100%;
+    max-width: min(100%, 480px);
+    width: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-radius: 8px;
+  }
+
+  .card-editor-pane.is-color-picker-beside .card-color-picker-aside .color-picker-grid-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+
+  .card-editor-pane.is-color-picker-beside .card-color-picker-aside .color-picker-controls,
+  .card-editor-pane.is-color-picker-beside .card-color-picker-aside .color-picker-actions {
+    flex-shrink: 0;
+  }
 }
 
 .card-editor-header {

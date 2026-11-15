@@ -504,6 +504,9 @@ function tokensToPlainText(tokens: Token[] | undefined, inline = false): string 
   }
 
   const joined = chunks.join(inline ? '' : ' ');
+  if (inline) {
+    return joined.trim();
+  }
   return joined.replace(/\s+/g, ' ').trim();
 }
 

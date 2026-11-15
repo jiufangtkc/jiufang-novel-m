@@ -50,7 +50,7 @@ describe('WO-92 卡片編輯與預覽排版', () => {
     expect(colorButtonCount).toBe(1);
   });
 
-  it('寬版挑色：面板在編輯欄旁邊（aside），非全螢幕 modal', () => {
+  it('寬版挑色：標記 aside 結構，並具備挑色中狀態（容器窄時 CSS 改浮出）', () => {
     const html = renderToStaticMarkup(
       React.createElement(CardEditor, {
         card: sampleCard,
@@ -64,7 +64,8 @@ describe('WO-92 卡片編輯與預覽排版', () => {
 
     expect(html).toContain('card-color-picker-aside');
     expect(html).toContain('is-color-picker-beside');
-    expect(html).not.toMatch(/card-color-picker-modal/);
+    expect(html).toContain('is-picking-color');
+    expect(html).toContain('data-testid="color-action-done"');
   });
 
   it('清單摘要去除 Markdown 符號', () => {

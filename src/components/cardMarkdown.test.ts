@@ -62,6 +62,7 @@ describe('cardMarkdown 獨立解析與轉譯函式（parseCardMarkdown / renderC
 
   it('WO-92：cardContentPreviewPlainText 清單摘要不露出 ** 等符號', () => {
     expect(cardContentPreviewPlainText('記載著**關鍵閥門**的位置。')).toBe('記載著關鍵閥門的位置。');
+    expect(cardContentPreviewPlainText('see **bold** here')).toBe('see bold here');
     expect(cardContentPreviewPlainText('')).toBe('');
   });
 
