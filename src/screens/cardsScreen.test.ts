@@ -539,6 +539,12 @@ describe('WO-61 卡片刪除、10 秒復原與最近刪除接線驗證（CardsSc
     expect(listHtml).toContain(ORGANIZE_CATEGORIES_BUTTON);
   });
 
+  it('WO-93：分類清單下方提供「新增分類」捷徑按鈕', () => {
+    const listHtml = renderCardsScreen('/p/fog/cards');
+    expect(listHtml).toContain('data-testid="add-category-entry-btn"');
+    expect(listHtml).toContain(ADD_CATEGORY_BUTTON);
+  });
+
   it('WO-61 整理分類畫面接線：點入整理分類呈現 CategoryManager 元件、內建分類標「內建」且不可改名或刪除、自訂分類提供操作按鈕與刪除防護', () => {
     const managerHtml = renderCardsScreen('/p/fog/cards', {
       initialIsOrganizingCategories: true,

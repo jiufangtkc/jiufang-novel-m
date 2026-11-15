@@ -16,6 +16,11 @@ export function Workspace() {
   useEffect(() => {
     if (project) actions.focusProject(project.id);
   }, [project, actions]);
+
+  // WO-93：換分頁時收掉「功能還在準備中。」等全域提示，避免殘留在下一頁
+  useEffect(() => {
+    actions.toast(null);
+  }, [pathname, actions]);
   if (!project) {
     return (
       <div className="page">

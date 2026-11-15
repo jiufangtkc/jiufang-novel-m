@@ -1401,13 +1401,13 @@ html.landscape-writing .write-layout .editor-pane {
 
 /* 1. 導覽列在各版面下的規則（WO-55） */
 html[data-layout="phone-portrait"] .nav-rail { display: none; }
-html[data-layout="phone-portrait"] .bottom-nav { display: flex; }
+html[data-layout="phone-portrait"] .bottom-nav { display: grid; }
 
 html[data-layout="phone-landscape"] .nav-rail { display: none; }
 html[data-layout="phone-landscape"] .bottom-nav { display: none; }
 
 html[data-layout="medium"] .nav-rail { display: none; }
-html[data-layout="medium"] .bottom-nav { display: flex; }
+html[data-layout="medium"] .bottom-nav { display: grid; }
 
 /* WO-78：鍵盤開著時優先於直拿／中等的底部分頁顯示規則 */
 html.keyboard-open[data-layout="phone-portrait"] .bottom-nav,

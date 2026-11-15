@@ -6,8 +6,8 @@ describe('WO-78 直拿／中等打字時底部分頁收起', () => {
 
   it('直拿與中等平常仍顯示底部分頁', () => {
     const sheet = css();
-    expect(sheet).toContain('html[data-layout="phone-portrait"] .bottom-nav { display: flex; }');
-    expect(sheet).toContain('html[data-layout="medium"] .bottom-nav { display: flex; }');
+    expect(sheet).toContain('html[data-layout="phone-portrait"] .bottom-nav { display: grid; }');
+    expect(sheet).toContain('html[data-layout="medium"] .bottom-nav { display: grid; }');
   });
 
   it('keyboard-open 搭配直拿或中等時隱藏底部分頁（優先於顯示規則）', () => {

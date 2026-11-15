@@ -196,7 +196,8 @@ export function treeMovedToast(title: string): string {
 }
 
 export function treeAddedToast(title: string): string {
-  return `已新增「${title}」`;
+  const shown = title.replace(/\u3000+$/u, '').trimEnd();
+  return `已新增「${shown}」`;
 }
 
 export function treeSelectedHint(title: string): string {

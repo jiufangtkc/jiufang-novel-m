@@ -16,6 +16,7 @@ import {
   renameNode,
   resolveDrop,
   discardFreshChapter,
+  neighborChapterId,
   withoutNode,
 } from '../domain/chapterOps';
 import { titleForNewChapter } from '../domain/chapterTitle';
@@ -129,6 +130,7 @@ export function WriteScreen() {
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
   const { mode: layoutMode, sidePanels, closePanel, openPanel, focusMode, pointer } = useLayout();
   const desktop = useDesktop();
+  const showKeyboardHints = desktop && pointer !== 'touch';
   // WO-64：寬版編輯卡片時右欄放寬；iPad（觸控）橫拿時把目錄收起，編輯完再還原
   const cardEditing = useSyncExternalStore(subscribeCardEdit, getCardEditSnapshot, getCardEditSnapshot).editing;
   const treeClosedForCardEdit = useRef(false);
@@ -393,6 +395,15 @@ export function WriteScreen() {
     const node = findNode(book.nodes, id);
     const next = withoutNode(book.nodes, id);
     if (!node || !next) return;
+    const viewingChapterId =
+      chapterId && findNode(book.nodes, chapterId) ? chapterId : null;
+    const loseCurrentChapter =
+      viewingChapterId != null &&
+      (viewingChapterId === id || !findNode(next, viewingChapterId));
+    const neighborId = loseCurrentChapter
+      ? neighborChapterId(book.nodes, viewingChapterId, 1) ??
+        neighborChapterId(book.nodes, viewingChapterId, -1)
+      : null;
     const stamped = liveNodes();
     const when = Date.now();
     const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
@@ -401,6 +412,13 @@ export function WriteScreen() {
     if (pickedId === id) setPickedId(null);
     setConfirmId(null);
     setMenu(null);
+    if (loseCurrentChapter) {
+      if (neighborId && findNode(next, neighborId)) {
+        navigate(`/p/${book.id}/write/${neighborId}`);
+      } else {
+        navigate(`/p/${book.id}/write`);
+      }
+    }
   }
 
   function finishRename(id: string, title: string, intent: RenameIntent) {
@@ -752,7 +770,9 @@ export function WriteScreen() {
             </button>
           </div>
         )}
-        {desktop && !showOrganize && !searchInLeft ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
+        {showKeyboardHints && !showOrganize && !searchInLeft ? (
+          <p className="hint tree-desktop-hint">{treeDesktopHint()}</p>
+        ) : null}
       </section>
       <section
         className={['editor-pane', yieldClasses].filter(Boolean).join(' ')}
@@ -834,7 +854,7 @@ export function WriteScreen() {
             else setRenameId(menuNode.id);
           }}>
             {TREE_RENAME}
-            {desktop ? <small>F2</small> : null}
+            {showKeyboardHints ? <small>F2</small> : null}
           </button>
           {menu.kind !== 'short' ? (
             <button type="button" className="menu-item" onClick={() => addChapter(menuNode.id)}>
@@ -855,11 +875,11 @@ export function WriteScreen() {
             <>
               <button type="button" className="menu-item" disabled={!canMoveBy(book.nodes, menuNode.id, -1)} onClick={() => { shift(menuNode.id, -1); setMenu(null); }}>
                 {TREE_MOVE_UP}
-                {desktop ? <small>{desktopMoveUpShortcut()}</small> : null}
+                {showKeyboardHints ? <small>{desktopMoveUpShortcut()}</small> : null}
               </button>
               <button type="button" className="menu-item" disabled={!canMoveBy(book.nodes, menuNode.id, 1)} onClick={() => { shift(menuNode.id, 1); setMenu(null); }}>
                 {TREE_MOVE_DOWN}
-                {desktop ? <small>{desktopMoveDownShortcut()}</small> : null}
+                {showKeyboardHints ? <small>{desktopMoveDownShortcut()}</small> : null}
               </button>
               {menuNode.type === 'file' ? (
                 <button type="button" className="menu-item" onClick={() => setMenu({ id: menuNode.id, kind: 'volume' })}>
@@ -883,7 +903,7 @@ export function WriteScreen() {
           <div className="menu-sep" />
           <button type="button" className="menu-item danger" onClick={() => requestDelete(menuNode.id)}>
             {deleteLabel(menuNode)}
-            {desktop ? <small>Del</small> : null}
+            {showKeyboardHints ? <small>Del</small> : null}
           </button>
         </Sheet>
       ) : null}
