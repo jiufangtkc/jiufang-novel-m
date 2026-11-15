@@ -1,5 +1,5 @@
 import { findNode, type ChapterNode } from '../data/demo';
-import { countManuscriptWords } from './manuscriptWords';
+import { countBodyWords } from './wordCount';
 
 export interface NodeLocation {
   parentId: string | null;
@@ -216,10 +216,7 @@ function countKind(node: ChapterNode, type: ChapterNode['type'], includeSelf: bo
 export function removalImpact(node: ChapterNode): RemovalImpact {
   const chapters = countKind(node, 'file', false);
   const scenes = countKind(node, 'scene', node.type !== 'scene');
-  const words = (function wordSum(current: ChapterNode): number {
-    const own = current.type === 'folder' ? 0 : countManuscriptWords(current.content ?? '');
-    return own + (current.children ?? []).reduce((sum, child) => sum + wordSum(child), 0);
-  })(node);
+  const words = countBodyWords(node);
   const needsConfirm = words > 0 || (node.children?.length ?? 0) > 0;
   return { chapters, scenes, words, needsConfirm };
 }

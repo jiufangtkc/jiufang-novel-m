@@ -105,6 +105,7 @@ import { focusTitleInput } from './titleCaret';
 import { loadTreePlace, saveTreePlace, scrollTopForRow, type TreePlace } from './treeScroll';
 import { reduceDrag, type DragState } from './dragSession';
 import { useBookArchive } from './useBookArchive';
+import { countWords } from '../domain/wordCount';
 
 type UndoBar = { text: string; token: number; deleted?: DeletedRecord; structure?: StructureChange };
 type RenameIntent = 'stay' | 'write';
@@ -936,7 +937,7 @@ export function WriteScreen() {
             <div className="version-list">
               {(archive.versions[versionFor] ?? []).map((version) => (
                 <div key={version.id} className="version-row">
-                  <span>{versionRowLabel(whenLabel(version.savedAt), formatInteger(version.wordCount))}</span>
+                  <span>{versionRowLabel(whenLabel(version.savedAt), formatInteger(countWords(version.content)))}</span>
                   <button type="button" onClick={() => setPreview(version)}>
                     {TREE_VERSION_PREVIEW}
                   </button>

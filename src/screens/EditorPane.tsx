@@ -27,7 +27,6 @@ import type { ChapterNode } from '../data/demo';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { neighborChapterId } from '../domain/chapterOps';
 import { sessionVersions, VERSION_INTERVAL_MS, withVersion } from '../domain/chapterVersions';
-import { countManuscriptWords } from '../domain/manuscriptWords';
 import { latestSaveTimestamp } from '../domain/saveClock';
 import { countWords } from '../domain/wordCount';
 import {
@@ -55,8 +54,16 @@ import {
   landscapeExitReducer,
   useLayout,
 } from '../layout';
+import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthReminder';
 import { useProject, useSample } from '../state/sampleStore';
 import { editorSaveStatus } from './editorSaveStatus';
+import {
+  HalfWidthBadge,
+  HalfWidthBubble,
+  HalfWidthOverlay,
+  HalfWidthStrip,
+  useHalfWidthReminder,
+} from './HalfWidthReminder';
 import './focusMode.css';
 
 export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
@@ -69,7 +76,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   const [focused, setFocused] = useState(false);
   const keyboard = useWritingKeyboard(focused);
   const keyboardOpen = keyboard.compact;
-  const { ref } = useWritingSurface({
+  const { ref, replaceText } = useWritingSurface({
     bookId: projectId,
     chapterId: chapter.id,
     openingText: chapter.content ?? '',
@@ -110,7 +117,19 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     enterFocusMode,
     exitFocusMode,
     bodyFontScale,
+    pointer,
   } = useLayout();
+  const [halfWidthOn] = useHalfWidthSetting();
+  const halfWidth = useHalfWidthReminder({
+    textareaRef: ref,
+    bookId: projectId,
+    chapterId: chapter.id,
+    enabled: halfWidthOn,
+    focusMode,
+    bodyFontScale,
+    layoutMode,
+    replaceText,
+  });
   const bodyFontScaleRef = useRef(bodyFontScale);
   bodyFontScaleRef.current = bodyFontScale;
   const prevLayoutModeRef = useRef(layoutMode);
@@ -353,6 +372,19 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
     navigate(`/p/${projectId}/write/${id}`);
   }
 
+  // WO-76 乙段：提示條與頁首提示。專注模式一律只留底線；打字中或鍵盤開著只留底線（寬版除外）。
+  const halfWidthNotice =
+    halfWidthOn && !focusMode && (halfWidth.result !== null || (halfWidth.count > 0 && !halfWidth.skipped));
+  const halfWidthQuiet = halfWidth.typing || keyboardOpen;
+  const showHalfWidthStrip = halfWidthNotice && layoutMode === 'phone-portrait' && !halfWidthQuiet;
+  const showHalfWidthBadge =
+    halfWidthNotice &&
+    (layoutMode === 'wide' ||
+      ((layoutMode === 'phone-landscape' || layoutMode === 'medium') &&
+        !keyboard.landscape &&
+        !halfWidthQuiet &&
+        !(focused && pointer === 'touch')));
+
   const isYieldLeft =
     (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.left;
   const isYieldRight =
@@ -371,6 +403,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
       data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
     >
+      <HalfWidthOverlay controller={halfWidth} />
       <button
         type="button"
         className={['focus-exit-button', landscapeExitState.expanded ? 'is-expanded' : '']
@@ -403,10 +436,16 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
           <span className="tree-toggle-label">{TREE_DRAWER_BUTTON}</span>
         </button>
         <h1>{chapter.title}</h1>
+        {showHalfWidthBadge && layoutMode !== 'wide' && (
+          <HalfWidthBadge controller={halfWidth} expandable={layoutMode === 'medium'} />
+        )}
         <div className="topbar-stats" data-testid="topbar-stats">
           <span className="topbar-words" data-testid="topbar-words">
             {todayWordsLabel(todayWords, goal)}
           </span>
+          {showHalfWidthBadge && layoutMode === 'wide' && (
+            <HalfWidthBadge controller={halfWidth} expandable />
+          )}
           <span className="topbar-save" data-testid="topbar-save">
             {saveStatus.label}
           </span>
@@ -504,15 +543,14 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
           if (el) actions.rememberPlace(projectId, chapter.id, el.selectionStart ?? 0);
         }}
       />
+      <HalfWidthBubble controller={halfWidth} />
       <footer className="editor-status" data-testid="status-bar">
         <DailyProgressBar words={todayWords} goal={goal} met={isGlowing} compact={keyboardOpen} />
         <div className="status-row">
           <span className="status-cluster">
             <span data-testid="chapter-word-count">
               本章字數：
-              {project?.origin === 'file'
-                ? countManuscriptWords(chapter.content ?? '')
-                : countWords(chapter.content ?? '')}
+              {countWords(chapter.content ?? '')}
             </span>
             {chapter.progress && <StatusBadge code={chapter.progress} />}
           </span>
@@ -539,6 +577,9 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
             {TREE_NEXT_CHAPTER}
           </button>
         </div>
+        {showHalfWidthStrip && (
+          <HalfWidthStrip controller={halfWidth} preferShort={bodyFontScale >= 175} />
+        )}
         <div className="thumb-bar" data-testid="thumb-bar">
           <button
             type="button"

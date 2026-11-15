@@ -11,6 +11,7 @@ import {
 import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
 import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
 import { canPickLocalFiles } from '../db/browserDisk';
+import { recentDisplayProjects } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
 
 export function HomeScreen() {
@@ -21,9 +22,8 @@ export function HomeScreen() {
   const openInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState(NEW_BOOK_DEFAULT_TITLE);
   const [shape, setShape] = useState<'novel' | 'single'>('novel');
-  const recent = state.recentIds
-    .map((id) => state.projects.find((project) => project.id === id))
-    .filter((project) => project !== undefined);
+  // WO-84：同名稿子只列最近一次成功存下來的那份。
+  const recent = recentDisplayProjects(state.projects, state.recentIds, state.saveMeta);
 
   return (
     <div className="home" data-testid="home-screen">
