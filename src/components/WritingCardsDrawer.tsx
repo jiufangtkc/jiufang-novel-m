@@ -1,6 +1,5 @@
-import React, { useReducer } from 'react';
+import React, { useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { BackIcon, ChevronIcon, CloseIcon } from './Icons';
-import { CardMarkdownView } from './CardMarkdownView';
 import {
   BACK_TO_CARDS_ARIA,
   BACK_TO_CATEGORIES_ARIA,
@@ -8,8 +7,6 @@ import {
   cardDetailAria,
   cardExpandAria,
   CARDS_HEADING,
-  CARDS_READONLY_BADGE,
-  cardsSubcardsCountLabel,
   categoryRowAria,
   CARDS_EMPTY_IN_CATEGORY_HINT,
   CLOSE_CARDS_ARIA,
@@ -24,7 +21,25 @@ import {
   countCardsInCategory,
   flattenVisibleCards,
 } from '../domain/cards';
+import { savedCardToast } from '../copy/cardEditCopy';
+import {
+  WRITING_CARD_MORE_CLOSE,
+  WRITING_CARD_MORE_TITLE,
+  WRITING_CARD_OPEN_IN_DATASET,
+  writingPlaceSpoken,
+} from '../copy/writingCardEditCopy';
+import { useLayout } from '../layout/layoutContext';
 import { useProject, useSample } from '../state/sampleStore';
+import {
+  endCardEdit,
+  flushCardEdit,
+  getCardEditSnapshot,
+  registerCardEditFlush,
+  startCardEdit,
+  subscribeCardEdit,
+} from '../state/writingCardEditSession';
+import { CardEditor, type CardEditorSavePayload } from './CardEditor';
+import './writingCardEdit.css';
 import { readWritingCardsData } from './writingCardsData';
 import {
   getStoredWritingCardsView,
@@ -37,17 +52,21 @@ export interface WritingCardsDrawerProps {
   initialCardId?: string | null;
   initialCollapsedIds?: Iterable<string>;
   onClose: () => void;
+  /** WO-64：卡片存好後的提示（手機直拿面板收起後仍要看得到，由外層顯示） */
+  onSaved?: (message: string) => void;
+  /** WO-64：「⋯」的動作；有給才出現「⋯」，按了會先存卡片再離開寫作頁 */
+  onOpenInDataset?: () => void;
 }
 
 /**
  * 寫作時看卡片面板（WO-50）
  * - 標題寫「資料集」
- * - 只能看、不能改：絕不出現編輯、新增、刪除、排序、改色等按鈕，亦無變灰按鈕
+ * - WO-64：卡片內容層可按「編輯」（重用 CardEditor 與 actions.updateCard）；不出現新增、刪除、排序等管理按鈕
  * - AI 對話紀錄分類完全隱藏
  * - 讀目前這份稿子的分類與卡片（與資料集同一份資料）；沒有卡片就顯示說明，不塞範例卡片（WO-74）
  * - 範例卡片提示只在內建範例書出現（WO-75）
  * - 記住同一稿件上次閱讀位置
- * - 支援多層：分類清單（第 1 層）→ 卡片清單（第 2 層）→ 卡片排版內容（第 3 層，以 CardMarkdownView 渲染）
+ * - 支援多層：分類清單（第 1 層）→ 卡片清單（第 2 層）→ 卡片內容（第 3 層，CardEditor 預覽／編輯）
  */
 export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   projectId,
@@ -55,8 +74,17 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   initialCardId,
   initialCollapsedIds,
   onClose,
+  onSaved,
+  onOpenInDataset,
 }) => {
-  const { state: sampleState } = useSample();
+  const { state: sampleState, actions } = useSample();
+  const { mode: layoutMode } = useLayout();
+  const edit = useSyncExternalStore(subscribeCardEdit, getCardEditSnapshot, getCardEditSnapshot);
+  const draftRef = useRef<(() => CardEditorSavePayload) | null>(null);
+  const [savedNotice, setSavedNotice] = useState<string | undefined>(undefined);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const swipeStart = useRef<{ x: number; y: number } | null>(null);
+  const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const project = useProject(projectId);
   const { cards: bookCards, categories, isSample } = readWritingCardsData(
     sampleState,
@@ -108,9 +136,99 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
     ? bookCards.find((c) => c.id === selectedCardId) ?? null
     : null;
 
-  // 第 3 層：卡片排版內容預覽（只能看，使用 CardMarkdownView）
+  const editing = edit.editing && currentCard !== null;
+  const currentCardRef = useRef(currentCard);
+  currentCardRef.current = currentCard;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const onSavedRef = useRef(onSaved);
+  onSavedRef.current = onSaved;
+
+  // 存卡片只走既有的 actions.updateCard（與資料集同一個動作）
+  const commitCard = (cardId: string, patch: CardEditorSavePayload) => {
+    actions.updateCard(projectIdRef.current, cardId, patch);
+    const message = savedCardToast(patch.title);
+    setSavedNotice(message);
+    onSavedRef.current?.(message);
+  };
+  const commitRef = useRef(commitCard);
+  commitRef.current = commitCard;
+
+  // 登記「先存卡片再結束編輯」的出口：點正文、往下滑、點背景、關閉、切走都走這裡
+  useEffect(() => {
+    registerCardEditFlush((kind) => {
+      const card = currentCardRef.current;
+      const draft = draftRef.current?.();
+      if (card && draft) commitRef.current(card.id, draft);
+      endCardEdit(kind);
+    });
+    return () => {
+      // 面板被拿掉時若還在編輯，先存再結束，不讓草稿掉掉
+      flushCardEdit('close');
+      registerCardEditFlush(null);
+    };
+  }, []);
+
+  // 編輯中面板高度跟著鍵盤上方的可視高度（手機直拿全高、橫拿與中等縮到鍵盤上方）
+  useEffect(() => {
+    if (!editing || layoutMode === 'wide' || typeof window === 'undefined') {
+      setViewportHeight(null);
+      return;
+    }
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const sync = () => setViewportHeight(Math.round(vv.height));
+    sync();
+    vv.addEventListener('resize', sync);
+    return () => vv.removeEventListener('resize', sync);
+  }, [editing, layoutMode]);
+
+  // 進入編輯後，把鍵盤交給卡片內容
+  useEffect(() => {
+    if (!editing) return;
+    const area = document.querySelector<HTMLTextAreaElement>(
+      '[data-testid="writing-cards-drawer"] [data-testid="card-editor-content-textarea"]',
+    );
+    area?.focus();
+  }, [editing]);
+
+  const requestClose = () => {
+    flushCardEdit('close');
+    onClose();
+  };
+
+  const isPortrait = layoutMode === 'phone-portrait';
+  const swipeHandlers = isPortrait
+    ? {
+        onPointerDown: (e: React.PointerEvent) => {
+          swipeStart.current = { x: e.clientX, y: e.clientY };
+          // 滑鼠與觸控都要在手指移出把手後還收得到放開的事件
+          try {
+            e.currentTarget.setPointerCapture(e.pointerId);
+          } catch {
+            // 沒有指標捕捉的環境略過
+          }
+        },
+        onPointerUp: (e: React.PointerEvent) => {
+          const start = swipeStart.current;
+          swipeStart.current = null;
+          if (!start) return;
+          const dx = e.clientX - start.x;
+          const dy = e.clientY - start.y;
+          if (dy > 72 && Math.abs(dx) < dy) requestClose();
+        },
+        onPointerCancel: () => {
+          swipeStart.current = null;
+        },
+      }
+    : {};
+  const drawerStyle: React.CSSProperties | undefined =
+    editing && viewportHeight !== null
+      ? { top: 0, bottom: 'auto', height: viewportHeight, maxHeight: viewportHeight }
+      : undefined;
+
+  // 第 3 層：卡片內容（預覽與編輯都用 CardEditor）
   if (currentCard) {
-    const visual = cardVisualStyles(currentCard.color);
     const categoryName =
       currentCategory?.name ??
       categories.find((c) => c.id === currentCard.category)?.name ??
@@ -119,98 +237,143 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
       (a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id),
     );
 
+    const placeLabel = edit.placeLabel;
     return (
       <>
         <div
           className="writing-cards-overlay"
           data-testid="writing-cards-overlay"
-          onClick={onClose}
+          onClick={requestClose}
           aria-hidden="true"
         />
         <aside
           className="writing-cards-drawer"
           data-testid="writing-cards-drawer"
+          data-card-editing={editing ? 'true' : undefined}
           aria-label={CARDS_HEADING}
+          style={drawerStyle}
         >
-          <header className="writing-cards-header">
-            <button
-              type="button"
-              className="icon-button"
-              aria-label={BACK_TO_CARDS_ARIA}
-              onClick={handleBackToCards}
-            >
-              <BackIcon />
-            </button>
-            <h2 className="writing-cards-title">
-              <span className="writing-cards-badge">{CARDS_HEADING}</span>
-              <span className="writing-cards-sep">·</span>
-              <span>{categoryName}</span>
-            </h2>
-            <span className="cards-readonly-badge">{CARDS_READONLY_BADGE}</span>
-            <button
-              type="button"
-              className="icon-button writing-cards-close"
-              aria-label={CLOSE_CARDS_ARIA}
-              onClick={onClose}
-              data-testid="close-cards-drawer"
-            >
-              <CloseIcon />
-            </button>
-          </header>
+          {editing ? (
+            isPortrait &&
+            placeLabel && (
+              <div
+                className="writing-card-place"
+                data-testid="writing-card-place"
+                role="note"
+                aria-label={writingPlaceSpoken(placeLabel)}
+                {...swipeHandlers}
+              >
+                <span aria-hidden="true">{placeLabel}</span>
+              </div>
+            )
+          ) : (
+            <header className="writing-cards-header" {...swipeHandlers}>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={BACK_TO_CARDS_ARIA}
+                onClick={() => {
+                  setSavedNotice(undefined);
+                  handleBackToCards();
+                }}
+              >
+                <BackIcon />
+              </button>
+              <h2 className="writing-cards-title">
+                <span className="writing-cards-badge">{CARDS_HEADING}</span>
+                <span className="writing-cards-sep">·</span>
+                <span>{categoryName}</span>
+              </h2>
+              <button
+                type="button"
+                className="icon-button writing-cards-close"
+                aria-label={CLOSE_CARDS_ARIA}
+                onClick={requestClose}
+                data-testid="close-cards-drawer"
+              >
+                <CloseIcon />
+              </button>
+            </header>
+          )}
 
-          {isSample && (
+          {isSample && !editing && (
             <div className="cards-file-notice" data-testid="cards-file-notice">
               {SAMPLE_CARDS_NOTICE}
             </div>
           )}
 
-          <div className="writing-cards-scroll card-detail-pane">
-            <article className="card-detail-article">
-              <div className="card-detail-title-row">
-                {visual && (
-                  <span
-                    className="card-color-dot"
-                    style={{ backgroundColor: visual.dotColor }}
-                    aria-hidden="true"
-                  />
-                )}
-                <h3 className="card-detail-heading">{displayCardTitle(currentCard.title)}</h3>
-              </div>
-              <div className="card-detail-content" data-testid="card-preview-content">
-                <CardMarkdownView content={currentCard.content} />
-              </div>
-              {subcards.length > 0 && (
-                <div className="cards-subcards-section" data-testid="cards-subcards-section">
-                  <div className="cards-subcards-heading">
-                    {cardsSubcardsCountLabel(subcards.length)}
-                  </div>
-                  <ul className="cards-subcards-list">
-                    {subcards.map((subcard) => {
-                      const subVisual = cardVisualStyles(subcard.color);
-                      return (
-                        <li key={subcard.id} className="cards-subcard-item">
-                          <button
-                            type="button"
-                            className="cards-subcard-button"
-                            onClick={() => handleSelectCard(subcard.id)}
-                            aria-label={cardDetailAria(subcard.title)}
-                            style={subVisual ? { borderLeft: subVisual.borderLeft } : undefined}
-                          >
-                            <span className="cards-subcard-title">
-                              {displayCardTitle(subcard.title)}
-                            </span>
-                            <span className="cards-subcard-chevron" aria-hidden="true">
-                              ›
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                </div>
-              )}
-            </article>
+          <div
+            className="writing-cards-scroll card-detail-pane writing-card-editor-wrap"
+            data-testid={editing ? undefined : 'card-preview-content'}
+          >
+            <CardEditor
+              key={currentCard.id}
+              card={currentCard}
+              mode={editing ? 'edit' : 'preview'}
+              onModeChange={(next) => {
+                if (next === 'edit') {
+                  setSavedNotice(undefined);
+                  startCardEdit();
+                } else {
+                  endCardEdit('cancel');
+                }
+              }}
+              layoutMode={layoutMode}
+              savedNotice={savedNotice}
+              subcards={subcards}
+              onSelectSubcard={(subId) => {
+                setSavedNotice(undefined);
+                handleSelectCard(subId);
+              }}
+              onMoreActions={onOpenInDataset ? () => setMoreOpen(true) : undefined}
+              draftRef={draftRef}
+              onSave={(patch) => commitCard(currentCard.id, patch)}
+              onDone={(destination) => {
+                endCardEdit('done');
+                if (destination === 'text') onClose();
+              }}
+              onCancel={() => endCardEdit('cancel')}
+            />
           </div>
+
+          {moreOpen && onOpenInDataset && (
+            <div
+              className="writing-card-more-backdrop"
+              role="presentation"
+              onClick={() => setMoreOpen(false)}
+              data-testid="writing-card-more-backdrop"
+            >
+              <div
+                className="writing-card-more-sheet"
+                role="dialog"
+                aria-modal="true"
+                aria-label={WRITING_CARD_MORE_TITLE}
+                data-testid="writing-card-more-sheet"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  className="writing-card-more-item"
+                  data-testid="writing-card-more-open-dataset"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    flushCardEdit('close');
+                    onOpenInDataset();
+                  }}
+                >
+                  {WRITING_CARD_OPEN_IN_DATASET}
+                </button>
+                <button
+                  type="button"
+                  className="writing-card-more-item"
+                  data-testid="writing-card-more-close"
+                  onClick={() => setMoreOpen(false)}
+                >
+                  {WRITING_CARD_MORE_CLOSE}
+                </button>
+              </div>
+            </div>
+          )}
         </aside>
       </>
     );
@@ -226,7 +389,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
         <div
           className="writing-cards-overlay"
           data-testid="writing-cards-overlay"
-          onClick={onClose}
+          onClick={requestClose}
           aria-hidden="true"
         />
         <aside
@@ -248,12 +411,11 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
               <span className="writing-cards-sep">·</span>
               <span>{currentCategory.name}</span>
             </h2>
-            <span className="cards-readonly-badge">{CARDS_READONLY_BADGE}</span>
             <button
               type="button"
               className="icon-button writing-cards-close"
               aria-label={CLOSE_CARDS_ARIA}
-              onClick={onClose}
+              onClick={requestClose}
               data-testid="close-cards-drawer"
             >
               <CloseIcon />
@@ -340,7 +502,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
       <div
         className="writing-cards-overlay"
         data-testid="writing-cards-overlay"
-        onClick={onClose}
+        onClick={requestClose}
         aria-hidden="true"
       />
       <aside
@@ -351,12 +513,11 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
         <header className="writing-cards-header">
           <div className="writing-cards-header-spacer" />
           <h2 className="writing-cards-title">{CARDS_HEADING}</h2>
-          <span className="cards-readonly-badge">{CARDS_READONLY_BADGE}</span>
           <button
             type="button"
             className="icon-button writing-cards-close"
             aria-label={CLOSE_CARDS_ARIA}
-            onClick={onClose}
+            onClick={requestClose}
             data-testid="close-cards-drawer"
           >
             <CloseIcon />
