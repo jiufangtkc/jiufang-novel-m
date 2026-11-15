@@ -69,10 +69,10 @@ function renderDrawerWithLayout(
     createElement(
       LayoutProvider,
       { initialMode: mode, initialWideColumns: wideColumns },
-      createElement(WritingCardsDrawer, {
+      createElement(SampleProvider, null, createElement(WritingCardsDrawer, {
         projectId,
         onClose: () => {},
-      }),
+      })),
     ),
   );
 }

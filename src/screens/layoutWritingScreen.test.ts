@@ -282,28 +282,28 @@ describe('WO-55：元件結構恆定驗證（renderToStaticMarkup）', () => {
       createElement(
         LayoutProvider,
         { initialMode: 'phone-portrait' },
-        createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} }),
+        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
     const drawerLandscape = renderToStaticMarkup(
       createElement(
         LayoutProvider,
         { initialMode: 'phone-landscape' },
-        createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} }),
+        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
     const drawerMedium = renderToStaticMarkup(
       createElement(
         LayoutProvider,
         { initialMode: 'medium' },
-        createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} }),
+        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
     const drawerWide = renderToStaticMarkup(
       createElement(
         LayoutProvider,
         { initialMode: 'wide', initialWideColumns: 'both' },
-        createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} }),
+        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
 
