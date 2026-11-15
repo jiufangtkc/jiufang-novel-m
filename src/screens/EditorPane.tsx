@@ -67,6 +67,7 @@ import {
 } from '../layout';
 import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthReminder';
 import { useProject, useSample } from '../state/sampleStore';
+import { caretToRestore, nearIdsOf, readWritePlace, saveWritePlace, scrollTopToRestore } from '../state/navMemory';
 import { editorSaveStatus } from './editorSaveStatus';
 import {
   HalfWidthBadge,
@@ -127,6 +128,47 @@ export function EditorPane({
   const nextId = project ? neighborChapterId(project.nodes, chapter.id, 1) : null;
 
   const [isCardsOpen, setIsCardsOpen] = useState(false);
+  // WO-65：記住這一章的游標、選取、捲動與離開前鍵盤狀態（每本書各一份，存在這台裝置）
+  const nodesRef = useRef(project?.nodes ?? []);
+  nodesRef.current = project?.nodes ?? [];
+  /** 最近一次按下（手指或滑鼠）當下正文是否在打字；切頁造成失焦之前就記下 */
+  const typingAtPointerRef = useRef(false);
+  const writePlaceReadyRef = useRef(false);
+  /**
+   * 放回捲動後短暫維持：版面、字型載入或既有的「游標露出」可能把捲動推走，
+   * 使用者還沒動手前再放回一次；這段期間也不把被推走的位置記下來。
+   */
+  const settleScrollRef = useRef<{ top: number; until: number } | null>(null);
+  /**
+   * 使用者自己捲到的位置與當時的正文框寬度。目錄抽屜讓位等版面變化會讓正文換行、捲動跟著變，
+   * 那不是使用者捲的，不覆蓋這個位置；使用者在新寬度下自己捲動或打字才更新。
+   */
+  const userScrollRef = useRef<{ top: number; width: number; max: number } | null>(null);
+  const userActiveAtRef = useRef(0);
+  const saveWritePlaceNow = (keyboard?: boolean) => {
+    const el = ref.current;
+    if (!el || !writePlaceReadyRef.current) return;
+    const settle = settleScrollRef.current && Date.now() < settleScrollRef.current.until ? settleScrollRef.current : null;
+    const width = el.clientWidth;
+    const userMoved = Date.now() - userActiveAtRef.current < 1000;
+    if (!settle && (userMoved || !userScrollRef.current || userScrollRef.current.width === width)) {
+      userScrollRef.current = { top: Math.round(el.scrollTop), width, max: Math.max(0, el.scrollHeight - el.clientHeight) };
+    }
+    const scroll = userScrollRef.current ?? { top: Math.round(el.scrollTop), width, max: 0 };
+    saveWritePlace(projectId, {
+      chapterId: chapter.id,
+      chapterOpen: true,
+      selectionStart: el.selectionStart ?? 0,
+      selectionEnd: el.selectionEnd ?? 0,
+      scrollTop: settle ? settle.top : scroll.top,
+      scrollWidth: scroll.width,
+      scrollMax: scroll.max,
+      keyboard: keyboard ?? (typeof document !== 'undefined' && document.activeElement === el),
+      nearIds: nearIdsOf(nodesRef.current, chapter.id),
+    });
+  };
+  const saveWritePlaceRef = useRef(saveWritePlaceNow);
+  saveWritePlaceRef.current = saveWritePlaceNow;
   const {
     mode: layoutMode,
     sidePanels,
@@ -306,6 +348,12 @@ export function EditorPane({
     }
   };
 
+  // WO-65：從別的分頁回來時面板原本就開著：卡片若有暫存只顯示提示，游標與鍵盤先回正文
+  const panelOpenAtEntry = useRef(sidePanels.right);
+  useEffect(() => {
+    if (!sidePanels.right) panelOpenAtEntry.current = false;
+  }, [sidePanels.right]);
+
   useEffect(() => {
     if (sidePanels.right && !isCardsOpen) {
       setIsCardsOpen(true);
@@ -320,10 +368,34 @@ export function EditorPane({
     if (!el || !project) return;
     if (placedCursor.current !== chapter.id) {
       placedCursor.current = chapter.id;
-      if (project.lastOpenedNodeId === chapter.id) {
+      // WO-65：先用這台裝置記住的位置（同一章才用）；離開前在打字就叫回鍵盤，收著就只放好游標
+      const memo = caretToRestore(readWritePlace(projectId), chapter.id, el.value.length);
+      if (memo) {
+        if (memo.keyboard) {
+          try {
+            el.focus({ preventScroll: true });
+          } catch {
+            el.focus();
+          }
+        }
+        el.setSelectionRange(memo.selectionStart, memo.selectionEnd);
+        const top = scrollTopToRestore(memo, el.clientWidth, el.scrollHeight - el.clientHeight);
+        el.scrollTop = top;
+        userScrollRef.current = { top, width: el.clientWidth, max: Math.max(0, el.scrollHeight - el.clientHeight) };
+        settleScrollRef.current = { top, until: Date.now() + 1500 };
+        const reapply = () => {
+          const settle = settleScrollRef.current;
+          if (!settle || Date.now() > settle.until || !ref.current) return;
+          ref.current.scrollTop = settle.top;
+        };
+        window.requestAnimationFrame(() => window.requestAnimationFrame(reapply));
+        void document.fonts?.ready.then(() => window.requestAnimationFrame(reapply)).catch(() => undefined);
+      } else if (project.lastOpenedNodeId === chapter.id) {
         const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
         el.setSelectionRange(cursor, cursor);
       }
+      writePlaceReadyRef.current = true;
+      saveWritePlaceRef.current();
     }
     // 字級變了才把游標那一行捲回原來的高度。平常打字不進這裡。
     // 組字中先排隊，不改選取、不改文字。
@@ -389,6 +461,53 @@ export function EditorPane({
       savePlace();
     };
   }, [chapter.id, projectId, ref]);
+
+  // WO-65：游標移動、捲動、關掉頁面、切走（卸載）都記下寫作位置。
+  // 鍵盤狀態以「按下當下」為準：按分頁時正文會先失焦，不能因此記成鍵盤收著。
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onPointerDown = () => {
+      typingAtPointerRef.current = document.activeElement === el;
+      settleScrollRef.current = null;
+    };
+    const stopSettle = () => {
+      settleScrollRef.current = null;
+      userActiveAtRef.current = Date.now();
+    };
+    el.addEventListener('wheel', stopSettle, { passive: true });
+    el.addEventListener('touchstart', stopSettle, { passive: true });
+    el.addEventListener('touchmove', stopSettle, { passive: true });
+    el.addEventListener('keydown', stopSettle);
+    el.addEventListener('input', stopSettle);
+    el.addEventListener('pointerdown', stopSettle);
+    const onSelection = () => {
+      if (document.activeElement === el) saveWritePlaceRef.current(true);
+    };
+    const onPageHide = () => saveWritePlaceRef.current();
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('selectionchange', onSelection);
+    window.addEventListener('pagehide', onPageHide);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      el.removeEventListener('wheel', stopSettle);
+      el.removeEventListener('touchstart', stopSettle);
+      el.removeEventListener('touchmove', stopSettle);
+      el.removeEventListener('keydown', stopSettle);
+      el.removeEventListener('input', stopSettle);
+      el.removeEventListener('pointerdown', stopSettle);
+      document.removeEventListener('selectionchange', onSelection);
+      window.removeEventListener('pagehide', onPageHide);
+    };
+  }, [ref]);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    return () => {
+      if (!el) return;
+      const typing = document.activeElement === el || typingAtPointerRef.current;
+      saveWritePlaceRef.current(typing);
+    };
+  }, [ref]);
 
   useLayoutEffect(() => {
     if ((keyboardOpen || keyboard.landscape) && ref.current) revealCaret(ref.current);
@@ -617,7 +736,11 @@ export function EditorPane({
             flushCardEdit('body');
           }
         }}
-        onFocus={() => setFocused(true)}
+        onFocus={() => {
+          setFocused(true);
+          saveWritePlaceNow(true);
+        }}
+        onScroll={() => saveWritePlaceNow()}
         onCompositionStart={() => {
           isComposingRef.current = true;
           compositionQueue.startComposition();
@@ -641,6 +764,8 @@ export function EditorPane({
           }
           const el = ref.current;
           if (el) actions.rememberPlace(projectId, chapter.id, el.selectionStart ?? 0);
+          // 失焦當下不改記住的鍵盤狀態（切頁也會失焦）；真正離開時以按下當下為準
+          saveWritePlaceNow(typingAtPointerRef.current);
         }}
       />
       <HalfWidthBubble controller={halfWidth} />
@@ -730,7 +855,9 @@ export function EditorPane({
       )}
       {isCardsOpen && !focusMode && layoutMode !== 'wide' && (
         <WritingCardsDrawer
+          key={projectId}
           projectId={projectId}
+          resumeEditing={!panelOpenAtEntry.current}
           onClose={closeCards}
           onSaved={(message) => {
             // 手機直拿完成後面板會收起，提示改由全頁提示顯示

@@ -9,8 +9,9 @@
  *   B 看卡片內容層：沒有「只能看」、有「編輯」「⋯」。
  *   C 按「編輯」：面板尺寸、位置提示（手機直拿）、正文唯讀。
  *   D 改標題與內容 → 按「完成」：去處、存好提示、正文沒變、游標與鍵盤回正文（手機直拿面板收起）。
- *   E 再編輯並清空標題，離開路徑：手機直拿「往下滑收起」，其餘「點正文」；都要先存卡片。
- *   F 回資料集：同一張卡片已更新；回正文：與編輯前相同。
+ *   E 再編輯並清空標題，離開路徑：手機直拿「往下滑收起」，其餘「點正文」。
+ *     WO-65 定案（2026-11-12 九方 S4-4 甲）：切走、收起、點正文只暫存，按「完成」前不寫回卡片、不出現「已存好」。
+ *   F 回資料集：同一張卡片仍在編輯、暫存字還在；按「完成」後才更新。回正文：與編輯前相同。
  *
  * 環境變數：BASE、RUN_LABEL、PLAYWRIGHT_MODULE、CHROMIUM_PATH、LAYOUTS、QA_DIR、SHOT_DIR。
  */
@@ -322,8 +323,9 @@ async function runLayout(L) {
       await page.waitForTimeout(700);
       rec(L, 'E-1', '往下滑收起：面板收起', !(await vis(tid(page, 'writing-cards-drawer'))), '');
       const toast = ((await page.locator('.toast').first().innerText().catch(() => '')) || '').trim();
-      rec(L, 'E-2', '往下滑收起前先存卡片：標題空白顯示「已存好「未命名卡片」」', toast === blankMsg, toast || '看不到提示');
-      await shot(page, L, '4-往下滑收起-先存卡片');
+      // WO-65：收起只暫存，不冒用「已存好」完成提示
+      rec(L, 'E-2', '往下滑收起只暫存：不出現「已存好」提示（WO-65 定案）', toast !== blankMsg && !toast.startsWith('已存好'), toast || '沒有提示');
+      await shot(page, L, '4-往下滑收起-只暫存');
     } else {
       const ib = await box(input);
       const pos = { x: Math.min(60, Math.max(10, ib.width / 4)), y: 40 };
@@ -331,17 +333,32 @@ async function runLayout(L) {
       await page.waitForTimeout(700);
       rec(L, 'E-1', '點正文：結束編輯', (await drawer.getAttribute('data-card-editing')) === null && (await input.getAttribute('readonly')) === null, '');
       const hint = ((await tid(page, 'card-editor-saved-hint').first().innerText().catch(() => '')) || '').trim();
-      rec(L, 'E-2', '點正文前先存卡片：標題空白顯示「已存好「未命名卡片」」', hint === blankMsg, hint || '看不到提示');
+      const kept = await vis(tid(page, 'card-draft-kept-notice'));
+      // WO-65：點正文只暫存，不冒用「已存好」完成提示；面板提示還有沒按完成的修改
+      rec(L, 'E-2', '點正文只暫存：沒有「已存好」、提示還有沒按完成的修改（WO-65 定案）', hint !== blankMsg && kept, `${hint || '沒有存好提示'}；暫存提示 ${kept}`);
       rec(L, 'E-3', '點正文後游標落在剛點的位置（正文取得焦點）', (await page.locator('[data-testid="writing-input"]:focus').count()) === 1, '');
       const afterBody = await input.inputValue();
       rec(L, 'E-4', '點正文後正文與編輯前相同', afterBody === baseline, afterBody.slice(0, 40));
-      await shot(page, L, '4-點正文-先存卡片並結束編輯');
+      await shot(page, L, '4-點正文-只暫存並結束編輯');
     }
 
-    // ── F 回資料集，同一張卡片已更新 ──
-    const ds = await datasetCardText(page, L);
-    rec(L, 'F-1', '資料集看得到同一張卡片的更新（未命名卡片＋第二次內容）', !!ds && ds.includes('未命名卡片') && ds.includes(`${NEW_BODY}（第二次）`) && !ds.includes(CARD_BODY), (ds || '無').slice(0, 80));
-    await shot(page, L, '5-資料集看到更新後的卡片');
+    // ── F 回資料集：同一張卡片仍在編輯、暫存字還在；按完成後才更新（WO-65 定案） ──
+    const closeBtnF = tid(page, 'close-cards-drawer').first();
+    if (await vis(closeBtnF)) {
+      await act(L, closeBtnF);
+      await page.waitForTimeout(500);
+    }
+    await gotoTab(page, L, 'cards');
+    await tid(page, 'cards-screen').first().waitFor({ state: 'visible', timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(400);
+    const dsMode = await page.locator('[data-testid="cards-screen"] [data-testid="card-editor-pane"]').first().getAttribute('data-mode').catch(() => null);
+    const dsDraft = await page.locator('[data-testid="cards-screen"] [data-testid="card-editor-content-textarea"]').first().inputValue().catch(() => '');
+    rec(L, 'F-1', '資料集打開同一張卡片：仍在編輯、第二次改的字還在（未按完成不寫回）', dsMode === 'edit' && dsDraft.includes(`${NEW_BODY}（第二次）`), `${dsMode}；${dsDraft.slice(-16)}`);
+    await act(L, page.locator('[data-testid="cards-screen"] [data-testid="card-editor-done-btn"]'));
+    await page.waitForTimeout(500);
+    const ds = await bodyText(page);
+    rec(L, 'F-1b', '按「完成」後資料集看得到同一張卡片的更新（未命名卡片＋第二次內容）', !!ds && ds.includes('未命名卡片') && ds.includes(`${NEW_BODY}（第二次）`) && !ds.includes(CARD_BODY), (ds || '無').slice(0, 80));
+    await shot(page, L, '5-資料集按完成後看到更新後的卡片');
     const cardsInDataset = await page.locator('[data-testid^="card-select-"]').count();
     rec(L, 'F-2', '資料集沒有因編輯多出第二張卡片', cardsInDataset <= 1, String(cardsInDataset));
     await openEditor(page, L);
