@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   ADD_CATEGORY_BUTTON,
   CATEGORY_BUILTIN_ARIA,
@@ -30,6 +30,8 @@ export interface CategoryManagerProps {
   onAddCategory: (name: string) => void;
   onDone: () => void;
   layoutMode?: LayoutMode;
+  /** WO-93：從分類清單下方「新增分類」進來時，直接開新增對話框 */
+  openAddDialog?: boolean;
 }
 
 export function CategoryManager({
@@ -42,6 +44,7 @@ export function CategoryManager({
   onAddCategory,
   onDone,
   layoutMode = 'phone-portrait',
+  openAddDialog = false,
 }: CategoryManagerProps) {
   const [renamingCode, setRenamingCode] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
@@ -52,6 +55,13 @@ export function CategoryManager({
   const [addError, setAddError] = useState<string | null>(null);
 
   const [warningMessage, setWarningMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openAddDialog) return;
+    setIsAdding(true);
+    setNewCategoryName('');
+    setAddError(null);
+  }, [openAddDialog]);
 
   const handleStartRename = (cat: ResolvedCategoryItem) => {
     setRenamingCode(cat.id);
@@ -239,6 +249,12 @@ export function CategoryManager({
               placeholder={CATEGORY_NAME_PLACEHOLDER}
               data-testid="category-rename-input"
               autoFocus
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleConfirmRename();
+                }
+              }}
             />
             {renameError && <p className="color-error-text">{renameError}</p>}
             <div className="category-dialog-actions">
@@ -275,6 +291,12 @@ export function CategoryManager({
               placeholder={CATEGORY_NAME_PLACEHOLDER}
               data-testid="category-add-input"
               autoFocus
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleConfirmAdd();
+                }
+              }}
             />
             {addError && <p className="color-error-text">{addError}</p>}
             <div className="category-dialog-actions">

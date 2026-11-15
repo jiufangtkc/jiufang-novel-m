@@ -815,6 +815,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
   const now = new Date();
   switch (action.type) {
     case 'toast':
+      if (action.message === state.toast) return state;
       return { ...state, toast: action.message };
     case 'record-auto-save':
       return patchSaveMeta(state, action.projectId, { lastAutoSaveMs: action.atMs });
@@ -1781,7 +1782,10 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           return null;
         }
       },
-      toast: (message) => dispatch({ type: 'toast', message }),
+      toast: (message) => {
+        if (message === stateRef.current.toast) return;
+        dispatch({ type: 'toast', message });
+      },
     }),
     [state],
   );

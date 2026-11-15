@@ -42,6 +42,7 @@ import {
   EDIT_CARD_MORE,
   getDeviceName,
   KEEP_CARD_BUTTON,
+  ADD_CATEGORY_BUTTON,
   ORGANIZE_CATEGORIES_BUTTON,
   restoredCardToast,
   savedCardToast,
@@ -138,6 +139,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
   const [isOrganizingCategories, setIsOrganizingCategories] = useState(
     initialIsOrganizingCategories,
   );
+  const [openAddCategoryDialog, setOpenAddCategoryDialog] = useState(false);
 
   // WO-61 刪除、更多動作選單、最近刪除與 10 秒復原狀態
   const [showCardMenu, setShowCardMenu] = useState(initialShowCardMenu);
@@ -666,12 +668,25 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           type="button"
           className="cards-organize-btn"
           onClick={() => {
+            setOpenAddCategoryDialog(false);
             setIsOrganizingCategories(true);
             setShowDeletedCards(false);
           }}
           data-testid="organize-categories-btn"
         >
           <span>{ORGANIZE_CATEGORIES_BUTTON}</span>
+        </button>
+        <button
+          type="button"
+          className="cards-add-cat-btn"
+          onClick={() => {
+            setOpenAddCategoryDialog(true);
+            setIsOrganizingCategories(true);
+            setShowDeletedCards(false);
+          }}
+          data-testid="add-category-entry-btn"
+        >
+          <span>{ADD_CATEGORY_BUTTON}</span>
         </button>
       </div>
     </div>
@@ -943,7 +958,11 @@ export function CardsScreen(props: CardsScreenProps = {}) {
               onRename={handleRenameCategory}
               onDelete={handleDeleteCategory}
               onAddCategory={handleAddCategory}
-              onDone={() => setIsOrganizingCategories(false)}
+              onDone={() => {
+                setIsOrganizingCategories(false);
+                setOpenAddCategoryDialog(false);
+              }}
+              openAddDialog={openAddCategoryDialog}
               layoutMode="wide"
             />
           ) : (
@@ -1045,7 +1064,11 @@ export function CardsScreen(props: CardsScreenProps = {}) {
               onRename={handleRenameCategory}
               onDelete={handleDeleteCategory}
               onAddCategory={handleAddCategory}
-              onDone={() => setIsOrganizingCategories(false)}
+              onDone={() => {
+                setIsOrganizingCategories(false);
+                setOpenAddCategoryDialog(false);
+              }}
+              openAddDialog={openAddCategoryDialog}
               layoutMode="medium"
             />
           ) : (
@@ -1152,7 +1175,11 @@ export function CardsScreen(props: CardsScreenProps = {}) {
               onRename={handleRenameCategory}
               onDelete={handleDeleteCategory}
               onAddCategory={handleAddCategory}
-              onDone={() => setIsOrganizingCategories(false)}
+              onDone={() => {
+                setIsOrganizingCategories(false);
+                setOpenAddCategoryDialog(false);
+              }}
+              openAddDialog={openAddCategoryDialog}
               layoutMode="phone-landscape"
             />
           ) : showDeletedCards ? (
@@ -1300,7 +1327,11 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           onRename={handleRenameCategory}
           onDelete={handleDeleteCategory}
           onAddCategory={handleAddCategory}
-          onDone={() => setIsOrganizingCategories(false)}
+          onDone={() => {
+            setIsOrganizingCategories(false);
+            setOpenAddCategoryDialog(false);
+          }}
+          openAddDialog={openAddCategoryDialog}
           layoutMode="phone-portrait"
         />
         {renderCardActionSheet()}
