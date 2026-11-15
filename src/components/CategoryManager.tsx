@@ -134,11 +134,12 @@ export function CategoryManager({
                 {cat.isBuiltin && (
                   <span
                     className="category-builtin-badge"
+                    role="img"
                     aria-label={CATEGORY_BUILTIN_ARIA}
                     title={CATEGORY_BUILTIN_ARIA}
                     data-testid={`category-builtin-${cat.id}`}
                   >
-                    {CATEGORY_BUILTIN_BADGE}
+                    <span aria-hidden="true">{CATEGORY_BUILTIN_BADGE}</span>
                   </span>
                 )}
 
@@ -208,9 +209,10 @@ export function CategoryManager({
           type="button"
           className="category-add-btn"
           onClick={handleStartAdd}
+          aria-label={ADD_CATEGORY_BUTTON}
           data-testid="category-manager-add-btn"
         >
-          <span>+</span>
+          <span aria-hidden="true">+</span>
           <span>{ADD_CATEGORY_BUTTON}</span>
         </button>
 

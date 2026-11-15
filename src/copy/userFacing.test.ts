@@ -118,7 +118,7 @@ describe('章節目錄文案', () => {
     expect(copy.CARDS_HEADING).toBe('資料集');
     expect(copy.BACK_TO_CATEGORIES_ARIA).toBe('返回分類清單');
     expect(copy.BACK_TO_CARDS_ARIA).toBe('返回卡片清單');
-    expect(copy.categoryRowAria('角色', 5)).toBe('角色，5 張卡片');
+    expect(copy.categoryRowAria('角色', 5)).toBe('角色，5 張');
     expect(copy.cardCollapseAria('沈雨晴')).toBe('收合「沈雨晴」子卡片');
     expect(copy.cardExpandAria('沈雨晴')).toBe('展開「沈雨晴」子卡片');
     expect(copy.cardDetailAria('沈雨晴')).toBe('看「沈雨晴」卡片內容');

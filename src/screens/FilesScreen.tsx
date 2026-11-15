@@ -10,16 +10,18 @@ import {
   FILES_GROUP_SAVE,
   IMPORT_TEXT_FILE_BUTTON,
   IMPORT_TEXT_FILE_HINT,
+  lastEditDisplay,
   MANUSCRIPT_NOT_FOUND,
   OPEN_DB_FAIL,
   OPEN_DB_HINT,
   PREPARING_BADGE,
+  stashDraftHint,
   currentFileLine,
   titlePendingNotice,
 } from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { writePath } from '../domain/openManuscript';
-import { formatLastExportLabel, formatLastProjectSave, latestSaveTimestamp } from '../domain/saveClock';
+import { formatLastExportLabel, formatLastProjectSave, latestEditTimestamp, latestSaveTimestamp } from '../domain/saveClock';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
 import { appSpaceStatusLine } from './filesStatus';
@@ -99,6 +101,13 @@ export function FilesScreen() {
               lastSaveMs,
             })}
           </p>
+          <p className="files-status-line" data-testid="last-edit-line">
+            {`上次編輯：${lastEditDisplay({
+              updatedLabel: project.updatedLabel,
+              notPhone: computer,
+              lastEditMs: latestEditTimestamp(meta),
+            })}`}
+          </p>
           {layout.showLastProjectSave ? (
             <p className="files-status-line" data-testid="last-project-save-line">
               上次儲存：{projectSaveLabel}
@@ -166,7 +175,7 @@ export function FilesScreen() {
               <DownloadIcon />
               <span>
                 <strong>立刻暫存稿子</strong>
-                <small>立刻存進這支手機的 App 空間，防止掉字</small>
+                <small>{stashDraftHint(computer)}</small>
               </span>
             </button>
           ) : null}

@@ -9,6 +9,7 @@ import {
   STATS_IMPORT_COUNT_LABEL,
   STATS_IMPORT_EXPORT_HEADING,
   STATS_IMPORT_EXPORT_SCOPE_HINT,
+  VISUAL_WRITING_RECORD,
 } from '../copy/userFacing';
 import { getTotalImportExportStats } from '../domain/importExportStats';
 import { formatInteger } from '../domain/formatNumber';
@@ -188,7 +189,7 @@ export function StatsScreen() {
         {/* 寬版統計頁將寫作過程紀錄並排於右欄 */}
         {isWide ? (
           <aside className="stats-logs-column" aria-label="寫作過程紀錄" data-testid="stats-wide-logs">
-            <h2 className="stats-logs-heading">視覺化的寫作紀錄</h2>
+            <h2 className="stats-logs-heading">{VISUAL_WRITING_RECORD}</h2>
             <ul className="log-list">
               {sortedLogs.map((row) => (
                 <LogCardItem

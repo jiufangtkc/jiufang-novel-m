@@ -1,5 +1,10 @@
 import { goalProgress } from '../domain/dailyGoal';
-import { dailyProgressWordsLabel, dailyProgressGoalLabel } from '../copy/userFacing';
+import {
+  dailyProgressAriaLabel,
+  dailyProgressCompactLabel,
+  dailyProgressGoalLabel,
+  dailyProgressWordsLabel,
+} from '../copy/userFacing';
 
 export function DailyProgressBar({
   words,
@@ -13,9 +18,8 @@ export function DailyProgressBar({
   compact?: boolean;
 }) {
   const ratio = goalProgress(words, goal);
-  const label = met
-    ? `今日已寫 ${words} 字，已達到目標 ${goal} 字`
-    : `今日已寫 ${words} 字，目標 ${goal} 字`;
+  const compactLabel = dailyProgressCompactLabel(words, goal);
+  const label = compact ? compactLabel : dailyProgressAriaLabel(words, goal, met);
   return (
     <div
       className={['daily-bar', met ? 'is-met' : '', compact ? 'is-compact' : ''].filter(Boolean).join(' ')}
@@ -37,11 +41,7 @@ export function DailyProgressBar({
       <span className="daily-bar-track">
         <span className="daily-bar-fill" style={{ width: `${ratio}%` }} />
       </span>
-      {compact ? (
-        <span className="daily-bar-compact">
-          {words}／{goal}
-        </span>
-      ) : null}
+      {compact ? <span className="daily-bar-compact">{compactLabel}</span> : null}
     </div>
   );
 }

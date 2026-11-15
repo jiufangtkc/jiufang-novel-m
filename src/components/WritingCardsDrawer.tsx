@@ -7,6 +7,7 @@ import {
   cardDetailAria,
   cardExpandAria,
   CARDS_HEADING,
+  cardsCountLabel,
   categoryRowAria,
   CARDS_EMPTY_IN_CATEGORY_HINT,
   CLOSE_CARDS_ARIA,
@@ -549,7 +550,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
                     data-testid={`category-row-${cat.id}`}
                   >
                     <span className="category-name">{cat.name}</span>
-                    <span className="category-count">{count}</span>
+                    <span className="category-count">{cardsCountLabel(count)}</span>
                   </button>
                 </li>
               );

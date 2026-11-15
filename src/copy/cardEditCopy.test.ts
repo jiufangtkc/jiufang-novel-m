@@ -61,7 +61,7 @@ describe('WO-61 卡片編輯與分類管理介面文案（cardEditCopy）', () =
 
   it('WO-61：卡片放回提示與已存好提示格式', () => {
     expect(restoredCardToast('【範例】舊站名：霧丘站', '站名')).toBe(
-      '已放回「【範例】舊站名：霧丘站」到「站名」',
+      '已把「【範例】舊站名：霧丘站」放回「站名」',
     );
     expect(savedCardToast('【範例】白芷')).toBe('已存好「【範例】白芷」');
     expect(savedCardToast('')).toBe('已存好「未命名卡片」');

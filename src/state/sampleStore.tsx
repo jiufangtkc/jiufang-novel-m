@@ -47,7 +47,7 @@ import {
   type SaveOutcome,
 } from '../db/saveProject';
 import { verifyExportedDatabase } from '../db/verifyDatabase';
-import { BOOK_RENAME_FAIL, BOOK_RENAMED_TOAST, STASH_FAIL } from '../copy/userFacing';
+import { BOOK_RENAME_FAIL, BOOK_RENAMED_TOAST, SAVE_FATAL_FAIL, STASH_FAIL, STORED_ON_PHONE_LABEL } from '../copy/userFacing';
 import { countBookWords } from '../domain/wordCount';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
 import { importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
@@ -1099,7 +1099,8 @@ export function reduce(state: SampleState, action: Action): SampleState {
         activeProjectId: action.quiet ? state.activeProjectId : project.id,
         schedule: action.quiet ? state.schedule : action.schedule,
         logs: action.quiet ? state.logs : fileLogsToRows(action.extras.logs),
-        toast: action.quiet ? state.toast : '已匯入檔案',
+        // 開啟稿子不是匯入，不說「已匯入檔案」。
+        toast: action.quiet ? state.toast : null,
       };
     }
     case 'set-cards':
@@ -1428,7 +1429,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
             project: {
               id: book.key,
               title: book.title,
-              updatedLabel: '已在手機',
+              updatedLabel: STORED_ON_PHONE_LABEL,
               bookGoal: book.info.targetWordCount,
               nodes: tree,
               origin: 'file',
@@ -1743,7 +1744,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           }
           return outcome;
         } catch {
-          dispatch({ type: 'toast', message: '儲存失敗，稿子仍留在這支裝置' });
+          dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
           return null;
         }
       },
@@ -1776,7 +1777,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
           }
           return outcome;
         } catch {
-          dispatch({ type: 'toast', message: '另存失敗，稿子仍留在這支裝置' });
+          dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
           return null;
         }
       },

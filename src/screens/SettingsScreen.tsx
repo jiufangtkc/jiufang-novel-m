@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
 import { HALF_WIDTH_SETTING_TITLE, halfWidthSettingAria } from '../copy/halfWidthCopy';
@@ -11,6 +11,19 @@ import { useProject, useSample } from '../state/sampleStore';
 import { AppearanceSettings } from './AppearanceSettings';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
 import './halfWidth.css';
+
+/** 只改到的那一項才更新。只改每日目標時，不會順便說全書目標已更新。 */
+export function goalApplyPlan(
+  currentDaily: number,
+  nextDaily: number,
+  currentBook: number,
+  nextBook: number,
+): { daily: boolean; book: boolean } {
+  return {
+    daily: nextDaily !== currentDaily,
+    book: nextBook !== currentBook,
+  };
+}
 
 export function SettingsScreen() {
   const { projectId = '' } = useParams();
@@ -104,7 +117,7 @@ export function SettingsScreen() {
         <Link className="setting-row" to={`/p/${project.id}/logs`}>
           <span>
             <strong>寫作過程紀錄</strong>
-            <small>每日字數、寫作時間、大量文字出現</small>
+            <small>{SETTINGS_WRITING_LOG_HINT}</small>
           </span>
         </Link>
         <Link className="setting-row" to={`/p/${project.id}/font-license`} data-testid="font-license-link">
@@ -133,8 +146,9 @@ export function SettingsScreen() {
                 setError('全書目標要是 1 以上的整數。');
                 return;
               }
-              actions.setGoal(nextDaily);
-              actions.setBookGoal(project.id, nextBook);
+              const plan = goalApplyPlan(goalNow, nextDaily, project.bookGoal, nextBook);
+              if (plan.daily) actions.setGoal(nextDaily);
+              if (plan.book) actions.setBookGoal(project.id, nextBook);
               setEditing(false);
             }}
           >
