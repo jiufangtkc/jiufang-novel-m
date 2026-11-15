@@ -80,6 +80,11 @@
   margin: 0 auto;
 }
 
+/* 列容器用 display:contents，讓 8 欄×6 列網格對齊各色票 */
+.color-picker-row {
+  display: contents;
+}
+
 .color-picker-grid.grid-portrait {
   grid-template-columns: repeat(6, 50px);
 }
@@ -312,4 +317,22 @@
   margin-top: 0;
   padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
   background-color: var(--panel, #1e1e1e);
+}
+
+/* WO-92：寬版挑色面板固定在編輯欄右側（非全螢幕遮罩） */
+.card-color-picker-aside {
+  position: relative;
+  z-index: 2;
+  flex: 0 0 min(392px, 42%);
+  max-width: 420px;
+  align-self: stretch;
+  overflow-y: auto;
+  border-left: 1px solid var(--border, #3c3c3c);
+  box-sizing: border-box;
+  background-color: var(--panel, #1e1e1e);
+}
+
+.card-color-picker-aside > .card-color-picker {
+  min-height: 100%;
+  border-radius: 0;
 }

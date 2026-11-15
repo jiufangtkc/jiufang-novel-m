@@ -413,3 +413,105 @@ export function renderCardMarkdownToNodes(
 
   return nodes;
 }
+
+/** 將語法節點遞迴轉成純文字（用於清單摘要，不顯示 Markdown 符號）。 */
+function tokensToPlainText(tokens: Token[] | undefined, inline = false): string {
+  if (!tokens || tokens.length === 0) return '';
+
+  const chunks: string[] = [];
+
+  for (const token of tokens) {
+    switch (token.type) {
+      case 'heading':
+      case 'paragraph':
+      case 'blockquote': {
+        const t = token as Tokens.Heading | Tokens.Paragraph | Tokens.Blockquote;
+        const inner = t.tokens ? tokensToPlainText(t.tokens, true) : (t.text ?? '');
+        if (inner) chunks.push(inner);
+        break;
+      }
+      case 'list': {
+        const listToken = token as Tokens.List;
+        for (const item of listToken.items) {
+          const itemText = item.tokens ? tokensToPlainText(item.tokens, true) : (item.text ?? '');
+          if (itemText) chunks.push(itemText);
+        }
+        break;
+      }
+      case 'code': {
+        const codeToken = token as Tokens.Code;
+        if (codeToken.text) chunks.push(codeToken.text);
+        break;
+      }
+      case 'codespan': {
+        const codespanToken = token as Tokens.Codespan;
+        if (codespanToken.text) chunks.push(codespanToken.text);
+        break;
+      }
+      case 'link': {
+        const linkToken = token as Tokens.Link;
+        const linkText = linkToken.tokens
+          ? tokensToPlainText(linkToken.tokens, true)
+          : (linkToken.text ?? '');
+        if (linkText) chunks.push(linkText);
+        break;
+      }
+      case 'image': {
+        const imageToken = token as Tokens.Image;
+        const alt = imageToken.text
+          || (imageToken.tokens ? tokensToPlainText(imageToken.tokens, true) : '');
+        if (alt) chunks.push(alt);
+        break;
+      }
+      case 'strong':
+      case 'em':
+      case 'del': {
+        const mark = token as Tokens.Strong | Tokens.Em | Tokens.Del;
+        const inner = mark.tokens ? tokensToPlainText(mark.tokens, true) : (mark.text ?? '');
+        if (inner) chunks.push(inner);
+        break;
+      }
+      case 'br':
+        chunks.push(' ');
+        break;
+      case 'text': {
+        const textToken = token as Tokens.Text;
+        const inner = textToken.tokens
+          ? tokensToPlainText(textToken.tokens, true)
+          : (textToken.text ?? '');
+        if (inner) chunks.push(inner);
+        break;
+      }
+      case 'escape': {
+        const escapeToken = token as Tokens.Escape;
+        if (escapeToken.text) chunks.push(escapeToken.text);
+        break;
+      }
+      case 'html':
+      case 'space':
+        break;
+      default: {
+        const generic = token as Token & { tokens?: Token[]; text?: string };
+        if (generic.tokens?.length) {
+          const inner = tokensToPlainText(generic.tokens, true);
+          if (inner) chunks.push(inner);
+        } else if (typeof generic.text === 'string' && generic.text) {
+          chunks.push(generic.text);
+        }
+        break;
+      }
+    }
+  }
+
+  const joined = chunks.join(inline ? '' : ' ');
+  return joined.replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * 卡片清單摘要用純文字：與內容頁閱讀體驗一致，不露出 ** 等 Markdown 符號。
+ */
+export function cardContentPreviewPlainText(content: string): string {
+  const trimmed = content.trim();
+  if (!trimmed) return '';
+  return tokensToPlainText(parseCardMarkdown(trimmed));
+}

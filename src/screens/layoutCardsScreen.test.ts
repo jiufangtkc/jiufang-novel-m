@@ -556,7 +556,8 @@ describe('WO-61 四種版面卡片編輯與挑顏色位置驗證', () => {
 
     expect(html).toContain('data-layout="wide"');
     expect(html).toContain('data-testid="cards-col-detail"');
-    expect(html).toContain('card-color-picker-modal');
+    expect(html).toContain('card-color-picker-aside');
+    expect(html).toContain('is-color-picker-beside');
     expect(html).toContain('grid-desktop');
   });
 

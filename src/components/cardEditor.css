@@ -8,6 +8,24 @@
   box-sizing: border-box;
 }
 
+.card-editor-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* WO-92：寬版挑色面板放在編輯欄旁邊 */
+.card-editor-pane.is-color-picker-beside {
+  flex-direction: row;
+  align-items: stretch;
+}
+
+.card-editor-pane.is-color-picker-beside > .card-editor-main {
+  flex: 1 1 auto;
+}
+
 .card-editor-header {
   display: flex;
   align-items: center;
@@ -38,6 +56,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* WO-92：預覽內文已有標題列，標頭不再重複卡片標題 */
+.card-editor-mode-preview .card-preview-header {
+  justify-content: flex-end;
+}
+
+/* WO-92：手機直拿編輯頁尾不重複「卡片顏色」，按鈕文字不折成單字一行 */
+.card-editor-thumb-bar .card-editor-cancel-btn,
+.card-editor-thumb-bar .card-editor-done-btn {
+  white-space: nowrap;
+}
+
+.card-editor-field .card-editor-color-btn {
+  white-space: nowrap;
 }
 
 .card-editor-body {
