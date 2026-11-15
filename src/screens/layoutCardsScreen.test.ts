@@ -315,12 +315,11 @@ describe('WO-56：寫作時看卡片依版面調整與讓位驗證', () => {
     expect(state.savedForOneSide).toBeNull();
   });
 
-  it('WO-56：看卡片面板包含「只能看」標記，且絕無編輯、新增、刪除或 disabled 按鈕', () => {
+  it('WO-64：看卡片面板不再有「只能看」標記（拿掉原 WO-56 的標籤斷言），分類層仍無新增、刪除或 disabled 按鈕', () => {
     const wideHtml = renderWriteScreenWithLayout('wide', 'both', { right: true });
 
-    // 具備「只能看」標籤
-    expect(wideHtml).toContain(CARDS_READONLY_BADGE);
-    expect(CARDS_READONLY_BADGE).toBe('只能看');
+    // WO-64 定案：拿掉「只能看」標籤
+    expect(wideHtml).not.toContain(CARDS_READONLY_BADGE);
 
     // 看卡片面板本體絕無編輯、新增、刪除或 disabled 變灰按鈕
     const drawerHtml = wideHtml.slice(wideHtml.indexOf('data-testid="writing-cards-drawer"'));

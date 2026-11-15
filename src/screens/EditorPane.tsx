@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
@@ -41,7 +41,14 @@ import {
   shouldCancelPendingOpen,
   type WritingCaretSnapshot,
 } from '../domain/writingCards';
+import { writingPlaceLabel } from '../copy/writingCardEditCopy';
 import { revealCaret } from '../editor/caret';
+import {
+  flushCardEdit,
+  getCardEditSnapshot,
+  registerBodyPrepare,
+  subscribeCardEdit,
+} from '../state/writingCardEditSession';
 import { focusWritingBody } from '../editor/focusWriting';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
@@ -249,7 +256,40 @@ export function EditorPane({
     openPanel('right');
   };
 
+  // WO-64：編輯卡片時正文唯讀；開始前先收好組字、記住位置，結束後（完成／取消）游標與鍵盤回正文
+  const cardEdit = useSyncExternalStore(subscribeCardEdit, getCardEditSnapshot, getCardEditSnapshot);
+  const chapterTitleRef = useRef(chapter.title);
+  chapterTitleRef.current = chapter.title;
+  useEffect(() => {
+    registerBodyPrepare(() => {
+      const el = ref.current;
+      if (!el) return null;
+      const snapshot = captureCaretSnapshot(el, true);
+      const caret = el.selectionStart ?? 0;
+      caretSnapshotRef.current = snapshot;
+      // 失焦會讓還沒送出的注音先送出，之後正文才轉成唯讀
+      if (document.activeElement === el) el.blur();
+      try {
+        revealCaret(el);
+      } catch {
+        // 沒有版面計算的環境略過
+      }
+      return writingPlaceLabel(chapterTitleRef.current, el.value, caret);
+    });
+    return () => registerBodyPrepare(null);
+  }, [ref]);
+  const seenEndSeq = useRef(cardEdit.endSeq);
+  useEffect(() => {
+    if (seenEndSeq.current === cardEdit.endSeq) return;
+    seenEndSeq.current = cardEdit.endSeq;
+    if (cardEdit.endKind === 'body') return;
+    // 點正文是落在使用者剛點的位置，不用舊快照蓋掉；其他結束方式回到記住的位置
+    restoreCaretSnapshot(ref.current, caretSnapshotRef.current);
+    caretSnapshotRef.current = null;
+  }, [cardEdit.endSeq, cardEdit.endKind, ref]);
+
   const closeCards = () => {
+    flushCardEdit('close');
     clearPendingComposition();
     setIsCardsOpen(false);
     closePanel('right');
@@ -551,7 +591,13 @@ export function EditorPane({
       </button>
       <textarea
         ref={ref}
-        className={searchHooks.marking ? 'editor-input is-search-marking' : 'editor-input'}
+        className={[
+          'editor-input',
+          searchHooks.marking ? 'is-search-marking' : '',
+          cardEdit.editing ? 'is-card-editing' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         data-testid="writing-input"
         defaultValue={chapter.content ?? ''}
         name="jiufang-manuscript"
@@ -563,6 +609,14 @@ export function EditorPane({
         placeholder={EDITOR_PLACEHOLDER}
         aria-label="正文"
         enterKeyHint="enter"
+        readOnly={cardEdit.editing}
+        onPointerDown={() => {
+          // 編輯卡片時點正文：先存卡片、結束編輯，再落在剛點的位置
+          if (cardEdit.editing) {
+            caretSnapshotRef.current = null;
+            flushCardEdit('body');
+          }
+        }}
         onFocus={() => setFocused(true)}
         onCompositionStart={() => {
           isComposingRef.current = true;
@@ -678,6 +732,14 @@ export function EditorPane({
         <WritingCardsDrawer
           projectId={projectId}
           onClose={closeCards}
+          onSaved={(message) => {
+            // 手機直拿完成後面板會收起，提示改由全頁提示顯示
+            if (layoutMode === 'phone-portrait') actions.toast(message);
+          }}
+          onOpenInDataset={() => {
+            flushCardEdit('close');
+            navigate(`/p/${projectId}/cards`);
+          }}
         />
       )}
     </div>

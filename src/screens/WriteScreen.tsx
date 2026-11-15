@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { formatInteger } from '../domain/formatNumber';
 import { formatCalendarDateFromDate } from '../domain/formatCalendarDate';
@@ -102,6 +102,7 @@ import { BOOK_SEARCH_TAB_SEARCH, BOOK_SEARCH_TAB_TREE, BOOK_SEARCH_TITLE } from 
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
+import { getCardEditSnapshot, subscribeCardEdit } from '../state/writingCardEditSession';
 import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
 import { ChapterTree } from './ChapterTree';
 import { EditorPane } from './EditorPane';
@@ -126,8 +127,25 @@ export function WriteScreen() {
   const project = useProject(projectId);
   const { actions } = useSample();
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
-  const { mode: layoutMode, sidePanels, closePanel, focusMode } = useLayout();
+  const { mode: layoutMode, sidePanels, closePanel, openPanel, focusMode, pointer } = useLayout();
   const desktop = useDesktop();
+  // WO-64：寬版編輯卡片時右欄放寬；iPad（觸控）橫拿時把目錄收起，編輯完再還原
+  const cardEditing = useSyncExternalStore(subscribeCardEdit, getCardEditSnapshot, getCardEditSnapshot).editing;
+  const treeClosedForCardEdit = useRef(false);
+  useEffect(() => {
+    if (layoutMode !== 'wide') return;
+    if (cardEditing) {
+      if (pointer === 'touch' && sidePanels.left) {
+        treeClosedForCardEdit.current = true;
+        closePanel('left');
+      }
+    } else if (treeClosedForCardEdit.current) {
+      treeClosedForCardEdit.current = false;
+      openPanel('left');
+    }
+    // 只在開始或結束編輯時動目錄
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardEditing, layoutMode]);
   const rename = useBookRename(project);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<ChapterNode[]>(project?.nodes ?? []);
@@ -755,14 +773,20 @@ export function WriteScreen() {
         )}
       </section>
       <aside
-        className={sidePanels.right ? 'write-aside is-open' : 'write-aside is-closed'}
+        className={[
+          sidePanels.right ? 'write-aside is-open' : 'write-aside is-closed',
+          cardEditing && layoutMode === 'wide' ? 'is-card-editing' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
         data-testid="write-aside"
         aria-label={CARDS_PANEL_ARIA}
       >
-        {sidePanels.right && (
+        {sidePanels.right && layoutMode === 'wide' && (
           <WritingCardsDrawer
             projectId={book.id}
             onClose={() => closePanel('right')}
+            onOpenInDataset={() => navigate(`/p/${book.id}/cards`)}
           />
         )}
       </aside>

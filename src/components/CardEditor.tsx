@@ -76,6 +76,8 @@ export interface CardEditorProps {
   onDelete?: () => void;
   /** 初始是否開啟選色面板（供靜態渲染與測試使用） */
   initialPickingColor?: boolean;
+  /** WO-64：讓外層在「點正文、往下滑收起」時取得目前草稿，先存卡片再離開 */
+  draftRef?: React.MutableRefObject<(() => CardEditorSavePayload) | null>;
 }
 
 export function CardEditor({
@@ -95,6 +97,7 @@ export function CardEditor({
   onMoreActions,
   onDelete,
   initialPickingColor = false,
+  draftRef,
 }: CardEditorProps) {
   const [internalMode, setInternalMode] = useState<'preview' | 'edit'>(initialMode);
   const currentMode = controlledMode ?? internalMode;
@@ -103,6 +106,10 @@ export function CardEditor({
   const [content, setContent] = useState(card.content);
   const [color, setColor] = useState(card.color || DEFAULT_CARD_COLOR);
   const [isPickingColor, setIsPickingColor] = useState(initialPickingColor);
+
+  if (draftRef) {
+    draftRef.current = () => ({ title, content, color: formatCardColorForSave(color) });
+  }
 
   const prevCardIdRef = React.useRef(card.id);
   React.useEffect(() => {
