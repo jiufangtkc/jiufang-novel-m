@@ -290,7 +290,7 @@
   flex-shrink: 0;
 }
 
-/* WO-92 返工：手機橫拿 844×390 — 色票區可捲、取消／完成固定在面板
+/* WO-92 返工：手機橫拿 844×390 — 色票區可捲、取消／完成固定在面板內 */
 html[data-layout="phone-landscape"] .card-color-picker-modal {
   padding: 8px;
   align-items: center;
@@ -374,48 +374,63 @@ html[data-layout="phone-landscape"] .card-color-picker-modal .color-picker-actio
   background-color: var(--panel, #1e1e1e);
 }
 
-/* WO-92：寬版挑色面板固定在編輯欄右側（容器夠寬時；窄容器見 cardEditor 的 @container 浮出） */
-@container card-editor-pane (min-width: 800px) {
-  .card-color-picker-aside {
+/* WO-92：寬版挑色並排樣式（容器在 card-editor-layout-host，見 cardEditor.css） */
+@container card-editor-beside (min-width: 800px) {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside {
     position: relative;
     z-index: 2;
     flex: 0 1 min(392px, 42%);
     min-width: 0;
     max-width: min(420px, 45%);
     align-self: stretch;
-    overflow-x: auto;
-    overflow-y: auto;
+    max-height: 100%;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     border-left: 1px solid var(--border, #3c3c3c);
     box-sizing: border-box;
     background-color: var(--panel, #1e1e1e);
   }
 
-  .card-color-picker-aside > .card-color-picker {
-    min-height: 100%;
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside > .card-color-picker {
+    flex: 1;
+    min-height: 0;
     max-width: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     border-radius: 0;
     box-sizing: border-box;
   }
 
-  .card-color-picker-aside .color-picker-grid.grid-desktop {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-grid-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-grid.grid-desktop {
     grid-template-columns: repeat(8, minmax(0, 1fr));
     width: 100%;
     max-width: 100%;
   }
 
-  .card-color-picker-aside .color-swatch-button {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-swatch-button {
     width: 100%;
     min-width: 0;
   }
 
-  .card-color-picker-aside .color-picker-actions {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-controls,
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-actions {
     flex-shrink: 0;
   }
 }
 
 /* 寬版並排但欄寬介於 800～1100：色票略縮，避免撐出視窗 */
-@container card-editor-pane (min-width: 800px) and (max-width: 1100px) {
-  .card-color-picker-aside .color-swatch-button {
+@container card-editor-beside (min-width: 800px) and (max-width: 1100px) {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-swatch-button {
     min-height: 38px;
     height: 38px;
   }

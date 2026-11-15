@@ -6,8 +6,29 @@
   background-color: var(--panel, #1e1e1e);
   color: var(--text, #d4d4d4);
   box-sizing: border-box;
+  position: relative;
+  min-height: 0;
+}
+
+/* 容器查詢掛在內層，避免對自身套用 @container 規則失效 */
+.card-editor-layout-host {
   container-type: inline-size;
-  container-name: card-editor-pane;
+  container-name: card-editor-beside;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-editor-layout-row {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
   position: relative;
 }
 
@@ -34,26 +55,25 @@
   min-width: 0;
 }
 
-/* WO-92：寬版挑色面板放在編輯欄旁邊（容器夠寬時） */
-@container card-editor-pane (min-width: 800px) {
-  .card-editor-pane.is-color-picker-beside {
+/* WO-92：寬版挑色並排在內層 layout-row（容器夠寬時） */
+@container card-editor-beside (min-width: 800px) {
+  .card-editor-layout-row.is-wide-picker-beside {
     flex-direction: row;
     align-items: stretch;
+    max-height: 100%;
   }
 
-  .card-editor-pane.is-color-picker-beside > .card-editor-main {
+  .card-editor-layout-row.is-wide-picker-beside > .card-editor-main {
     flex: 1 1 auto;
     min-width: 0;
+    min-height: 0;
+    overflow: hidden;
   }
 }
 
-/* WO-92 返工：容器不足（1280 資料集第三欄、寫作側欄約 360）改置中浮出，動作列留在視窗內 */
-@container card-editor-pane (max-width: 799px) {
-  .card-editor-pane.is-color-picker-beside {
-    flex-direction: column;
-  }
-
-  .card-editor-pane.is-color-picker-beside .card-color-picker-aside {
+/* WO-92 返工：容器不足（1280 第三欄、寫作側欄約 360）改置中浮出 */
+@container card-editor-beside (max-width: 799px) {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside {
     position: absolute;
     inset: 0;
     z-index: 100;
@@ -70,7 +90,7 @@
     box-sizing: border-box;
   }
 
-  .card-editor-pane.is-color-picker-beside .card-color-picker-aside > .card-color-picker {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside > .card-color-picker {
     max-height: 100%;
     max-width: min(100%, 480px);
     width: 100%;
@@ -81,15 +101,15 @@
     border-radius: 8px;
   }
 
-  .card-editor-pane.is-color-picker-beside .card-color-picker-aside .color-picker-grid-container {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-grid-container {
     flex: 1 1 auto;
     min-height: 0;
     overflow-y: auto;
     overflow-x: auto;
   }
 
-  .card-editor-pane.is-color-picker-beside .card-color-picker-aside .color-picker-controls,
-  .card-editor-pane.is-color-picker-beside .card-color-picker-aside .color-picker-actions {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-controls,
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-actions {
     flex-shrink: 0;
   }
 }

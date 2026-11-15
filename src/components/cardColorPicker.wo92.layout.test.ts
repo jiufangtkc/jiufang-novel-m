@@ -22,11 +22,18 @@ describe('WO-92 返工：挑色面板視窗內可完成選色', () => {
 
   it('CSS：容器不足時寬版並排改置中浮出，動作列不可縮小', () => {
     const css = loadPickerLayoutCss();
-    expect(css).toMatch(/@container card-editor-pane \(max-width: 799px\)/);
+    expect(css).toMatch(/@container card-editor-beside \(max-width: 799px\)/);
     expect(css).toMatch(
-      /\.card-editor-pane\.is-color-picker-beside \.card-color-picker-aside \.color-picker-actions[\s\S]*flex-shrink: 0/,
+      /\.card-editor-layout-row\.is-wide-picker-beside \.card-color-picker-aside \.color-picker-actions[\s\S]*flex-shrink: 0/,
     );
     expect(css).toMatch(/\.card-editor-pane\.is-picking-color \.card-editor-footer/);
+    expect(css).toMatch(/container-name: card-editor-beside/);
+  });
+
+  it('CSS：WO-83 手機直拿底部挑色面板為 position: fixed', () => {
+    const css = loadPickerLayoutCss();
+    expect(css).toMatch(/\.card-color-picker-sheet\s*\{[\s\S]*?position:\s*fixed/);
+    expect(css).toMatch(/\.card-color-picker-sheet \.color-picker-actions[\s\S]*flex-shrink:\s*0/);
   });
 
   it('CSS：手機橫拿 modal 限高並固定取消／完成在面板內', () => {
@@ -42,12 +49,12 @@ describe('WO-92 返工：挑色面板視窗內可完成選色', () => {
 
   it('CSS：寬版並排時色票網格可縮在欄內、完成列留在面板底部', () => {
     const css = loadPickerLayoutCss();
-    expect(css).toMatch(/@container card-editor-pane \(min-width: 800px\)/);
+    expect(css).toMatch(/@container card-editor-beside \(min-width: 800px\)/);
     expect(css).toMatch(
-      /\.card-color-picker-aside \.color-picker-grid\.grid-desktop[\s\S]*repeat\(8, minmax\(0, 1fr\)\)/,
+      /\.card-editor-layout-row\.is-wide-picker-beside \.card-color-picker-aside \.color-picker-grid\.grid-desktop[\s\S]*repeat\(8, minmax\(0, 1fr\)\)/,
     );
     expect(css).toMatch(
-      /\.card-color-picker-aside \.color-picker-actions[\s\S]*flex-shrink: 0/,
+      /\.card-editor-layout-row\.is-wide-picker-beside \.card-color-picker-aside \.color-picker-actions[\s\S]*flex-shrink: 0/,
     );
   });
 
@@ -67,6 +74,8 @@ describe('WO-92 返工：挑色面板視窗內可完成選色', () => {
       }),
     );
     expect(html).toContain('is-picking-color');
+    expect(html).toContain('card-editor-layout-host');
+    expect(html).toContain('is-wide-picker-beside');
     expect(html).toContain('card-color-picker-aside');
     expect(html).toContain('data-testid="color-action-done"');
   });

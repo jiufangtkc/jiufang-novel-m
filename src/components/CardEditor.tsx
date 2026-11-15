@@ -184,7 +184,13 @@ export function CardEditor({
       data-layout={layoutMode}
       data-mode={currentMode}
     >
-      <div className="card-editor-main">
+      <div className="card-editor-layout-host">
+        <div
+          className={`card-editor-layout-row${
+            colorPickerBeside && isPickingColor ? ' is-wide-picker-beside' : ''
+          }`}
+        >
+          <div className="card-editor-main">
       {currentMode === 'preview' ? (
         <>
           <header className="card-editor-header card-preview-header">
@@ -433,9 +439,26 @@ export function CardEditor({
           </footer>
         </>
       )}
+          </div>
+
+          {isPickingColor && colorPickerBeside && (
+            <div
+              className={colorPickerWrapperClass}
+              data-testid="card-color-picker-wrapper"
+            >
+              <CardColorPicker
+                currentColor={card.color || DEFAULT_CARD_COLOR}
+                initialColor={color}
+                onDone={handleColorDone}
+                onCancel={() => setIsPickingColor(false)}
+                layoutMode={layoutMode}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
-      {isPickingColor && (
+      {isPickingColor && !colorPickerBeside && (
         <div
           className={colorPickerWrapperClass}
           data-testid="card-color-picker-wrapper"
