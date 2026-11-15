@@ -177,7 +177,17 @@ export type Action =
       cards?: FileCard[];
     }
   | { type: 'delete-card'; projectId: string; cardId: string }
-  | { type: 'restore-deleted-card'; projectId: string; record: DeletedCardRecord; atEnd?: boolean };
+  | {
+      type: 'restore-deleted-card';
+      projectId: string;
+      record: DeletedCardRecord;
+      atEnd?: boolean;
+      /**
+       * WO-65（WO-53 之後改）：呼叫端已用 reducer 算好的結果。只有在當時的卡片清單
+       * （basis）與現在仍是同一份時才直接套用，不再重算；清單已變就由 reducer 依最新狀態計算。
+       */
+      placed?: { basis: readonly FileCard[]; cards: FileCard[] };
+    };
 
 
 function bookkeepingOf(project: DemoProject): BookFileMark {
@@ -241,9 +251,17 @@ function deviceStore(): KeyValueStore | null {
   }
 }
 
+/**
+ * WO-65（WO-53 之後改）：範例書每次初始化都深層複製一份，章節樹、卡片與欄位彼此不共用，
+ * 改其中一份 store 不會動到範例常數、其他書或其他 store。
+ */
+export function cloneDemoProject(project: DemoProject): DemoProject {
+  return structuredClone(project);
+}
+
 export function createState(now: Date): SampleState {
   const schedule = createDemoSchedule(now);
-  const projects = (savedProjects() ?? DEMO_PROJECTS).map((project) =>
+  const projects = (savedProjects() ?? DEMO_PROJECTS.map(cloneDemoProject)).map((project) =>
     normalizeLoadedProject({
       ...project,
       origin: project.origin ?? 'demo',
@@ -747,23 +765,20 @@ export async function restoreProjectCardFromArchive(
   }
   if (!record) return null;
 
-  const currentCards = getProjectCards(state, projectId);
-  const settings = getProjectCategorySettings(state, projectId);
-  const visibleIds = resolveVisibleCategories({
-    categoryOrder: settings.categoryOrder,
-    categoriesMeta: settings.categoriesMeta,
-    cards: currentCards,
-  }).map((c) => c.id);
-  const nextCards = placeRecoveredCard(currentCards, record, {
-    atEnd: options?.atEnd ?? false,
-    validCategoryIds: visibleIds,
-  });
-
+  // WO-65（WO-53 之後改）：放回位置只由 reducer 計算一次；這裡把算好的結果連同當時的卡片清單一起交出去，
+  // reducer 看到清單沒變就直接套用，不再重算。
+  const atEnd = options?.atEnd ?? false;
+  const basis = getProjectCards(state, projectId);
+  const nextCards = getProjectCards(
+    reduce(state, { type: 'restore-deleted-card', projectId, record, atEnd }),
+    projectId,
+  );
   dispatch({
     type: 'restore-deleted-card',
     projectId,
     record,
-    atEnd: options?.atEnd ?? false,
+    atEnd,
+    placed: { basis, cards: nextCards },
   });
   await archive.update(projectId, (current) => archiveCardRestore(current, record.id), 'restore');
   return nextCards;
@@ -1182,6 +1197,9 @@ export function reduce(state: SampleState, action: Action): SampleState {
     }
     case 'restore-deleted-card': {
       const currentCards = getProjectCards(state, action.projectId);
+      if (action.placed && action.placed.basis === currentCards) {
+        return applyProjectCards(state, action.projectId, () => action.placed!.cards);
+      }
       const settings = getProjectCategorySettings(state, action.projectId);
       const visibleIds = resolveVisibleCategories({
         categoryOrder: settings.categoryOrder,

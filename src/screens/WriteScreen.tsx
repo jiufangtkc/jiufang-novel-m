@@ -103,6 +103,7 @@ import { BOOK_SEARCH_TAB_SEARCH, BOOK_SEARCH_TAB_TREE, BOOK_SEARCH_TITLE } from 
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
+import { aliveNearId, markWriteChapterOpen, readWritePlace } from '../state/navMemory';
 import { getCardEditSnapshot, subscribeCardEdit } from '../state/writingCardEditSession';
 import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
 import { ChapterTree } from './ChapterTree';
@@ -149,6 +150,11 @@ export function WriteScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardEditing, layoutMode]);
   const rename = useBookRename(project);
+  // WO-65：從別的分頁回來時右欄原本就開著：卡片若有暫存只顯示提示，游標與鍵盤先回正文
+  const rightPanelOpenAtEntry = useRef(sidePanels.right);
+  useEffect(() => {
+    if (!sidePanels.right) rightPanelOpenAtEntry.current = false;
+  }, [sidePanels.right]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<ChapterNode[]>(project?.nodes ?? []);
   const [organizing, setOrganizing] = useState(false);
@@ -218,6 +224,43 @@ export function WriteScreen() {
     setHighlightId(alive);
     restoredKey.current = token;
   }, [chapterId, project, actions]);
+
+  // WO-65：若是因為記住的那一章被刪了才回到目錄，就打開目錄、停在仍存在的附近項目，不停在失效的正文。
+  // （手機直拿要經過目錄頁才看得到分頁，所以只是經過目錄頁不改記住的那一章。）
+  const nearHandledKey = useRef<string | null>(null);
+  const [deletedPanelOpenKey, setDeletedPanelOpenKey] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (!project || chapterId) {
+      nearHandledKey.current = null;
+      return;
+    }
+    const token = `${project.id}:near`;
+    if (nearHandledKey.current === token) return;
+    const place = readWritePlace(project.id);
+    if (!place || !place.chapterOpen || findNode(project.nodes, place.chapterId)) {
+      nearHandledKey.current = token;
+      return;
+    }
+    const near = aliveNearId(project.nodes, place);
+    if (near) {
+      const expanded = expandToNode(project.nodes, near);
+      if (JSON.stringify(expanded) !== JSON.stringify(project.nodes)) {
+        actions.setNodes(project.id, expanded);
+        return;
+      }
+      const row = scrollRef.current?.querySelector<HTMLElement>(`[data-node-id="${near}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      setHighlightId(near);
+    }
+    if (layoutMode !== 'phone-portrait' && !sidePanels.left) setDeletedPanelOpenKey(token);
+    nearHandledKey.current = token;
+    markWriteChapterOpen(project.id, false);
+  }, [chapterId, project, actions, layoutMode, sidePanels.left]);
+  useEffect(() => {
+    if (!deletedPanelOpenKey) return;
+    setDeletedPanelOpenKey(null);
+    openPanel('left');
+  }, [deletedPanelOpenKey, openPanel]);
 
   useLayoutEffect(() => {
     const id = pendingScroll.current;
@@ -804,7 +847,9 @@ export function WriteScreen() {
       >
         {sidePanels.right && layoutMode === 'wide' && (
           <WritingCardsDrawer
+            key={book.id}
             projectId={book.id}
+            resumeEditing={!rightPanelOpenAtEntry.current}
             onClose={() => closePanel('right')}
             onOpenInDataset={() => navigate(`/p/${book.id}/cards`)}
           />
