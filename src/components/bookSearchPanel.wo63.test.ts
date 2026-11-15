@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   BACK_TO_RESULTS,
   BACK_TO_RESULTS_ARIA,
@@ -55,6 +55,16 @@ import {
 } from './BookSearchPanelModel';
 
 const NOON = new Date('2026-11-15T04:00:00Z');
+
+// 固定「今天」：reducer 內的 new Date() 要與 createState(NOON) 同一天，測試才不會因執行日期而失敗。
+beforeEach(() => {
+  vi.useFakeTimers();
+  vi.setSystemTime(NOON);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 const Q = '燈塔';
 const R = '燈臺';
 
