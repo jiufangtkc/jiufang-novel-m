@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
+  cardContentPreviewPlainText,
   EMPTY_CARD_CONTENT_MESSAGE,
   isSafeUrl,
   parseCardMarkdown,
@@ -57,6 +58,12 @@ describe('cardMarkdown 獨立解析與轉譯函式（parseCardMarkdown / renderC
 
     // 空字串解析應安全返回空陣列
     expect(parseCardMarkdown('')).toEqual([]);
+  });
+
+  it('WO-92：cardContentPreviewPlainText 清單摘要不露出 ** 等符號', () => {
+    expect(cardContentPreviewPlainText('記載著**關鍵閥門**的位置。')).toBe('記載著關鍵閥門的位置。');
+    expect(cardContentPreviewPlainText('see **bold** here')).toBe('see bold here');
+    expect(cardContentPreviewPlainText('')).toBe('');
   });
 
   it('renderCardMarkdownToNodes 能將語法節點轉換為 React 節點清單', () => {

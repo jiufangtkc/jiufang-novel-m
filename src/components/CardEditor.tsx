@@ -166,20 +166,34 @@ export function CardEditor({
   };
 
   const isLandscape = layoutMode === 'phone-landscape';
+  const colorPickerBeside = isPickingColor && layoutMode === 'wide';
+
+  const colorPickerWrapperClass =
+    layoutMode === 'phone-portrait'
+      ? 'card-color-picker-sheet'
+      : layoutMode === 'wide'
+        ? 'card-color-picker-aside'
+        : 'card-color-picker-modal';
 
   return (
     <div
-      className={`card-editor-pane card-detail-article card-editor-mode-${currentMode}`}
+      className={`card-editor-pane card-detail-article card-editor-mode-${currentMode}${
+        colorPickerBeside ? ' is-color-picker-beside' : ''
+      }${isPickingColor ? ' is-picking-color' : ''}`}
       data-testid="card-editor-pane"
       data-layout={layoutMode}
       data-mode={currentMode}
     >
+      <div className="card-editor-layout-host">
+        <div
+          className={`card-editor-layout-row${
+            colorPickerBeside && isPickingColor ? ' is-wide-picker-beside' : ''
+          }`}
+        >
+          <div className="card-editor-main">
       {currentMode === 'preview' ? (
         <>
           <header className="card-editor-header card-preview-header">
-            <div className="card-preview-header-left">
-              <h2 className="card-editor-title">{displayCardTitle(title)}</h2>
-            </div>
             <div className="card-preview-header-right">
               {savedNotice && (
                 <span className="card-editor-saved-hint" data-testid="card-editor-saved-hint">
@@ -258,7 +272,7 @@ export function CardEditor({
             )}
           </div>
 
-          {layoutMode === 'phone-portrait' ? (
+          {layoutMode === 'phone-portrait' && (
             <footer className="card-editor-footer card-preview-footer">
               <div className="card-preview-thumb-bar">
                 <button
@@ -281,17 +295,6 @@ export function CardEditor({
                   </button>
                 )}
               </div>
-            </footer>
-          ) : (
-            <footer className="card-editor-footer card-preview-footer">
-              <button
-                type="button"
-                className="card-editor-edit-btn"
-                onClick={handleStartEdit}
-                data-testid="card-editor-start-edit-btn-footer"
-              >
-                {EDIT_CARD_BUTTON}
-              </button>
             </footer>
           )}
         </>
@@ -398,19 +401,6 @@ export function CardEditor({
               <div className="card-editor-thumb-bar">
                 <button
                   type="button"
-                  className="card-editor-color-btn"
-                  onClick={() => setIsPickingColor(true)}
-                  data-testid="card-editor-thumb-color-btn"
-                >
-                  <span
-                    className="card-color-indicator-dot"
-                    style={{ backgroundColor: color }}
-                    aria-hidden="true"
-                  />
-                  <span>{CARD_COLOR_LABEL}</span>
-                </button>
-                <button
-                  type="button"
                   className="card-editor-cancel-btn"
                   onClick={handleCancel}
                   data-testid="card-editor-cancel-btn"
@@ -449,14 +439,28 @@ export function CardEditor({
           </footer>
         </>
       )}
+          </div>
 
-      {isPickingColor && (
+          {isPickingColor && colorPickerBeside && (
+            <div
+              className={colorPickerWrapperClass}
+              data-testid="card-color-picker-wrapper"
+            >
+              <CardColorPicker
+                currentColor={card.color || DEFAULT_CARD_COLOR}
+                initialColor={color}
+                onDone={handleColorDone}
+                onCancel={() => setIsPickingColor(false)}
+                layoutMode={layoutMode}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {isPickingColor && !colorPickerBeside && (
         <div
-          className={
-            layoutMode === 'phone-portrait'
-              ? 'card-color-picker-sheet'
-              : 'card-color-picker-modal'
-          }
+          className={colorPickerWrapperClass}
           data-testid="card-color-picker-wrapper"
         >
           <CardColorPicker

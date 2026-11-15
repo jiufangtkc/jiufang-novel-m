@@ -2,6 +2,7 @@ import React, { useEffect, useReducer, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BackIcon, ChevronIcon, CloseIcon } from '../components/Icons';
 import { CardEditor } from '../components/CardEditor';
+import { cardContentPreviewPlainText } from '../components/cardMarkdown';
 import { CategoryManager } from '../components/CategoryManager';
 import { DeletedCardsList } from '../components/DeletedCardsList';
 import './cardsScreen.css';
@@ -682,7 +683,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
       {rows.map((row) => {
         const visual = cardVisualStyles(row.card.color);
         const indentPx = Math.min(row.level, 2) * 16;
-        const summary = row.card.content.trim();
+        const summary = cardContentPreviewPlainText(row.card.content);
         const isSelected = selectedId === row.card.id;
 
         const inlineStyle: React.CSSProperties = {

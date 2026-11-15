@@ -432,3 +432,9 @@ html[data-layout="phone-landscape"] .cards-landscape-view .cards-drawer-pane.is-
 .cards-empty-category-pane .cards-header-action-btn {
   margin-left: 0;
 }
+
+/* WO-92：寬版並排挑色時放寬內容欄，讓編輯區與色票面板並列 */
+html[data-layout="wide"] .cards-wide-view .card-detail-article.is-color-picker-beside {
+  max-width: none !important;
+  width: 100% !important;
+}

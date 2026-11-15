@@ -6,6 +6,112 @@
   background-color: var(--panel, #1e1e1e);
   color: var(--text, #d4d4d4);
   box-sizing: border-box;
+  position: relative;
+  min-height: 0;
+}
+
+/* 容器查詢掛在內層，避免對自身套用 @container 規則失效 */
+.card-editor-layout-host {
+  container-type: inline-size;
+  container-name: card-editor-beside;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-editor-layout-row {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  position: relative;
+}
+
+/* WO-92 返工：挑色時隱藏表單頁尾，避免橫拿誤按編輯的「完成」 */
+.card-editor-pane.is-picking-color .card-editor-footer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.card-editor-pane.is-picking-color .card-editor-main {
+  pointer-events: none;
+}
+
+.card-editor-pane.is-picking-color .card-color-picker-wrapper,
+.card-editor-pane.is-picking-color .card-color-picker-wrapper * {
+  pointer-events: auto;
+}
+
+.card-editor-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* WO-92：寬版挑色並排在內層 layout-row（容器夠寬時） */
+@container card-editor-beside (min-width: 800px) {
+  .card-editor-layout-row.is-wide-picker-beside {
+    flex-direction: row;
+    align-items: stretch;
+    max-height: 100%;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside > .card-editor-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+/* WO-92 返工：容器不足（1280 第三欄、寫作側欄約 360）改置中浮出 */
+@container card-editor-beside (max-width: 799px) {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    flex: none;
+    max-width: none;
+    width: auto;
+    border-left: none;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside > .card-color-picker {
+    max-height: 100%;
+    max-width: min(100%, 480px);
+    width: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-radius: 8px;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-grid-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-controls,
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-actions {
+    flex-shrink: 0;
+  }
 }
 
 .card-editor-header {
@@ -38,6 +144,23 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* WO-92：預覽內文已有標題列，標頭不再重複卡片標題 */
+.card-editor-mode-preview .card-preview-header {
+  justify-content: flex-end;
+}
+
+/* WO-92：手機直拿編輯頁尾不重複「卡片顏色」，按鈕文字不折成單字一行 */
+.card-editor-thumb-bar .card-editor-cancel-btn,
+.card-editor-thumb-bar .card-editor-done-btn {
+  white-space: nowrap;
+}
+
+.card-editor-field .card-editor-color-btn {
+  white-space: nowrap;
 }
 
 .card-editor-body {
