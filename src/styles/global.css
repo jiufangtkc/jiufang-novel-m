@@ -58,11 +58,17 @@ html[data-layout="medium"] .editor-input {
   padding-right: 40px;
 }
 
+/* WO-W36：電腦寬版限寬 = N 字內容寬 + 左右內距 80px，N 看得見的字數為 36；
+ * 兩側欄都展開仍放得下 40 字時（data-wide-chars="40"）改 40。其餘版面不動。 */
 html[data-layout="wide"] .editor-input {
-  max-width: min(calc(36 * (1em + 0.5px)), 100%);
+  max-width: min(calc(36 * (1em + 0.5px) + 80px), 100%);
   font-size: calc(18px * var(--body-font-scale, 100) / 100);
   padding-left: 40px;
   padding-right: 40px;
+}
+
+html[data-layout="wide"][data-wide-chars="40"] .editor-input {
+  max-width: min(calc(40 * (1em + 0.5px) + 80px), 100%);
 }
 
 html[data-wide-columns="one-side"] {}
