@@ -38,3 +38,22 @@ export function latestSaveTimestamp(meta: {
   if (values.length === 0) return null;
   return Math.max(...values);
 }
+
+/** 上次編輯時間：自動暫存、立刻暫存、存回檔案。另存時間另外顯示。 */
+export function latestEditTimestamp(
+  meta:
+    | {
+        lastAutoSaveMs: number | null;
+        lastManualSaveMs: number | null;
+        lastProjectSaveMs?: number | null;
+      }
+    | null
+    | undefined,
+): number | null {
+  if (!meta) return null;
+  const values = [meta.lastAutoSaveMs, meta.lastManualSaveMs, meta.lastProjectSaveMs ?? null].filter(
+    (value): value is number => value != null,
+  );
+  if (values.length === 0) return null;
+  return Math.max(...values);
+}

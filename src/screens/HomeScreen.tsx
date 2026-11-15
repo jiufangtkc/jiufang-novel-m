@@ -2,13 +2,15 @@ import { useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon } from '../components/Icons';
 import {
+  lastEditDisplay,
   NEW_BOOK_DEFAULT_TITLE,
   NEW_BOOK_NOVEL,
   NEW_BOOK_SHAPE,
   NEW_BOOK_SINGLE,
   OPEN_DB_FAIL,
 } from '../copy/userFacing';
-import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
+import { latestEditTimestamp } from '../domain/saveClock';
+import { useLayout } from '../layout';
 import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { recentDisplayProjects } from '../state/recentProjects';
@@ -16,6 +18,7 @@ import { useSample } from '../state/sampleStore';
 
 export function HomeScreen() {
   const { state, actions, bookWords } = useSample();
+  const { isAtLeastMedium } = useLayout();
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -45,7 +48,11 @@ export function HomeScreen() {
                   <span>
                     <strong>{project.title}</strong>
                     <small>
-                      上次編輯：{formatProjectUpdatedLabel(project.updatedLabel)}　·　字數：{bookWords(project.id)}
+                      {`上次編輯：${lastEditDisplay({
+                        updatedLabel: project.updatedLabel,
+                        notPhone: isAtLeastMedium,
+                        lastEditMs: latestEditTimestamp(state.saveMeta[project.id]),
+                      })}　·　字數：${bookWords(project.id)}`}
                     </small>
                   </span>
                 </Link>

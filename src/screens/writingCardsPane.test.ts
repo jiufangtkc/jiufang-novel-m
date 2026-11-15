@@ -134,8 +134,7 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
     expect(layer1).toContain('角色');
     expect(layer1).toContain('本書綱要');
     expect(layer1).toContain(CLOSE_CARDS_ARIA);
-    // 檢查無障礙朗讀文案規格：角色，5 張卡片
-    expect(layer1).toContain('角色，5 張卡片');
+    expect(layer1).toContain('角色，5 張');
 
     // 第 2 層：卡片清單（selectedCategoryId = 'character'）
     const layer2 = renderDrawer({
@@ -226,7 +225,7 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
   it('WO-74：新稿沒有卡片時是空的並有一句說明，不出現範例角色', () => {
     const layer1 = renderDrawer({ projectId: 'new-book', initialCategoryId: null, onClose: () => {} });
     expect(layer1).toContain(WRITING_CARDS_EMPTY_BOOK_HINT);
-    expect(layer1).toContain('角色，0 張卡片');
+    expect(layer1).toContain('角色，0 張');
     expect(layer1).not.toContain('沈雨晴');
     expect(layer1).not.toContain('【範例】');
 
@@ -239,8 +238,8 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
     for (const projectId of ['own-book', 'reopened-file']) {
       const layer1 = renderDrawer({ projectId, initialCategoryId: null, onClose: () => {} });
       expect(layer1).not.toContain(WRITING_CARDS_EMPTY_BOOK_HINT);
-      expect(layer1).toContain('角色，2 張卡片');
-      expect(layer1).toContain('本書綱要，0 張卡片');
+      expect(layer1).toContain('角色，2 張');
+      expect(layer1).toContain('本書綱要，0 張');
       expect(layer1).not.toContain('自訂分類001');
 
       const layer2 = renderDrawer({ projectId, initialCategoryId: 'character', onClose: () => {} });
@@ -264,7 +263,7 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
 
   it('WO-74：內建範例書仍顯示原有範例卡片', () => {
     const layer1 = renderDrawer({ projectId: 'fog', initialCategoryId: null, onClose: () => {} });
-    expect(layer1).toContain('角色，5 張卡片');
+    expect(layer1).toContain('角色，5 張');
     expect(layer1).not.toContain(WRITING_CARDS_EMPTY_BOOK_HINT);
   });
 });

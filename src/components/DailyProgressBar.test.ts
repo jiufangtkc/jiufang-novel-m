@@ -72,8 +72,8 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
     expect(headingMatch![1]).not.toContain('✦');
     expect(headingMatch![1]).not.toContain('已達標');
 
-    // aria-label 維持原本朗讀文字不改
-    expect(html).toContain('aria-label="今日已寫 300 字，目標 1000 字"');
+    // WO-91：朗讀與畫面一致，四位數加千分位
+    expect(html).toContain('aria-label="今天寫了 300 字，每日目標 1,000 字"');
   });
 
   it('WO-59：DailyProgressBar 底列 12345 字顯示四位數千分位「12,345」且達標時顯示前後綴「✦ 今天寫了 12,345 字，已達標」', () => {
@@ -89,8 +89,7 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
     expect(htmlMet).toContain('✦ 今天寫了 12,345 字，已達標');
     expect(htmlMet).toContain('每日目標 10,000 字');
     expect(htmlMet).toContain('class="daily-bar is-met"');
-    // aria-label 維持原本朗讀文字不改
-    expect(htmlMet).toContain('aria-label="今日已寫 12345 字，已達到目標 10000 字"');
+    expect(htmlMet).toContain('aria-label="✦ 今天寫了 12,345 字，已達標，每日目標 10,000 字"');
 
     // 測試未達標時 12345 字顯示「今天寫了 12,345 字」
     const htmlNotMet = renderToStaticMarkup(
@@ -107,8 +106,7 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
     expect(htmlNotMet).not.toContain('已達標');
   });
 
-  it('WO-59：DailyProgressBar compact 模式與 aria-label 朗讀維持原樣不改', () => {
-    // 1. compact 模式在 300 / 1000 時
+  it('WO-91：DailyProgressBar compact 精簡數字加千分位與「字」，朗讀與畫面一致', () => {
     const htmlCompact1 = renderToStaticMarkup(
       createElement(DailyProgressBar, {
         words: 300,
@@ -118,11 +116,10 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
       }),
     );
     expect(htmlCompact1).toContain('class="daily-bar is-compact"');
-    expect(htmlCompact1).toContain('<span class="daily-bar-compact">300／1000</span>');
+    expect(htmlCompact1).toContain('<span class="daily-bar-compact">300／1,000 字</span>');
     expect(htmlCompact1).not.toContain('daily-bar-heading');
-    expect(htmlCompact1).toContain('aria-label="今日已寫 300 字，目標 1000 字"');
+    expect(htmlCompact1).toContain('aria-label="300／1,000 字"');
 
-    // 2. compact 模式在 12345 / 10000 時（N／M 不加千分位，維持原樣）
     const htmlCompact2 = renderToStaticMarkup(
       createElement(DailyProgressBar, {
         words: 12345,
@@ -131,9 +128,9 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
         compact: true,
       }),
     );
-    expect(htmlCompact2).toContain('<span class="daily-bar-compact">12345／10000</span>');
+    expect(htmlCompact2).toContain('<span class="daily-bar-compact">12,345／10,000 字</span>');
     expect(htmlCompact2).not.toContain('daily-bar-heading');
-    expect(htmlCompact2).toContain('aria-label="今日已寫 12345 字，已達到目標 10000 字"');
+    expect(htmlCompact2).toContain('aria-label="12,345／10,000 字"');
   });
 
   it('WO-59：cardsSubcardsCountLabel(n) 字串函式全形空白驗證', () => {
@@ -366,7 +363,7 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
         `${rel} 不可包含「這本書還沒有正文內容」`,
       ).toBe(false);
 
-      // 2. 原始碼中「今日已寫」僅允許出現在 DailyProgressBar.tsx 的 aria-label 宣告中，不可作為可見文字
+      // 2. 「今日已寫」已從朗讀拿掉，不應再出現在這些原始碼
       if (content.includes('今日已寫')) {
         expect(
           rel,

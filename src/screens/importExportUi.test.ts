@@ -113,7 +113,7 @@ describe('WO-60 畫面驗收測試', () => {
     // 寬版有右欄寫作過程紀錄容器
     expect(htmlWide).toContain('is-wide');
     expect(htmlWide).toContain('stats-wide-logs');
-    expect(htmlWide).toContain('視覺化的寫作紀錄');
+    expect(htmlWide).toContain('視覺化的寫作記錄');
     expect(htmlWide).toContain('匯入\u3000—');
     expect(htmlWide).toContain('匯出\u3000—');
     expect(htmlWide).not.toContain('大量貼上');

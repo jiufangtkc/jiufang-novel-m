@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { BackIcon } from '../components/Icons';
-import { FEATURE_IN_PREPARATION, MANUSCRIPT_NOT_FOUND, PREPARING_BADGE } from '../copy/userFacing';
+import { FEATURE_IN_PREPARATION, MANUSCRIPT_NOT_FOUND, PREPARING_BADGE, VISUAL_WRITING_RECORD } from '../copy/userFacing';
 import { formatCalendarDate } from '../domain/formatCalendarDate';
 import { getDayImportExportStats } from '../domain/importExportStats';
 import { formatDuration, type WritingLogRow } from '../domain/writingLog';
@@ -59,7 +59,7 @@ export function LogsScreen() {
         <h1>寫作過程紀錄</h1>
       </header>
       <div className="scroll-pane logs-page">
-        <p className="hint">視覺化的寫作紀錄</p>
+        <p className="hint">{VISUAL_WRITING_RECORD}</p>
         <ul className="log-list">
           {rows.map((row) => (
             <LogCardItem

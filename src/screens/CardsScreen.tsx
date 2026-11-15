@@ -46,6 +46,7 @@ import {
   savedCardToast,
   UNDO_BUTTON,
   undoCountdownText,
+  undoToastSpoken,
 } from '../copy/cardEditCopy';
 import { DEMO_PROJECTS, type ChapterNode, findNode } from '../data/demo';
 import {
@@ -635,7 +636,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                 data-testid={`category-row-${cat.id}`}
               >
                 <span className="category-name">{cat.name}</span>
-                <span className="category-count">{count}</span>
+                <span className="category-count">{cardsCountLabel(count)}</span>
               </button>
             </li>
           );
@@ -891,8 +892,11 @@ export function CardsScreen(props: CardsScreenProps = {}) {
   const renderUndoToast = () => {
     if (!undoState) return null;
     return (
-      <div className="card-undo-toast" data-testid="card-undo-toast" role="alert">
-        <div className="card-undo-toast-info">
+      <div className="card-undo-toast" data-testid="card-undo-toast">
+        <p className="card-undo-spoken" role="status" data-testid="card-undo-toast-spoken">
+          {undoToastSpoken(undoState.title)}
+        </p>
+        <div className="card-undo-toast-info" aria-hidden="true">
           <span className="card-undo-toast-title" data-testid="card-undo-toast-title">
             {undoState.title}
           </span>
@@ -904,9 +908,10 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           type="button"
           className="card-undo-btn"
           onClick={handleUndo}
+          aria-label={UNDO_BUTTON}
           data-testid="card-undo-btn"
         >
-          <span>↺</span>
+          <span aria-hidden="true">↺</span>
           <span>{UNDO_BUTTON}</span>
         </button>
       </div>

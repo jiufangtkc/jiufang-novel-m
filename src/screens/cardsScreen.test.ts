@@ -155,7 +155,7 @@ function renderCardsScreen(
 }
 
 describe('CardsScreen 畫面與驗收標準（WO-45、WO-50 定案）', () => {
-  it('分類清單顯示各分類名稱與正確卡片數，格式包含「角色，5 張卡片」', () => {
+  it('分類清單顯示各分類名稱與正確卡片數，格式包含「角色，5 張」', () => {
     const html = renderCardsScreen('/p/fog/cards');
 
     expect(html).toContain(CARDS_HEADING);
@@ -165,12 +165,12 @@ describe('CardsScreen 畫面與驗收標準（WO-45、WO-50 定案）', () => {
     expect(html).toContain('時間軸');
     expect(html).toContain('自訂分類001');
 
-    // 檢查卡片數（九方 14:34 最新定案：分類列朗讀改「角色，3 張卡片」）
-    expect(html).toContain('角色，5 張卡片');
-    expect(html).toContain('本書綱要，3 張卡片');
-    expect(html).toContain('世界觀，4 張卡片');
-    expect(html).toContain('時間軸，3 張卡片');
-    expect(html).toContain('自訂分類001，3 張卡片');
+    // WO-91：分類列畫面與朗讀都是「N 張」
+    expect(html).toContain('角色，5 張');
+    expect(html).toContain('本書綱要，3 張');
+    expect(html).toContain('世界觀，4 張');
+    expect(html).toContain('時間軸，3 張');
+    expect(html).toContain('自訂分類001，3 張');
   });
 
   it('WO-75：範例卡片提示只在內建範例書出現，條件不再看是否從檔案開啟', () => {

@@ -98,9 +98,10 @@ export function DeletedCardsList({
                     type="button"
                     className="deleted-card-restore-btn"
                     onClick={() => onRestore(record)}
+                    aria-label={PUT_BACK_ORIGINAL_BUTTON}
                     data-testid={`restore-card-btn-${record.id}`}
                   >
-                    <span>↺</span>
+                    <span aria-hidden="true">↺</span>
                     <span>{PUT_BACK_ORIGINAL_BUTTON}</span>
                   </button>
                 </li>

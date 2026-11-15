@@ -1,4 +1,6 @@
+import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
 import { formatInteger } from '../domain/formatNumber';
+import { formatLastExportLabel } from '../domain/saveClock';
 
 /** 九方審過的介面文案（改前改後表 V1）。 */
 
@@ -75,6 +77,37 @@ export function deleteConfirmShowsRecoverable(archivePersistOk: boolean): boolea
 export function deleteRecoverableHint(computer: boolean): string {
   const device = computer ? '這台電腦' : '這支手機';
   return `最近刪除的 10 項會留在${device}，可從目錄最下方的「最近刪除」放回來`;
+}
+
+/**
+ * 檔案頁、首頁對同一台裝置的稱呼。
+ * 手機說「這支手機」；電腦與平板說「這個裝置」。
+ */
+export function localDevicePhrase(notPhone: boolean): string {
+  return notPhone ? '這個裝置' : '這支手機';
+}
+
+export function stashDraftHint(notPhone: boolean): string {
+  return `立刻存進${localDevicePhrase(notPhone)}的 App 空間，防止掉字`;
+}
+
+/** 從本機儲存空間載入、還沒有編輯時間時，稿子上留的標記。畫面再換成上面那套稱呼。 */
+export const STORED_ON_PHONE_LABEL = '已在手機';
+
+/** 首頁與檔案頁的「上次編輯」。有時間就顯示時間。 */
+export function lastEditDisplay(options: {
+  updatedLabel: string;
+  notPhone: boolean;
+  lastEditMs: number | null;
+  now?: Date;
+}): string {
+  if (options.lastEditMs != null) {
+    return formatLastExportLabel(options.lastEditMs, options.now ?? new Date());
+  }
+  if (options.updatedLabel === STORED_ON_PHONE_LABEL) {
+    return `已在${localDevicePhrase(options.notPhone)}`;
+  }
+  return formatProjectUpdatedLabel(options.updatedLabel, options.now ?? new Date());
 }
 
 function isMacDesktop(): boolean {
@@ -238,8 +271,9 @@ export function displayCardTitle(title?: string | null): string {
   return trimmed.length > 0 ? trimmed : UNTITLED_CARD_TITLE;
 }
 
+/** 分類列朗讀與畫面同一句「N 張」。 */
 export function categoryRowAria(name: string, count: number): string {
-  return `${name}，${count} 張卡片`;
+  return `${name}，${cardsCountLabel(count)}`;
 }
 
 export function cardCollapseAria(title: string): string {
@@ -328,6 +362,22 @@ export function dailyProgressGoalLabel(goal: number | string): string {
   const formatted = typeof goal === 'number' ? formatInteger(goal) : goal;
   return `每日目標 ${formatted} 字`;
 }
+
+/** 進度條朗讀，與畫面上兩句一致，數字帶千分位。 */
+export function dailyProgressAriaLabel(words: number, goal: number, met: boolean): string {
+  return `${dailyProgressWordsLabel(words, met)}，${dailyProgressGoalLabel(goal)}`;
+}
+
+/** 打字時底列精簡數字：千分位，並帶「字」。 */
+export function dailyProgressCompactLabel(words: number, goal: number): string {
+  return `${formatInteger(words)}／${formatInteger(goal)} 字`;
+}
+
+/** 紀錄頁與寬版統計右欄的小標（九方定案：記錄）。 */
+export const VISUAL_WRITING_RECORD = '視覺化的寫作記錄';
+
+/** 設定頁「寫作過程紀錄」說明，與紀錄頁列出的項目一致。 */
+export const SETTINGS_WRITING_LOG_HINT = '每日字數、寫作時間、匯入匯出、大量刪除';
 
 /**
  * WO-60 統計與寫作紀錄預留匯入匯出次數、檔案頁三組分組標題（九方 2026-11-12 定案）。

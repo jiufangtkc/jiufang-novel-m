@@ -92,9 +92,14 @@ export function deletedCardToastTitle(title: string, subcardCount = 0): string {
   return `已刪除「${displayTitle}」`;
 }
 
-/** 倒數秒數提示 */
+/** 倒數秒數提示（只給眼睛看，每秒更新）。 */
 export function undoCountdownText(remainingSeconds: number): string {
   return `10 秒內可以復原，剩 ${remainingSeconds} 秒`;
+}
+
+/** 刪除倒數只念一次。朗讀固定念一開始那句，不跟著每秒重念。 */
+export function undoToastSpoken(title: string): string {
+  return `${title}。${undoCountdownText(10)}`;
 }
 
 /**
@@ -115,7 +120,7 @@ export function deletedCardsListHint(deviceOrComputer: string | boolean = '這�
 /** 放回原位置後提示 */
 export function restoredCardToast(title: string, categoryName: string): string {
   const displayTitle = title.trim() || '未命名卡片';
-  return `已放回「${displayTitle}」到「${categoryName}」`;
+  return `已把「${displayTitle}」放回「${categoryName}」`;
 }
 
 /** 卡片儲存完成提示 */
