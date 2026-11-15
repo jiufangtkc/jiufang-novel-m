@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { AppNav, showsLandscapeRail } from '../components/AppNav';
@@ -8,8 +8,9 @@ import { useProject, useSample } from '../state/sampleStore';
 export function Workspace() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
-  const { actions } = useSample();
+  const { state, actions } = useSample();
   const { pathname } = useLocation();
+  const previousPathnameRef = useRef(pathname);
   const { mode, sidePanels } = useLayout();
   // WO-68：手機橫拿在目錄抽屜左邊與其他分頁顯示直排分頁
   const landscapeRail = mode === 'phone-landscape' && showsLandscapeRail(pathname, sidePanels.left);
@@ -17,10 +18,16 @@ export function Workspace() {
     if (project) actions.focusProject(project.id);
   }, [project, actions]);
 
-  // WO-93：換分頁時收掉「功能還在準備中。」等全域提示，避免殘留在下一頁
+  // WO-93：路徑真的變了且畫面上還有提示時才清掉；不依賴 actions，避免每輪 state 更新重跑
   useEffect(() => {
-    actions.toast(null);
-  }, [pathname, actions]);
+    if (previousPathnameRef.current === pathname) return;
+    previousPathnameRef.current = pathname;
+    if (state.toast != null) {
+      actions.toast(null);
+    }
+    // pathname 變更時才讀當輪的 state.toast 與 actions
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
   if (!project) {
     return (
       <div className="page">
