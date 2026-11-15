@@ -124,8 +124,8 @@ describe('WO-55：各版面正文限寬規則驗證', () => {
     expect(css).toMatch(/html\[data-layout="phone-landscape"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
     // 3. 中等 N = 30
     expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
-    // 4. 寬版 N = 36
-    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
+    // 4. 寬版 N = 36（WO-W36：看得見的 36 字，左右內距 80px 另計；舊版為純字寬，內距吃掉字位）
+    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\s*\+\s*80px\)\s*,\s*100%\)/);
   });
 
   it('WO-55：純函式與限寬常數設定值正確', () => {

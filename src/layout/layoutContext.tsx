@@ -46,6 +46,12 @@ import {
   type SidePanelName,
   type SidePanelsState,
 } from './sidePanels';
+import {
+  fitWidePanels,
+  loadWidePanels,
+  saveWidePanels,
+  wideChars,
+} from './widePanels';
 
 export interface LayoutContextValue {
   mode: LayoutMode;
@@ -101,6 +107,18 @@ export function applyPanelsHtmlAttributes(
     root.dataset.focusMode = 'true';
   } else {
     delete root.dataset.focusMode;
+  }
+}
+
+/** 電腦寬版正文一行字數（36 或 40）寫在 <html>，CSS 依此選限寬。非寬版移除。 */
+export function applyWideCharsAttribute(chars: number | null): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement;
+  if (!root) return;
+  if (chars == null) {
+    delete root.dataset.wideChars;
+  } else {
+    root.dataset.wideChars = String(chars);
   }
 }
 
@@ -173,6 +191,11 @@ export interface LayoutProviderProps {
   initialBodyFontScale?: number;
   initialPanels?: Partial<SidePanelsState> & { focusMode?: boolean };
   initialFocusMode?: boolean;
+  /**
+   * 測試用（WO-W36）。指定後才依視窗寬度判斷電腦寬版放不放得下三欄。
+   * 強制指定版面（initialMode）又沒給這項時，不做容量判斷，也不讀寫寬版側欄偏好。
+   */
+  initialViewportWidth?: number;
 }
 
 export function LayoutProvider({
@@ -184,7 +207,10 @@ export function LayoutProvider({
   initialBodyFontScale,
   initialPanels,
   initialFocusMode,
+  initialViewportWidth,
 }: LayoutProviderProps) {
+  // 強制指定版面且沒給視窗寬時（舊測試），維持舊行為：不判斷容量、不讀寫偏好
+  const capacityEnabled = !initialMode || initialViewportWidth !== undefined;
   const [layoutState, setLayoutState] = useState<{
     mode: LayoutMode;
     wideColumns: WideColumns | null;
@@ -219,11 +245,21 @@ export function LayoutProvider({
     };
   });
 
+  // 電腦寬版：使用者希望展開的側欄（本機偏好）。只在使用者操作時改。
+  const widePrefRef = useRef(
+    initialPanels && (initialPanels.left !== undefined || initialPanels.right !== undefined)
+      ? { left: initialPanels.left ?? true, right: initialPanels.right ?? true }
+      : capacityEnabled
+        ? loadWidePanels()
+        : { left: true, right: false },
+  );
   const [panelsState, setPanelsState] = useState<PanelsState>(() => {
     const isWide =
       initialMode === 'wide' ||
       (typeof window !== 'undefined' && window.innerWidth >= WIDE_ONE_SIDE_MIN);
+    const realWide = capacityEnabled && layoutState.mode === 'wide';
     const combinedPanels = {
+      ...(realWide && !initialPanels ? widePrefRef.current : {}),
       ...initialPanels,
       focusMode: initialFocusMode ?? initialPanels?.focusMode,
     };
@@ -232,6 +268,15 @@ export function LayoutProvider({
       isWide ? { mode: 'wide', wideColumns: initialWideColumns ?? 'one-side' } : undefined,
     );
   });
+  // 兩側都放不下時，先保留哪一邊（最後手動打開的那邊；預設左目錄）
+  const [widePrefer, setWidePrefer] = useState<SidePanelName>('left');
+  const [viewportWidth, setViewportWidth] = useState<number | null>(() =>
+    initialViewportWidth !== undefined
+      ? initialViewportWidth
+      : !initialMode && typeof window !== 'undefined'
+        ? window.innerWidth
+        : null,
+  );
 
   const panelsRef = useRef(panelsState);
   panelsRef.current = panelsState;
@@ -247,6 +292,43 @@ export function LayoutProvider({
     applyBodyFontScale(layoutState.bodyFontScale);
   }, [layoutState.bodyFontScale]);
 
+  // 實際顯示的側欄：電腦寬版依視窗容量暫時收起放不下的那一側（不寫進使用者選擇）
+  const isWideCapacity = capacityEnabled && layoutState.mode === 'wide';
+  const fitted = useMemo<SidePanelsState>(() => {
+    if (!isWideCapacity || panelsState.focusMode || viewportWidth == null) {
+      return panelsState.sidePanels;
+    }
+    return fitWidePanels({
+      wanted: panelsState.sidePanels,
+      prefer: widePrefer,
+      viewportWidth,
+      scalePercent: layoutState.bodyFontScale,
+      oneSide: layoutState.wideColumns === 'one-side',
+    });
+  }, [
+    isWideCapacity,
+    panelsState.focusMode,
+    panelsState.sidePanels,
+    widePrefer,
+    viewportWidth,
+    layoutState.bodyFontScale,
+    layoutState.wideColumns,
+  ]);
+  const shownLeft = fitted.left;
+  const shownRight = fitted.right;
+  const shownPanels = useMemo<SidePanelsState>(
+    () => ({ left: shownLeft, right: shownRight }),
+    [shownLeft, shownRight],
+  );
+  const shownRef = useRef(shownPanels);
+  shownRef.current = shownPanels;
+  const bodyChars =
+    layoutState.mode !== 'wide'
+      ? null
+      : viewportWidth == null
+        ? 36
+        : wideChars(viewportWidth, layoutState.bodyFontScale);
+
   const windowDimsRef = useRef<{ width: number; height: number }>({
     width: typeof window !== 'undefined' ? window.innerWidth : 390,
     height: typeof window !== 'undefined' ? window.innerHeight : 844,
@@ -254,8 +336,13 @@ export function LayoutProvider({
 
   // 同步側欄與專注模式狀態至 <html> 屬性（WO-55）
   useEffect(() => {
-    applyPanelsHtmlAttributes(panelsState.sidePanels, panelsState.focusMode);
-  }, [panelsState.sidePanels, panelsState.focusMode]);
+    applyPanelsHtmlAttributes(shownPanels, panelsState.focusMode);
+  }, [shownPanels, panelsState.focusMode]);
+
+  // WO-W36：電腦寬版正文一行字數（36／40）
+  useEffect(() => {
+    applyWideCharsAttribute(bodyChars);
+  }, [bodyChars]);
 
   // 監聽視窗變化（使用 requestAnimationFrame 做節流）。
   // 操作方式不在這裡重猜：data-pointer 只跟已存的設定走（WO-94）。
@@ -297,12 +384,26 @@ export function LayoutProvider({
 
         applyHtmlLayoutAttributes(res.mode, res.wideColumns, ptr);
 
+        setViewportWidth(window.innerWidth);
+        const before = layoutRef.current;
+        if (before.mode !== res.mode || before.wideColumns !== res.wideColumns) {
+          // 版面切換時校正側欄。操作方式與裝置稱呼保持原樣。
+          setPanelsState((currentPanels) => {
+            if (res.mode === 'wide') {
+              // 寬版內部（one-side／both）切換不動選擇；從別的版面回到寬版，照使用者記住的選擇
+              if (before.mode === 'wide') return currentPanels;
+              const remembered = { ...widePrefRef.current };
+              return currentPanels.focusMode
+                ? { ...currentPanels, savedBeforeFocus: remembered }
+                : { ...currentPanels, sidePanels: remembered, savedForOneSide: null };
+            }
+            return normalizePanelsForLayout(currentPanels, res);
+          });
+        }
         setLayoutState((prev) => {
           if (prev.mode === res.mode && prev.wideColumns === res.wideColumns) {
             return prev;
           }
-          // 版面切換時校正側欄。操作方式與裝置稱呼保持原樣。
-          setPanelsState((currentPanels) => normalizePanelsForLayout(currentPanels, res));
           return {
             mode: res.mode,
             wideColumns: res.wideColumns,
@@ -331,58 +432,76 @@ export function LayoutProvider({
     };
   }, [initialMode, initialWideColumns, initialPointer]);
 
-  const openPanel = useCallback((side: SidePanelName) => {
-    setPanelsState((prev) => {
-      const res: LayoutResolution = {
-        mode: layoutRef.current.mode,
-        wideColumns: layoutRef.current.wideColumns,
-      };
-      return openSidePanel(prev, side, res);
-    });
-  }, []);
+  const currentResolution = (): LayoutResolution => ({
+    mode: layoutRef.current.mode,
+    wideColumns: layoutRef.current.wideColumns,
+  });
 
-  const closePanel = useCallback((side: SidePanelName) => {
-    setPanelsState((prev) => {
-      const res: LayoutResolution = {
-        mode: layoutRef.current.mode,
-        wideColumns: layoutRef.current.wideColumns,
-      };
-      return closeSidePanel(prev, side, res);
-    });
-  }, []);
+  /**
+   * 電腦寬版的側欄操作（WO-W36）：只改使用者的選擇（並記住），實際顯示由容量決定。
+   * 打開的那一側優先保留；放不下時另一側暫時讓位，關掉後自動回來。
+   */
+  const wideAction = useCallback(
+    (side: SidePanelName, kind: 'open' | 'close' | 'toggle') => {
+      const cur = panelsRef.current;
+      if (cur.focusMode && kind === 'close') return;
+      const base = cur.focusMode ? (cur.savedBeforeFocus ?? widePrefRef.current) : cur.sidePanels;
+      const shown = cur.focusMode ? { left: false, right: false } : shownRef.current;
+      const open = kind === 'open' ? true : kind === 'close' ? false : !shown[side];
+      const next: SidePanelsState = { ...base, [side]: open };
+      widePrefRef.current = next;
+      saveWidePanels(next);
+      if (open) setWidePrefer(side);
+      setPanelsState({
+        sidePanels: next,
+        focusMode: false,
+        savedBeforeFocus: null,
+        savedForOneSide: null,
+      });
+    },
+    [],
+  );
+  const usesWideRules = () => capacityEnabled && layoutRef.current.mode === 'wide';
 
-  const togglePanel = useCallback((side: SidePanelName) => {
-    setPanelsState((prev) => {
-      const res: LayoutResolution = {
-        mode: layoutRef.current.mode,
-        wideColumns: layoutRef.current.wideColumns,
-      };
-      return toggleSidePanel(prev, side, res);
-    });
-  }, []);
+  const openPanel = useCallback(
+    (side: SidePanelName) => {
+      if (usesWideRules()) return wideAction(side, 'open');
+      setPanelsState((prev) => openSidePanel(prev, side, currentResolution()));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [capacityEnabled, wideAction],
+  );
+
+  const closePanel = useCallback(
+    (side: SidePanelName) => {
+      if (usesWideRules()) return wideAction(side, 'close');
+      setPanelsState((prev) => closeSidePanel(prev, side, currentResolution()));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [capacityEnabled, wideAction],
+  );
+
+  const togglePanel = useCallback(
+    (side: SidePanelName) => {
+      if (usesWideRules()) return wideAction(side, 'toggle');
+      setPanelsState((prev) => toggleSidePanel(prev, side, currentResolution()));
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [capacityEnabled, wideAction],
+  );
 
   const enterFocus = useCallback(() => {
     setPanelsState((prev) => enterFocusMode(prev));
   }, []);
 
   const exitFocus = useCallback(() => {
-    setPanelsState((prev) => {
-      const res: LayoutResolution = {
-        mode: layoutRef.current.mode,
-        wideColumns: layoutRef.current.wideColumns,
-      };
-      return exitFocusMode(prev, res);
-    });
+    setPanelsState((prev) => exitFocusMode(prev, usesWideRules() ? undefined : currentResolution()));
   }, []);
 
   const toggleFocus = useCallback(() => {
-    setPanelsState((prev) => {
-      const res: LayoutResolution = {
-        mode: layoutRef.current.mode,
-        wideColumns: layoutRef.current.wideColumns,
-      };
-      return toggleFocusMode(prev, res);
-    });
+    setPanelsState((prev) =>
+      toggleFocusMode(prev, usesWideRules() ? undefined : currentResolution()),
+    );
   }, []);
 
   const setInputMode = useCallback((mode: PointerMode) => {
@@ -440,7 +559,7 @@ export function LayoutProvider({
       isAtLeastMedium,
       isWide,
       isPhone,
-      sidePanels: panelsState.sidePanels,
+      sidePanels: shownPanels,
       focusMode: panelsState.focusMode,
       openPanel,
       closePanel,
@@ -449,7 +568,7 @@ export function LayoutProvider({
       exitFocusMode: exitFocus,
       toggleFocusMode: toggleFocus,
     };
-  }, [layoutState, panelsState, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode, setBodyFontScale]);
+  }, [layoutState, shownPanels, panelsState.focusMode, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode, setBodyFontScale]);
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 }
