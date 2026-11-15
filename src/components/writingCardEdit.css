@@ -1,0 +1,173 @@
+/* WO-64：寫作時看卡片也能編輯。依四種版面調整編輯中的面板尺寸。 */
+
+/* 卡片編輯區填滿面板；CardEditor 自己的頁首與頁尾留著 */
+.writing-card-editor-wrap {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+.writing-card-editor-wrap > .card-editor-pane {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 手機直拿：頂端「寫作位置已記住」，也是往下滑收起的把手 */
+.writing-card-place {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  font-size: 14px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  touch-action: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+html[data-layout="phone-portrait"] .writing-cards-header {
+  touch-action: none;
+}
+
+/* 手機直拿編輯：面板拉到全高 */
+html[data-layout="phone-portrait"] .writing-cards-drawer[data-card-editing="true"] {
+  top: 0;
+  bottom: auto;
+  height: 100dvh;
+  max-height: 100dvh;
+  border-radius: 0;
+}
+
+/* 手機橫拿編輯：面板放寬到約 350 */
+html[data-layout="phone-landscape"] .writing-cards-drawer[data-card-editing="true"] {
+  width: 350px;
+  max-width: 60vw;
+}
+
+/* 中等編輯：位置不變，高度由元件縮到鍵盤上方 */
+html[data-layout="medium"] .writing-cards-drawer[data-card-editing="true"] {
+  max-height: 100dvh;
+}
+
+/* 寬版編輯：右欄放寬到 360，正文照舊限寬 */
+html[data-layout="wide"] .write-aside.is-card-editing {
+  flex: 0 0 360px;
+  width: 360px;
+  min-width: 360px;
+  max-width: 360px;
+}
+
+/* 編輯卡片時正文只能看、不能改，游標淡成灰色 */
+.editor-input.is-card-editing {
+  caret-color: var(--muted);
+}
+
+/* 「⋯」動作面板 */
+.writing-card-more-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.writing-card-more-sheet {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px calc(12px + var(--safe-bottom, 0px));
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  border-radius: 12px 12px 0 0;
+}
+
+.writing-card-more-item {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  text-align: left;
+}
+
+/* 窄面板裡的卡片編輯：去掉外框、欄位直排、按鈕文字不折行 */
+.writing-card-editor-wrap .card-editor-pane {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.writing-card-editor-wrap .card-editor-body {
+  gap: 10px;
+  padding: 10px 14px;
+}
+
+.writing-card-editor-wrap .card-editor-row-landscape {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.writing-card-editor-wrap .card-editor-row-landscape .card-editor-field-color {
+  width: 100%;
+}
+
+.writing-card-editor-wrap .card-editor-textarea {
+  min-height: 96px;
+}
+
+.writing-card-editor-wrap .card-editor-cancel-btn,
+.writing-card-editor-wrap .card-editor-done-btn,
+.writing-card-editor-wrap .card-editor-color-btn {
+  white-space: nowrap;
+}
+
+/* WO-64 返工：看卡片預覽標頭。內容區已有標題（含顏色點、可換行），
+   標頭裡重複的標題在窄面板會被擠成直排，所以這裡收掉；標頭只留「編輯」「⋯」，
+   「已存好」提示獨立排在下一列。資料集的預覽不受影響。 */
+.writing-card-editor-wrap .card-preview-header {
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  column-gap: 8px;
+  row-gap: 4px;
+  padding: 8px 14px;
+  min-height: 0;
+  flex-shrink: 0;
+}
+
+.writing-card-editor-wrap .card-preview-header-left {
+  display: none;
+}
+
+/* 右側按鈕列攤平成標頭的子項，提示才能獨立排到下一列 */
+.writing-card-editor-wrap .card-preview-header-right {
+  display: contents;
+}
+
+.writing-card-editor-wrap .card-preview-header .card-editor-saved-hint {
+  order: 3;
+  flex: 0 0 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.writing-card-editor-wrap .card-preview-body .card-detail-heading {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* 手機橫拿高度很有限：標頭已有「編輯」，頁尾重複的「編輯」收掉，把高度還給卡片內容 */
+html[data-layout="phone-landscape"] .writing-card-editor-wrap .card-preview-footer {
+  display: none;
+}
