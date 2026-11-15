@@ -4,6 +4,10 @@ import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
+import type { BookSearchController } from '../components/BookSearchPanelState';
+import { SearchIcon, SearchThumbNav, useEditorSearch } from '../components/BookSearchPanelParts';
+import '../components/BookSearchPanel.css';
+import { BOOK_SEARCH_OPEN_ARIA } from '../copy/bookSearchCopy';
 import {
   FOCUS_MODE_LANDSCAPE_ENTER_ARIA,
   FOCUS_MODE_THUMB_ENTER_LABEL,
@@ -66,7 +70,16 @@ import {
 } from './HalfWidthReminder';
 import './focusMode.css';
 
-export function EditorPane({ projectId, chapter }: { projectId: string; chapter: ChapterNode }) {
+export function EditorPane({
+  projectId,
+  chapter,
+  search,
+}: {
+  projectId: string;
+  chapter: ChapterNode;
+  /** WO-63：全書搜尋（由寫作頁提供；沒有時不顯示入口） */
+  search?: BookSearchController;
+}) {
   const navigate = useNavigate();
   const location = useLocation();
   const focusWriting = Boolean((location.state as { focusWriting?: boolean } | null)?.focusWriting);
@@ -140,6 +153,14 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
   const isComposingRef = useRef(false);
   const pendingOpenAfterCompositionRef = useRef(false);
   const pendingTimerRef = useRef<number | null>(null);
+  // WO-63：搜尋接上正文框（讀最新正文、整段換字、等組字送出、跳到那一處與反白）
+  const searchHooks = useEditorSearch({
+    search,
+    chapterId: chapter.id,
+    textareaRef: ref,
+    isComposingRef,
+    replaceText,
+  });
 
   const [landscapeExitState, setLandscapeExitState] = useState(INITIAL_LANDSCAPE_EXIT_STATE);
   const landscapeExitTimerRef = useRef<number | null>(null);
@@ -404,6 +425,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
     >
       <HalfWidthOverlay controller={halfWidth} />
+      {searchHooks.overlay}
       <button
         type="button"
         className={['focus-exit-button', landscapeExitState.expanded ? 'is-expanded' : '']
@@ -450,6 +472,18 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
             {saveStatus.label}
           </span>
         </div>
+        {search ? (
+          <button
+            type="button"
+            className="search-open-button"
+            aria-label={BOOK_SEARCH_OPEN_ARIA}
+            aria-expanded={search.open && (search.side !== 'page' || search.view === 'results')}
+            onClick={search.openSearch}
+            data-testid="search-open-topbar"
+          >
+            <SearchIcon size={20} />
+          </button>
+        ) : null}
         <button
           type="button"
           className="focus-enter-button"
@@ -482,6 +516,18 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         <ListTreeIcon size={20} />
         <span className="floating-button-label">{FLOATING_CHAPTER_TREE_ARIA}</span>
       </button>
+      {search ? (
+        <button
+          type="button"
+          className="landscape-search-trigger"
+          aria-label={BOOK_SEARCH_OPEN_ARIA}
+          onClick={search.openSearch}
+          data-testid="search-open-landscape"
+        >
+          <SearchIcon size={20} />
+          <span>{BOOK_SEARCH_OPEN_ARIA}</span>
+        </button>
+      ) : null}
       <button
         type="button"
         className="landscape-cards-trigger"
@@ -505,7 +551,7 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       </button>
       <textarea
         ref={ref}
-        className="editor-input"
+        className={searchHooks.marking ? 'editor-input is-search-marking' : 'editor-input'}
         data-testid="writing-input"
         defaultValue={chapter.content ?? ''}
         name="jiufang-manuscript"
@@ -580,7 +626,8 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
         {showHalfWidthStrip && (
           <HalfWidthStrip controller={halfWidth} preferShort={bodyFontScale >= 175} />
         )}
-        <div className="thumb-bar" data-testid="thumb-bar">
+        {search?.thumb ? <SearchThumbNav search={search} /> : null}
+        <div className="thumb-bar" data-testid="thumb-bar" hidden={Boolean(search?.thumb)}>
           <button
             type="button"
             className="thumb-button thumb-tree-button"
@@ -630,7 +677,6 @@ export function EditorPane({ projectId, chapter }: { projectId: string; chapter:
       {isCardsOpen && !focusMode && layoutMode !== 'wide' && (
         <WritingCardsDrawer
           projectId={projectId}
-          isDesktopFile={project?.origin === 'file'}
           onClose={closeCards}
         />
       )}
