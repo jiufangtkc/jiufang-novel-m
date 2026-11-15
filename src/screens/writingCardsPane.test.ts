@@ -168,7 +168,7 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
     expect(layer3).toContain('鐘錶修復師的養女');
   });
 
-  it('只能看：面板裡絕無編輯、新增、刪除、排序或 disabled 變灰按鈕', () => {
+  it('WO-64：各層不再有「只能看」；只有卡片內容層有「編輯」，仍無新增、刪除、排序或 disabled 變灰按鈕', () => {
     // 檢查各層
     const layers = [
       renderDrawer({ projectId: 'fog', initialCategoryId: null, onClose: () => {} }),
@@ -176,14 +176,17 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
       renderDrawer({ projectId: 'fog', initialCategoryId: 'character', initialCardId: '20000000-0000-4000-8000-000000000001', onClose: () => {} }),
     ];
 
-    for (const html of layers) {
+    layers.forEach((html, index) => {
+      expect(html).not.toContain(CARDS_READONLY_BADGE);
+      // 分類清單與卡片清單沒有編輯入口；卡片內容層（第 3 層）才有「編輯」
+      if (index < 2) expect(html).not.toContain('編輯');
+      else expect(html).toContain('編輯');
       expect(html).not.toContain('新增');
-      expect(html).not.toContain('編輯');
       expect(html).not.toContain('刪除');
       expect(html).not.toContain('排序');
       expect(html).not.toContain('改色');
       expect(html).not.toContain('disabled');
-    }
+    });
   });
 
   it('AI 對話紀錄分類完全不出現', () => {
@@ -253,7 +256,9 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
       });
       expect(layer3).toContain('這是這份測試稿自己的角色內容');
       expect(layer3).toContain('子卡片');
-      expect(layer3).toContain(CARDS_READONLY_BADGE);
+      // WO-64：拿掉「只能看」，改成可按「編輯」
+      expect(layer3).not.toContain(CARDS_READONLY_BADGE);
+      expect(layer3).toContain('編輯');
     }
   });
 

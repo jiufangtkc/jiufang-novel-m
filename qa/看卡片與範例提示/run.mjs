@@ -269,7 +269,7 @@ async function runLayout(L) {
         await act(L, row);
         await page.waitForTimeout(400);
         dt = await drawerText(drawer);
-        rec(L, 'S3-4', '看卡片內容層：看得到同一張的內容、有「只能看」', dt.includes(CARD_BODY) && dt.includes('只能看') && !dt.includes(NOTICE), dt.slice(0, 120));
+        rec(L, 'S3-4', '看卡片內容層：看得到同一張的內容、不再有「只能看」（WO-64 改定案）', dt.includes(CARD_BODY) && !dt.includes('只能看') && !dt.includes(NOTICE), dt.slice(0, 120));
         await shot(page, L, 'S3-自己的卡片-看卡片內容');
       }
       const back2 = drawer.locator('button[aria-label*="返回"]').first();
