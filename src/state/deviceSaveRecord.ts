@@ -28,14 +28,25 @@ export interface DeviceSaveRecord {
   logsById: Record<string, WritingLogRow[]>;
   goalById: Record<string, GoalSchedule>;
   exportedFiles: Record<string, number>;
+  /** WO-98：每份稿子（以代號對應）在這台裝置的建立或第一次遇到的時間，用來算「沒存檔幾天」。 */
+  startedById: Record<string, number>;
 }
 
 function emptyRecord(): DeviceSaveRecord {
-  return { saveMeta: {}, logsById: {}, goalById: {}, exportedFiles: {} };
+  return { saveMeta: {}, logsById: {}, goalById: {}, exportedFiles: {}, startedById: {} };
 }
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function cleanStarted(value: unknown): Record<string, number> {
+  if (!isObject(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [id, ms] of Object.entries(value)) {
+    if (typeof ms === 'number' && Number.isFinite(ms) && ms > 0) out[id] = ms;
+  }
+  return out;
 }
 
 function readRaw(store: KeyValueStore): DeviceSaveRecord {
@@ -51,6 +62,7 @@ function readRaw(store: KeyValueStore): DeviceSaveRecord {
       exportedFiles: isObject(parsed.exportedFiles)
         ? (parsed.exportedFiles as DeviceSaveRecord['exportedFiles'])
         : {},
+      startedById: cleanStarted(parsed.startedById),
     };
   } catch {
     return emptyRecord();
@@ -87,6 +99,8 @@ export function saveDeviceSaveRecord(
     logsById: Record<string, WritingLogRow[]>;
     goalById: Record<string, GoalSchedule>;
     draftIds: readonly string[];
+    /** WO-98：沒帶就沿用先前記的。 */
+    startedById?: Record<string, number>;
   },
 ): void {
   const previous = readRaw(store);
@@ -103,6 +117,7 @@ export function saveDeviceSaveRecord(
     logsById,
     goalById,
     exportedFiles: previous.exportedFiles,
+    startedById: input.startedById ?? previous.startedById,
   };
   store.setItem(DEVICE_SAVE_RECORD_KEY, JSON.stringify(record));
 }

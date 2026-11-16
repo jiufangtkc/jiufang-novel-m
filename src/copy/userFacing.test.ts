@@ -235,7 +235,9 @@ describe('章節目錄文案', () => {
 
     // 3. 檔案頁按鈕與說明文字
     expect(copy.IMPORT_TEXT_FILE_BUTTON).toBe('匯入文字檔');
-    expect(copy.IMPORT_TEXT_FILE_HINT).toBe('把文字檔的內容加進這份稿子');
+    // WO-99：匯入一律開成新稿子，副標改為「開成新稿子」。
+    expect(copy.IMPORT_TEXT_FILE_HINT).toBe('把文字檔的內容開成新稿子');
+    expect(copy.IMPORT_TEXT_FILE_HINT).not.toContain('加進這份稿子');
     expect(copy.EXPORT_FULL_TEXT_BUTTON).toBe('匯出全文');
     expect(copy.EXPORT_FULL_TEXT_HINT).toBe('把整份稿子匯出成一個 TXT 或 Markdown 檔');
 
