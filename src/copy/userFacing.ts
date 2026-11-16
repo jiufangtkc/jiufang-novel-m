@@ -6,6 +6,17 @@ import { formatLastExportLabel } from '../domain/saveClock';
 
 export const MANUSCRIPT_NOT_FOUND = '找不到這份稿子。請回首頁重新開啟。';
 
+// WO-97：設定頁「隱私說明」標題（入口列與子頁共用）與九方定稿六句，一句一段
+export const PRIVACY_TITLE = '隱私說明';
+export const PRIVACY_PARAGRAPHS: readonly string[] = [
+  'JiufangM 不用註冊，也不用登入。',
+  '您的稿子、卡片和寫作紀錄只存在您自己的裝置裡，不會傳到我們這邊或任何伺服器。',
+  '您用「儲存」存成 .db 檔時，檔案會存到您自己選的地方，像是「檔案」App 或 iCloud 雲碟。',
+  '我們不收集您的姓名、聯絡方式或稿子內容，也不放廣告。',
+  '網站放在 Cloudflare 上，Cloudflare 只會留一般網站都有的連線紀錄，裡面沒有稿子內容。',
+  '清除瀏覽器資料或刪掉 App 時，沒有另外存成 .db 檔的稿子可能會不見，記得定期存檔。',
+];
+
 /**
  * WO-95：同一句拆成三段，只把「回首頁」做成連結；三段接起來必須與 MANUSCRIPT_NOT_FOUND 一字不差，不是新用字。
  */
@@ -397,7 +408,18 @@ export const PREPARING_BADGE = '準備中';
 export const FEATURE_IN_PREPARATION = '功能還在準備中。';
 
 export const IMPORT_TEXT_FILE_BUTTON = '匯入文字檔';
-export const IMPORT_TEXT_FILE_HINT = '把文字檔的內容加進這份稿子';
+/** WO-99：匯入一律開成新稿子，不加進目前這份（原「把文字檔的內容加進這份稿子」）。 */
+export const IMPORT_TEXT_FILE_HINT = '把文字檔的內容開成新稿子';
+/** WO-99：匯入時第一個章名前有文字，放在最前面這一章。 */
+export const IMPORT_PREFACE_TITLE = '前言';
+/** WO-99：整份沒有章名時那一章的章名，逐字沿用小說型新稿子的首章名（末尾為全形空白）。 */
+export const IMPORT_DEFAULT_CHAPTER_TITLE = '第一章\u3000';
+/** WO-99：讀不出來或不支援的編碼，一律這一句。 */
+export const IMPORT_TEXT_UNREADABLE = '這個文字檔讀不出來，請另存成 UTF-8 文字檔後再試一次。';
+/** WO-99：匯入處理中，按鈕下方小字改成這一句。 */
+export const IMPORT_TEXT_WORKING = '正在匯入文字檔，請稍候。';
+/** WO-99：這台裝置存不下新稿子時（不建立稿子、不計次）。 */
+export const IMPORT_TEXT_STORAGE_FAIL = '這台裝置存不下這份稿子，這次沒有匯入。';
 export const EXPORT_FULL_TEXT_BUTTON = '匯出全文';
 export const EXPORT_FULL_TEXT_HINT = '把整份稿子匯出成一個 TXT 或 Markdown 檔';
 
@@ -431,3 +453,8 @@ export function logExportCountLabel(count?: number | string | null): string {
 }
 
 
+
+// WO-98：寫作頁頁首「好幾天沒存檔」提醒。N 為實際完整經過天數（滿 24 小時一天）。
+export const staleSaveReminder = (days: number): string => `已經 ${days} 天沒存檔了`;
+/** 朗讀標籤：與畫面同一句。 */
+export const staleSaveReminderAria = (days: number): string => `已經 ${days} 天沒存檔了`;

@@ -2978,3 +2978,32 @@ html[data-pointer="mouse"] .cards-subcard-button {
 }
 
 
+
+/* WO-98：寫作頁頁首「好幾天沒存檔」提醒。只在有提醒時把頁首折成兩列，提醒獨佔第二列，
+   不蓋正文、不擠掉原本的按鈕；專注模式與手機橫拿收起頁首時，整個頁首（含提醒）一起隱藏。 */
+.editor .topbar.has-save-reminder {
+  flex-wrap: wrap;
+  align-content: flex-start;
+  min-height: 0;
+  padding-top: 6px;
+  row-gap: 0;
+}
+.editor .topbar .stale-save-reminder {
+  order: 99;
+  flex: 1 0 100%;
+  box-sizing: border-box;
+  min-height: 32px;
+  padding: 0 4px 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
