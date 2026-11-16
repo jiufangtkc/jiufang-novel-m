@@ -13,45 +13,58 @@ import {
 import { applyLargeEvent, classifyTextDelta, emptyWritingLog } from './writingLog';
 
 describe('WO-60 匯入匯出統計預留端口與格式化', () => {
-  it('WO-60／WO-99：共用開關仍為 false（匯出未開放）；匯入、匯出各自判斷，未開放顯示破折號', () => {
-    expect(isImportExportAvailable()).toBe(false);
+  it('WO-60／WO-99／WO-103：匯入、匯出都開放，共用開關為 true；仍各自判斷，未開放時顯示破折號', () => {
+    expect(isImportExportAvailable()).toBe(true);
     expect(isTextImportAvailable()).toBe(true);
-    expect(isFullTextExportAvailable()).toBe(false);
+    expect(isFullTextExportAvailable()).toBe(true);
     expect(IMPORT_EXPORT_UNAVAILABLE_DISPLAY).toBe('—');
     expect(formatImportExportValue(null)).toBe('—');
     expect(formatImportExportValue(10, false)).toBe('—');
     expect(formatImportExportValue(undefined as unknown as number)).toBe('—');
   });
 
-  it('WO-60／WO-99：單日紀錄卡匯入顯示實際次數，匯出仍為全形空白加破折號', () => {
+  it('WO-60／WO-99／WO-103：單日紀錄卡匯入、匯出都顯示實際次數（沒有紀錄是 0，全形空白分隔）', () => {
     const none = getDayImportExportStats();
-    expect(none.available).toBe(false);
+    expect(none.available).toBe(true);
     expect(none.importAvailable).toBe(true);
-    expect(none.exportAvailable).toBe(false);
+    expect(none.exportAvailable).toBe(true);
     expect(none.importCount).toBe(0);
     expect(none.importLabel).toBe('匯入\u30000 次');
-    expect(none.exportCount).toBeNull();
-    expect(none.exportDisplay).toBe('—');
-    expect(none.exportLabel).toBe('匯出\u3000— 次');
-    // 包含全形空白
-    expect(none.exportLabel).toContain('匯出\u3000—');
+    expect(none.exportCount).toBe(0);
+    expect(none.exportDisplay).toBe('0');
+    expect(none.exportLabel).toBe('匯出\u30000 次');
+    // 包含全形空白，且不再是破折號
+    expect(none.exportLabel).toContain('匯出\u3000');
+    expect(none.exportLabel).not.toContain('—');
 
     const one = getDayImportExportStats(1);
     expect(one.importCount).toBe(1);
     expect(one.importDisplay).toBe('1');
     expect(one.importLabel).toBe('匯入\u30001 次');
-    expect(one.exportLabel).toBe('匯出\u3000— 次');
+    expect(one.exportLabel).toBe('匯出\u30000 次');
+
+    // 匯出用真實次數，與匯入互不影響
+    const both = getDayImportExportStats(1, {}, 2);
+    expect(both.importLabel).toBe('匯入\u30001 次');
+    expect(both.exportCount).toBe(2);
+    expect(both.exportLabel).toBe('匯出\u30002 次');
   });
 
-  it('WO-60／WO-99：全書合計匯入為實際次數、匯出仍為 null 與破折號', () => {
+  it('WO-60／WO-99／WO-103：全書合計匯入、匯出都是實際次數（沒有紀錄是 0）', () => {
     const totalStats = getTotalImportExportStats(2);
-    expect(totalStats.available).toBe(false);
+    expect(totalStats.available).toBe(true);
     expect(totalStats.importCount).toBe(2);
     expect(totalStats.importDisplay).toBe('2');
-    expect(totalStats.exportCount).toBeNull();
-    expect(totalStats.exportDisplay).toBe('—');
-    // 沒有匯入過的稿子是 0，不是破折號。
+    expect(totalStats.exportCount).toBe(0);
+    expect(totalStats.exportDisplay).toBe('0');
+    // 沒有匯入、匯出過的稿子是 0，不是破折號。
     expect(getTotalImportExportStats().importDisplay).toBe('0');
+    expect(getTotalImportExportStats().exportDisplay).toBe('0');
+    const withExports = getTotalImportExportStats(2, {}, 5);
+    expect(withExports).toMatchObject({ importCount: 2, exportCount: 5, exportDisplay: '5' });
+    // 負數或非數字不當真（不捏造次數）
+    expect(getTotalImportExportStats(0, {}, -3).exportCount).toBe(0);
+    expect(getTotalImportExportStats(0, {}, Number.NaN).exportDisplay).toBe('—');
   });
 
   it('WO-60：匯入與匯出都未開放時（預留狀態）仍回傳破折號', () => {
