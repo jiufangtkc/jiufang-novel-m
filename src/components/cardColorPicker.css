@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  background-color: var(--panel, #1e1e1e);
-  color: var(--text, #d4d4d4);
+  background-color: var(--panel);
+  color: var(--text);
   padding: 16px;
   border-radius: 8px;
   box-sizing: border-box;
@@ -27,7 +27,7 @@
   align-items: center;
   gap: 8px;
   font-size: 0.9rem;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
 }
 
 .color-compare-item {
@@ -43,7 +43,7 @@
   align-items: center;
   box-sizing: border-box;
   background: transparent;
-  border: 1px dashed var(--border, #3c3c3c);
+  border: 1px dashed var(--border);
   border-radius: 4px;
   padding: 2px 6px;
   cursor: pointer;
@@ -52,7 +52,7 @@
 }
 
 .color-compare-button:hover {
-  background-color: var(--button-hover, #2a2a2a);
+  background-color: var(--button-hover);
 }
 
 .color-compare-dot {
@@ -64,7 +64,7 @@
 }
 
 .color-compare-sep {
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
 }
 
 .color-picker-grid-container {
@@ -134,7 +134,7 @@
 .color-swatch-button.is-selected {
   outline: 2px solid #fff;
   outline-offset: 2px;
-  box-shadow: 0 0 0 3px var(--primary, #007acc);
+  box-shadow: 0 0 0 3px var(--primary);
 }
 
 .color-swatch-indicator {
@@ -162,9 +162,9 @@
 .color-default-button {
   min-height: 44px;
   padding: 0 16px;
-  background-color: var(--button-bg, #2a2a2a);
-  color: var(--text, #d4d4d4);
-  border: 1px solid var(--border, #3c3c3c);
+  background-color: var(--button-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.95rem;
@@ -174,7 +174,7 @@
 }
 
 .color-default-button:hover {
-  background-color: var(--button-hover, #383838);
+  background-color: var(--button-hover);
 }
 
 .color-hex-group {
@@ -185,16 +185,16 @@
 
 .color-hex-label {
   font-size: 0.9rem;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
 }
 
 .color-hex-input {
   min-height: 44px;
   width: 140px;
   padding: 0 12px;
-  background-color: var(--input-bg, #141414);
-  color: var(--text, #d4d4d4);
-  border: 1px solid var(--border, #3c3c3c);
+  background-color: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 6px;
   font-family: monospace;
   font-size: 0.95rem;
@@ -203,7 +203,7 @@
 
 .color-hex-input:focus {
   outline: none;
-  border-color: var(--primary, #007acc);
+  border-color: var(--primary);
 }
 
 .color-hex-input.is-invalid {
@@ -239,22 +239,22 @@
 
 .color-action-cancel {
   background-color: transparent;
-  color: var(--text-muted, #8c8c8c);
-  border: 1px solid var(--border, #3c3c3c);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 .color-action-cancel:hover {
-  background-color: var(--button-bg, #2a2a2a);
-  color: var(--text, #d4d4d4);
+  background-color: var(--button-bg);
+  color: var(--text);
 }
 
 .color-action-done {
-  background-color: var(--primary, #007acc);
-  color: #fff;
+  background-color: var(--primary);
+  color: var(--on-accent);
 }
 
 .color-action-done:hover {
-  background-color: var(--primary-hover, #0062a3);
+  background-color: var(--primary-hover);
 }
 
 /* 浮動或視窗包裝 */
@@ -331,7 +331,7 @@ html[data-layout="phone-landscape"] .card-color-picker-modal .color-picker-actio
   left: 0;
   right: 0;
   z-index: 1000;
-  background-color: var(--panel, #1e1e1e);
+  background-color: var(--panel);
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.5);
@@ -362,16 +362,16 @@ html[data-layout="phone-landscape"] .card-color-picker-modal .color-picker-actio
 
 .card-color-picker-sheet .color-picker-controls {
   flex-shrink: 0;
-  border-top: 1px solid var(--border, #3c3c3c);
+  border-top: 1px solid var(--border);
   padding-top: 12px;
-  background-color: var(--panel, #1e1e1e);
+  background-color: var(--panel);
 }
 
 .card-color-picker-sheet .color-picker-actions {
   flex-shrink: 0;
   margin-top: 0;
   padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
-  background-color: var(--panel, #1e1e1e);
+  background-color: var(--panel);
 }
 
 /* WO-92：寬版挑色並排樣式（容器在 card-editor-layout-host，見 cardEditor.css） */
@@ -388,9 +388,9 @@ html[data-layout="phone-landscape"] .card-color-picker-modal .color-picker-actio
     overflow: hidden;
     display: flex;
     flex-direction: column;
-    border-left: 1px solid var(--border, #3c3c3c);
+    border-left: 1px solid var(--border);
     box-sizing: border-box;
-    background-color: var(--panel, #1e1e1e);
+    background-color: var(--panel);
   }
 
   .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside > .card-color-picker {

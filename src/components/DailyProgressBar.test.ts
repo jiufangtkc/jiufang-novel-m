@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CARDS_PREVIEW_EMPTY_HINT,
   cardsSubcardsCountLabel,
+  dailyProgressAriaLabel,
+  dailyProgressDisplayLabel,
   dailyProgressGoalLabel,
   dailyProgressWordsLabel,
 } from '../copy/userFacing';
@@ -48,7 +50,7 @@ function renderCardsScreen(
 }
 
 describe('WO-59：資料集與底列用字定案驗證', () => {
-  it('WO-59：DailyProgressBar 底列 300／1000 顯示「今天寫了 300 字」「每日目標 1,000 字」', () => {
+  it('WO-59→WO-101：DailyProgressBar 底列 300／1000 顯示「今天 300／1,000 字」，朗讀「今天寫了 300 字，每日目標 1,000 字」', () => {
     const html = renderToStaticMarkup(
       createElement(DailyProgressBar, {
         words: 300,
@@ -58,26 +60,33 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
       }),
     );
 
-    // 可見文字包含「今天寫了 300 字」與「每日目標 1,000 字」
-    expect(html).toContain('今天寫了 300 字');
-    expect(html).toContain('每日目標 1,000 字');
+    // WO-101 定稿：畫面一句「今天 N／M 字」
     expect(html).toContain(
-      '<div class="daily-bar-heading"><span>今天寫了 300 字</span><span>每日目標 1,000 字</span></div>',
+      '<div class="daily-bar-heading" aria-hidden="true"><span>今天 300／1,000 字</span></div>',
     );
 
-    // 可見標題列不包含「今日已寫」、舊式「目標 1000 字」、前後綴
-    const headingMatch = html.match(/<div class="daily-bar-heading">([\s\S]*?)<\/div>/);
+    // 可見標題列不包含「今日已寫」、舊式「目標 1000 字」、前後綴與達標字樣
+    const headingMatch = html.match(/<div class="daily-bar-heading"[^>]*>([\s\S]*?)<\/div>/);
     expect(headingMatch).toBeTruthy();
     expect(headingMatch![1]).not.toContain('今日已寫');
     expect(headingMatch![1]).not.toContain('目標 1000 字');
     expect(headingMatch![1]).not.toContain('✦');
     expect(headingMatch![1]).not.toContain('已達標');
+    expect(headingMatch![1]).not.toContain('達標了');
 
-    // WO-91：朗讀與畫面一致，四位數加千分位
+    // 朗讀：定稿句、千分位、不用「／」
     expect(html).toContain('aria-label="今天寫了 300 字，每日目標 1,000 字"');
+    expect(html).toContain('aria-valuetext="今天寫了 300 字，每日目標 1,000 字"');
+    const aria = html.match(/aria-label="([^"]*)"/)![1];
+    expect(aria).not.toContain('／');
+    // progressbar 數值保留
+    expect(html).toContain('role="progressbar"');
+    expect(html).toContain('aria-valuemin="0"');
+    expect(html).toContain('aria-valuemax="1000"');
+    expect(html).toContain('aria-valuenow="300"');
   });
 
-  it('WO-59：DailyProgressBar 底列 12345 字顯示四位數千分位「12,345」且達標時顯示前後綴「✦ 今天寫了 12,345 字，已達標」', () => {
+  it('WO-59→WO-101：DailyProgressBar 12345 字四位數千分位；達標顯示「　達標了」（全形空白），朗讀尾句「已經達標」', () => {
     const htmlMet = renderToStaticMarkup(
       createElement(DailyProgressBar, {
         words: 12345,
@@ -87,12 +96,24 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
       }),
     );
 
-    expect(htmlMet).toContain('✦ 今天寫了 12,345 字，已達標');
-    expect(htmlMet).toContain('每日目標 10,000 字');
+    expect(htmlMet).toContain('<span>今天 12,345／10,000 字\u3000達標了</span>');
     expect(htmlMet).toContain('class="daily-bar is-met"');
-    expect(htmlMet).toContain('aria-label="✦ 今天寫了 12,345 字，已達標，每日目標 10,000 字"');
+    expect(htmlMet).toContain('aria-label="今天寫了 12,345 字，每日目標 10,000 字，已經達標"');
+    expect(htmlMet).not.toContain('✦');
+    expect(htmlMet).not.toContain('！');
+    expect(htmlMet).not.toContain('目標達成');
+    // 超過目標時 now 不超過 max
+    expect(htmlMet).toContain('aria-valuemax="10000"');
+    expect(htmlMet).toContain('aria-valuenow="10000"');
 
-    // 測試未達標時 12345 字顯示「今天寫了 12,345 字」
+    // 定稿範例：1,020／1,000
+    const htmlExample = renderToStaticMarkup(
+      createElement(DailyProgressBar, { words: 1020, goal: 1000, met: true, compact: false }),
+    );
+    expect(htmlExample).toContain('<span>今天 1,020／1,000 字\u3000達標了</span>');
+    expect(htmlExample).toContain('aria-label="今天寫了 1,020 字，每日目標 1,000 字，已經達標"');
+
+    // 測試未達標時 12345 字顯示「今天 12,345／20,000 字」
     const htmlNotMet = renderToStaticMarkup(
       createElement(DailyProgressBar, {
         words: 12345,
@@ -101,13 +122,15 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
         compact: false,
       }),
     );
-    expect(htmlNotMet).toContain('今天寫了 12,345 字');
-    expect(htmlNotMet).toContain('每日目標 20,000 字');
+    expect(htmlNotMet).toContain('今天 12,345／20,000 字');
+    expect(htmlNotMet).toContain('aria-label="今天寫了 12,345 字，每日目標 20,000 字"');
     expect(htmlNotMet).not.toContain('✦');
     expect(htmlNotMet).not.toContain('已達標');
+    expect(htmlNotMet).not.toContain('達標了');
+    expect(htmlNotMet).not.toContain('已經達標');
   });
 
-  it('WO-91：DailyProgressBar compact 精簡數字加千分位與「字」，朗讀與畫面一致', () => {
+  it('WO-91→WO-101：DailyProgressBar compact 精簡畫面加千分位與「字」，朗讀用定稿句、不拿含「／」的畫面字串', () => {
     const htmlCompact1 = renderToStaticMarkup(
       createElement(DailyProgressBar, {
         words: 300,
@@ -117,9 +140,12 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
       }),
     );
     expect(htmlCompact1).toContain('class="daily-bar is-compact"');
-    expect(htmlCompact1).toContain('<span class="daily-bar-compact">300／1,000 字</span>');
+    expect(htmlCompact1).toContain('<span class="daily-bar-compact" aria-hidden="true">今天 300／1,000 字</span>');
     expect(htmlCompact1).not.toContain('daily-bar-heading');
-    expect(htmlCompact1).toContain('aria-label="300／1,000 字"');
+    expect(htmlCompact1).toContain('aria-label="今天寫了 300 字，每日目標 1,000 字"');
+    expect(htmlCompact1).not.toContain('aria-label="今天 300／1,000 字"');
+    expect(htmlCompact1).not.toContain('aria-label="300／1,000 字"');
+    expect(htmlCompact1).toContain('aria-valuenow="300"');
 
     const htmlCompact2 = renderToStaticMarkup(
       createElement(DailyProgressBar, {
@@ -129,9 +155,12 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
         compact: true,
       }),
     );
-    expect(htmlCompact2).toContain('<span class="daily-bar-compact">12,345／10,000 字</span>');
+    expect(htmlCompact2).toContain(
+      '<span class="daily-bar-compact" aria-hidden="true">今天 12,345／10,000 字\u3000達標了</span>',
+    );
     expect(htmlCompact2).not.toContain('daily-bar-heading');
-    expect(htmlCompact2).toContain('aria-label="12,345／10,000 字"');
+    expect(htmlCompact2).toContain('aria-label="今天寫了 12,345 字，每日目標 10,000 字，已經達標"');
+    expect(htmlCompact2).toContain('class="daily-bar is-met is-compact"');
   });
 
   it('WO-59：cardsSubcardsCountLabel(n) 字串函式全形空白驗證', () => {
@@ -141,13 +170,15 @@ describe('WO-59：資料集與底列用字定案驗證', () => {
     expect(cardsSubcardsCountLabel(1000)).toBe('子卡片\u30001,000 張');
   });
 
-  it('WO-59：dailyProgressWordsLabel 與 dailyProgressGoalLabel 輔助函式輸出驗證', () => {
-    expect(dailyProgressWordsLabel(300, false)).toBe('今天寫了 300 字');
-    expect(dailyProgressWordsLabel(300, true)).toBe('✦ 今天寫了 300 字，已達標');
-    expect(dailyProgressWordsLabel(12345, false)).toBe('今天寫了 12,345 字');
-    expect(dailyProgressWordsLabel(12345, true)).toBe('✦ 今天寫了 12,345 字，已達標');
+  it('WO-59→WO-101：dailyProgressWordsLabel、dailyProgressGoalLabel、畫面與朗讀輔助函式輸出驗證', () => {
+    expect(dailyProgressWordsLabel(300)).toBe('今天寫了 300 字');
+    expect(dailyProgressWordsLabel(12345)).toBe('今天寫了 12,345 字');
     expect(dailyProgressGoalLabel(1000)).toBe('每日目標 1,000 字');
     expect(dailyProgressGoalLabel(10000)).toBe('每日目標 10,000 字');
+    expect(dailyProgressDisplayLabel(320, 1000, false)).toBe('今天 320／1,000 字');
+    expect(dailyProgressDisplayLabel(1020, 1000, true)).toBe('今天 1,020／1,000 字\u3000達標了');
+    expect(dailyProgressAriaLabel(320, 1000, false)).toBe('今天寫了 320 字，每日目標 1,000 字');
+    expect(dailyProgressAriaLabel(1020, 1000, true)).toBe('今天寫了 1,020 字，每日目標 1,000 字，已經達標');
   });
 
   it('WO-59：CardsScreen 畫面輸出：子卡片 0 張時不出現標題、有子卡片時顯示「子卡片　N 張」（全形空白）', () => {

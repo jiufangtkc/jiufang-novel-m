@@ -92,7 +92,7 @@ html[data-layout="wide"] .tree-search-tabs {
   display: flex;
   gap: 4px;
   padding: 4px 8px 8px;
-  background: var(--panel);
+  background: var(--writing-surround);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
@@ -119,12 +119,13 @@ html[data-layout="wide"] .tree-search-tabs {
 
 /* ---------- 版面：整頁、右側面板（正文讓位）、寬版左欄 ---------- */
 
+/* 寫作頁旁邊的搜尋面板屬於「不能寫處」，用 C 案四周底色（WO-101）。 */
 .book-search-panel {
   display: flex;
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: var(--panel);
+  background: var(--writing-surround);
   color: var(--text);
 }
 
@@ -173,7 +174,7 @@ html[data-layout="phone-landscape"] .write-layout.is-searching .editor-pane {
 /* ④ 寬版：左欄換成搜尋 */
 .book-search-panel.is-left {
   flex: 1;
-  background: var(--bg);
+  background: var(--writing-surround);
 }
 
 /* ---------- 頁首與搜尋框 ---------- */
@@ -304,16 +305,16 @@ html[data-layout="phone-landscape"] .write-layout.is-searching .editor-pane {
   white-space: nowrap;
 }
 
-/* 黃框：一直顯示 */
+/* 取代範圍警告（只改正文、卡片不改）：警告橘框，一直顯示（WO-101）。 */
 .book-search-note {
   display: flex;
   align-items: center;
   gap: 6px;
   margin: 0;
   padding: 8px 10px;
-  border: 1px solid rgba(229, 192, 123, 0.65);
+  border: 1px solid color-mix(in srgb, var(--warning) 65%, transparent);
   border-radius: 8px;
-  background: rgba(229, 192, 123, 0.1);
+  background: color-mix(in srgb, var(--warning) 10%, transparent);
   color: var(--warning);
   font-size: 13px;
   line-height: 1.4;
@@ -444,7 +445,8 @@ button.book-search-hit:hover {
 .book-search-match {
   padding: 0 1px;
   border-radius: 3px;
-  background: rgba(229, 192, 123, 0.35);
+  /* 結果列表的命中：搜尋螢光筆 35%。 */
+  background: color-mix(in srgb, var(--search-current) 35%, transparent);
   color: var(--text);
 }
 
@@ -513,7 +515,7 @@ button.book-search-hit:hover {
   padding: 0 4px 0 12px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: #2d2d30;
+  background: var(--button-bg);
   font-size: 14px;
 }
 
@@ -532,7 +534,7 @@ button.book-search-hit:hover {
   border: 0;
   border-radius: 10px;
   background: var(--accent);
-  color: #10202e;
+  color: var(--on-accent);
   font-size: 16px;
   font-weight: 700;
 }
@@ -611,14 +613,15 @@ html[data-layout="phone-landscape"] .book-search-confirm {
   overflow-wrap: break-word;
 }
 
+/* 搜尋螢光筆（WO-101）：其他命中 20%；目前這筆底 40%（50% 會讓正文字對比不到 4.5:1）＋ 2px 同色實線外圈。 */
 .search-mark {
   border-radius: 2px;
-  background: rgba(229, 192, 123, 0.2);
+  background: color-mix(in srgb, var(--search-current) 20%, transparent);
 }
 
 .search-mark.is-current {
-  background: rgba(229, 192, 123, 0.5);
-  box-shadow: 0 0 0 2px #e5c07b;
+  background: color-mix(in srgb, var(--search-current) 40%, transparent);
+  box-shadow: 0 0 0 2px var(--search-current);
 }
 
 .editor-input.is-search-marking {
