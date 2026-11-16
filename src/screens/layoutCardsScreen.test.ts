@@ -36,6 +36,7 @@ import {
 import { SampleProvider } from '../state/sampleStore';
 import { CardsScreen, type CardsScreenProps } from './CardsScreen';
 import { WriteScreen } from './WriteScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 vi.mock('../state/sampleStore', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../state/sampleStore')>();
@@ -69,7 +70,7 @@ function renderCardsScreenWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns },
@@ -100,7 +101,7 @@ function renderWriteScreenWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         {

@@ -20,6 +20,7 @@ import { SampleProvider, useSample } from '../state/sampleStore';
 import { FilesScreen } from './FilesScreen';
 import { LogsScreen } from './LogsScreen';
 import { StatsScreen } from './StatsScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 function renderWithLayout(
   element: ReactElement,
@@ -30,7 +31,8 @@ function renderWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      // WO-95：統計與紀錄頁要有紀錄列才看得到各欄，明確放入舊版範例紀錄當測試資料。
+      { initialState: demoFixtureState(new Date(), { withDemoStats: true }) },
       createElement(
         LayoutProvider,
         { initialMode: mode },
@@ -248,7 +250,7 @@ describe('WO-60 畫面驗收測試', () => {
     renderToStaticMarkup(
       createElement(
         SampleProvider,
-        null,
+        { initialState: demoFixtureState() },
         createElement(
           LayoutProvider,
           { initialMode: 'phone-portrait' },
