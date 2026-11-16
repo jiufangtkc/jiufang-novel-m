@@ -1,6 +1,5 @@
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { IMPORT_RECORD_NOT_SAVED_NOTICE } from '../copy/userFacing';
 import { OUTLINE_STORAGE_KEY, type KeyValueStore } from '../domain/outline';
 import { readFileProject } from '../db/projectFile';
 import { openMemoryDb } from '../db/wasmDb';
@@ -55,10 +54,13 @@ async function importAt(state: SampleState, at: string, text: string) {
 }
 
 describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
-  it('暫定提示全文，不含內部檔名、資料表或技術字眼，也不說整份失敗', () => {
-    expect(IMPORT_RECORD_NOT_SAVED_NOTICE).toBe('稿子已經匯入，內容都在，只是這次的匯入次數沒有記下來。');
-    expect(IMPORT_RECORD_NOT_SAVED_NOTICE).not.toMatch(/\.db|db|資料表|附加|交易|錯誤|失敗|transfer/i);
-    expect(IMPORT_RECORD_NOT_SAVED_NOTICE).toContain('內容都在');
+  it('全 App 原始碼不再有那句暫定提示或其常數', () => {
+    const files = ['../copy/userFacing.ts', './sampleStore.tsx', '../screens/Workspace.tsx'];
+    for (const f of files) {
+      const src = readFileSync(new URL(f, import.meta.url), 'utf8');
+      expect(src).not.toContain('IMPORT_RECORD_NOT_SAVED_NOTICE');
+      expect(src).not.toContain('匯入次數沒有記下來');
+    }
   });
 
   it('成功：寫進 .db、升格、不出提示；.db 讀回有匯入事件與正文', async () => {
@@ -85,7 +87,7 @@ describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
     expect(state.projects[0]!.id).toBe(outcome.id);
   });
 
-  it('事件衝突（交易整筆回復）：出完整暫定提示；正文與稿子仍在本機；不回報成功', async () => {
+  it('事件衝突（交易整筆回復）：不顯示任何提示；正文與稿子仍在本機；不回報成功', async () => {
     const first = await importAt(demoFixtureState(), '2026-11-16T07:40:00Z', '第一章 甲\n假內容甲');
     const baseBytes = await manuscriptBytesOn(first.outcome.afterState, first.state.projects[0]!, null);
     // 另一次匯入用相同事件代號、不同時間，寫在含舊事件的底稿上 → 同代號不同內容，丟出 TransferDataError
@@ -99,7 +101,8 @@ describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
       snapshot: async (s, p) => ({ key: p.id, bytes: await manuscriptBytesOn(s, p, baseBytes) }),
     });
     expect(result).toBe('record-failed');
-    expect(dispatched).toEqual([{ type: 'toast', message: IMPORT_RECORD_NOT_SAVED_NOTICE }]);
+    // 不顯示任何提示（沒有 toast，也沒有改用其他動作）
+    expect(dispatched).toEqual([]);
     // 沒有升格（不假裝已存進 .db），但稿子與正文都還在
     expect(dispatched.some((a) => a.type === 'promote-stored')).toBe(false);
     expect(project.origin).not.toBe('file');
@@ -114,7 +117,7 @@ describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
     }
   });
 
-  it('寫入／核對失敗（TransferDataError）出提示；一般儲存失敗不誤報成「次數沒記下」', async () => {
+  it('寫入／核對失敗（TransferDataError）不顯示任何提示；一般儲存失敗同樣不出提示', async () => {
     const { outcome } = await importAt(demoFixtureState(), '2026-11-16T07:40:00Z', '第一章 假\n內容');
     const run = async (error: unknown) => {
       const dispatched: Action[] = [];
@@ -130,7 +133,7 @@ describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
     };
     const transfer = await run(new TransferDataError('附加事件寫入後核對不符'));
     expect(transfer.result).toBe('record-failed');
-    expect(transfer.dispatched).toHaveLength(1);
+    expect(transfer.dispatched).toEqual([]);
     const general = await run(new Error('QuotaExceededError（測試模擬）'));
     expect(general.result).toBe('save-failed');
     expect(general.dispatched).toEqual([]);
@@ -153,11 +156,12 @@ describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
     expect(outcome.kind).toBe('storage-failed');
   });
 
-  it('接線：匯入成功才寫 .db；提示不被換頁清掉；一次匯入只嘗試一次（不重試洗版）', () => {
+  it('接線：匯入成功才寫 .db；失敗時不派發 toast；Workspace 換頁照常清提示；一次匯入只嘗試一次（不重試洗版）', () => {
     const storeSource = readFileSync(new URL('./sampleStore.tsx', import.meta.url), 'utf8');
     expect(storeSource).toContain("if (outcome.kind === 'imported') {");
     expect(storeSource.match(/persistImportedRecord\(/g)).toHaveLength(2); // 定義＋唯一呼叫
     const workspace = readFileSync(new URL('../screens/Workspace.tsx', import.meta.url), 'utf8');
-    expect(workspace).toContain('state.toast !== IMPORT_RECORD_NOT_SAVED_NOTICE');
+    expect(workspace).toContain('actions.toast(null)');
+    expect(storeSource).not.toMatch(/record-failed[\s\S]{0,200}type: 'toast'/);
   });
 });

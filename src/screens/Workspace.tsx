@@ -3,7 +3,6 @@ import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { AppNav, showsLandscapeRail } from '../components/AppNav';
 import { useLayout } from '../layout';
-import { IMPORT_RECORD_NOT_SAVED_NOTICE } from '../copy/userFacing';
 import { useProject, useSample } from '../state/sampleStore';
 
 export function Workspace() {
@@ -23,9 +22,8 @@ export function Workspace() {
   useEffect(() => {
     if (previousPathnameRef.current === pathname) return;
     previousPathnameRef.current = pathname;
-    // WO-102：匯入後「次數沒記下」的提示是在導向新稿子之後才要被看到，不在這次換頁時清掉
     if (state.toast != null) {
-      if (state.toast !== IMPORT_RECORD_NOT_SAVED_NOTICE) actions.toast(null);
+      actions.toast(null);
     }
     // pathname 變更時才讀當輪的 state.toast 與 actions
     // eslint-disable-next-line react-hooks/exhaustive-deps

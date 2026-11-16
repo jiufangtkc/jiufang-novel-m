@@ -453,11 +453,6 @@ export const IMPORT_TEXT_UNREADABLE = '這個文字檔讀不出來，請另存�
 export const IMPORT_TEXT_WORKING = '正在匯入文字檔，請稍候。';
 /** WO-99：這台裝置存不下新稿子時（不建立稿子、不計次）。 */
 export const IMPORT_TEXT_STORAGE_FAIL = '這台裝置存不下這份稿子，這次沒有匯入。';
-/**
- * WO-102：稿子已匯入成功、只是匯入次數沒有記進稿子檔時的提示（暫定，交九方審，尚未定稿）。
- * 顯示在新稿子的寫作頁，用提示條（role="status"，會朗讀）。
- */
-export const IMPORT_RECORD_NOT_SAVED_NOTICE = '稿子已經匯入，內容都在，只是這次的匯入次數沒有記下來。';
 export const EXPORT_FULL_TEXT_BUTTON = '匯出全文';
 export const EXPORT_FULL_TEXT_HINT = '把整份稿子匯出成一個 TXT 或 Markdown 檔';
 

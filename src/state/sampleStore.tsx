@@ -53,7 +53,6 @@ import {
   BOOK_RENAMED_TOAST,
   IMPORT_DEFAULT_CHAPTER_TITLE,
   IMPORT_PREFACE_TITLE,
-  IMPORT_RECORD_NOT_SAVED_NOTICE,
   SAVE_FATAL_FAIL,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
@@ -1818,9 +1817,9 @@ export async function runTextImport(input: {
 /**
  * WO-102：匯入成功後，立刻把新稿子連同匯入紀錄寫進 .db。
  * - 成功：升格為檔案稿子（與暫存相同），不出提示。
- * - 只有「匯入紀錄寫入或核對失敗」（TransferDataError，交易已整筆回復）才出提示：
- *   稿子仍在本機，只是次數沒記下；提示顯示在新稿子的寫作頁。
- * - 其他儲存失敗是一般存檔問題，沿用既有存檔流程的處理，這裡不誤報成「次數沒記下」。
+ * - 匯入紀錄寫入或核對失敗（TransferDataError，交易已整筆回復）：不升格、不顯示任何提示，
+ *   稿子仍在本機、正文都在，回傳 'record-failed'（九方 2026-11-16 22:18 定案）。
+ * - 其他儲存失敗是一般存檔問題，沿用既有存檔流程的處理。
  * 不吞錯誤硬回成功；回傳實際結果給呼叫端與測試。
  */
 export async function persistImportedRecord(input: {
@@ -1844,7 +1843,7 @@ export async function persistImportedRecord(input: {
     return 'saved';
   } catch (error) {
     if (error instanceof TransferDataError) {
-      dispatch({ type: 'toast', message: IMPORT_RECORD_NOT_SAVED_NOTICE });
+      // WO-102（九方 2026-11-16 22:18 定案）：匯入次數寫不進 .db 時不顯示任何提示；稿子照常開啟
       return 'record-failed';
     }
     return 'save-failed';
