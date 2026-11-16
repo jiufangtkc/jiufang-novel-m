@@ -1,10 +1,11 @@
 import { formatInteger } from './formatNumber';
-import type { WritingLogRow } from './writingLog';
 
 /**
  * WO-60 匯入／匯出預留端口與型別定義。
- * 目前功能尚未開放，因此 available 預設為 false，次數為 null，顯示為「—」。
- * 未來開放外部匯入文字檔與匯出全文功能時，只需在此更新邏輯與型別支援，無須變更 .db 結構。
+ * WO-99：「匯入文字檔」已開放，匯入次數取自每份稿子的本機匯入事件（見 state/importEvents.ts）；
+ * 「匯出全文」仍在準備中，匯出次數照舊顯示「—」。兩者的可用狀態分開判斷，不共用一個開關。
+ * WO-100：匯入次數改以稿子 .db 內的附加表為準（見 db/transferMeta.ts），與本機紀錄以事件代號取聯集。
+ * 匯出次數目前沒有任何實際紀錄（另存時間、另存指紋都不是全文匯出），.db 只預留 export_count（NULL），畫面仍「—」。
  */
 
 export const IMPORT_EXPORT_UNAVAILABLE_DISPLAY = '—';
@@ -16,7 +17,10 @@ export interface ImportExportMetric {
 }
 
 export interface DayImportExportStats {
+  /** 匯入與匯出都開放才是 true。WO-99 起匯入開放、匯出仍準備中，所以是 false。 */
   readonly available: boolean;
+  readonly importAvailable: boolean;
+  readonly exportAvailable: boolean;
   readonly importCount: number | null;
   readonly exportCount: number | null;
   readonly importDisplay: string;
@@ -27,18 +31,35 @@ export interface DayImportExportStats {
 
 export interface TotalImportExportStats {
   readonly available: boolean;
+  readonly importAvailable: boolean;
+  readonly exportAvailable: boolean;
   readonly importCount: number | null;
   readonly exportCount: number | null;
   readonly importDisplay: string;
   readonly exportDisplay: string;
 }
 
+/** WO-99：匯入文字檔已開放。 */
+export function isTextImportAvailable(): boolean {
+  return true;
+}
+
+/** 匯出全文仍在準備中。 */
+export function isFullTextExportAvailable(): boolean {
+  return false;
+}
+
 /**
- * 查詢目前匯入／匯出功能是否已開放。
- * 目前功能尚未開放，一律回傳 false。
+ * 匯入與匯出是否「都」已開放。WO-99 只開放匯入，所以仍回傳 false；
+ * 不能拿這個共用開關決定單一項目，請改用 isTextImportAvailable／isFullTextExportAvailable。
  */
 export function isImportExportAvailable(): boolean {
-  return false;
+  return isTextImportAvailable() && isFullTextExportAvailable();
+}
+
+export interface ImportExportAvailability {
+  importAvailable?: boolean;
+  exportAvailable?: boolean;
 }
 
 /**
@@ -79,60 +100,56 @@ export function formatLogExportLabel(
   return `匯出\u3000${valueDisplay} 次`;
 }
 
+function metric(count: number | null | undefined, available: boolean): { count: number | null; display: string } {
+  const value = available && typeof count === 'number' && Number.isFinite(count) ? Math.max(0, Math.trunc(count)) : null;
+  return { count: value, display: formatImportExportValue(value, available) };
+}
+
 /**
  * 取得單日寫作紀錄卡所需之匯入匯出統計狀態。
+ * importCount 是這份稿子這一個寫作日的匯入次數；匯出尚未開放，一律「—」。
  */
 export function getDayImportExportStats(
-  _row?: WritingLogRow | null,
-  available: boolean = isImportExportAvailable(),
+  importCount: number | null = null,
+  availability: ImportExportAvailability = {},
 ): DayImportExportStats {
-  if (!available) {
-    return {
-      available: false,
-      importCount: null,
-      exportCount: null,
-      importDisplay: IMPORT_EXPORT_UNAVAILABLE_DISPLAY,
-      exportDisplay: IMPORT_EXPORT_UNAVAILABLE_DISPLAY,
-      importLabel: formatLogImportLabel(null, false),
-      exportLabel: formatLogExportLabel(null, false),
-    };
-  }
-
-  // 預留日後功能開放之邏輯
+  const importAvailable = availability.importAvailable ?? isTextImportAvailable();
+  const exportAvailable = availability.exportAvailable ?? isFullTextExportAvailable();
+  const imported = metric(importAvailable ? (importCount ?? 0) : null, importAvailable);
+  // 匯出尚未有實際計次，開放前固定「—」；開放狀態模擬時以 0 占位。
+  const exported = metric(exportAvailable ? 0 : null, exportAvailable);
   return {
-    available: true,
-    importCount: 0,
-    exportCount: 0,
-    importDisplay: formatInteger(0),
-    exportDisplay: formatInteger(0),
-    importLabel: formatLogImportLabel(0, true),
-    exportLabel: formatLogExportLabel(0, true),
+    available: importAvailable && exportAvailable,
+    importAvailable,
+    exportAvailable,
+    importCount: imported.count,
+    exportCount: exported.count,
+    importDisplay: imported.display,
+    exportDisplay: exported.display,
+    importLabel: formatLogImportLabel(imported.count, importAvailable),
+    exportLabel: formatLogExportLabel(exported.count, exportAvailable),
   };
 }
 
 /**
- * 取得統計頁（全書合計）所需之匯入匯出統計狀態。
+ * 取得統計頁（這份稿子的全書合計）所需之匯入匯出統計狀態。
+ * importCount 是這份稿子所有成功匯入的次數；匯出尚未開放，一律「—」。
  */
 export function getTotalImportExportStats(
-  _logs?: readonly WritingLogRow[] | null,
-  available: boolean = isImportExportAvailable(),
+  importCount: number | null = null,
+  availability: ImportExportAvailability = {},
 ): TotalImportExportStats {
-  if (!available) {
-    return {
-      available: false,
-      importCount: null,
-      exportCount: null,
-      importDisplay: IMPORT_EXPORT_UNAVAILABLE_DISPLAY,
-      exportDisplay: IMPORT_EXPORT_UNAVAILABLE_DISPLAY,
-    };
-  }
-
-  // 預留日後功能開放之累計邏輯
+  const importAvailable = availability.importAvailable ?? isTextImportAvailable();
+  const exportAvailable = availability.exportAvailable ?? isFullTextExportAvailable();
+  const imported = metric(importAvailable ? (importCount ?? 0) : null, importAvailable);
+  const exported = metric(exportAvailable ? 0 : null, exportAvailable);
   return {
-    available: true,
-    importCount: 0,
-    exportCount: 0,
-    importDisplay: formatInteger(0),
-    exportDisplay: formatInteger(0),
+    available: importAvailable && exportAvailable,
+    importAvailable,
+    exportAvailable,
+    importCount: imported.count,
+    exportCount: exported.count,
+    importDisplay: imported.display,
+    exportDisplay: exported.display,
   };
 }
