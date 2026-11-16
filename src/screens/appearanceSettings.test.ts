@@ -6,9 +6,9 @@ import { describe, expect, it } from 'vitest';
 import {
   APPEARANCE_ROW_ORDER,
   APPEARANCE_SECTION,
-  bodyFontScaleDescription,
+  BODY_FONT_SCALE_DESCRIPTION,
   deviceKindPhrase,
-  inputModeDescription,
+  INPUT_MODE_DESCRIPTION,
   inputModeGroupAria,
   inputModeOptionAria,
 } from '../copy/appearanceCopy';
@@ -56,13 +56,15 @@ function renderSettings(
 }
 
 describe('WO-94：設定頁外觀組', () => {
-  it('正文字級排在操作方式上方', () => {
-    expect(APPEARANCE_ROW_ORDER).toEqual(['body-font-scale', 'input-mode']);
+  it('正文字級排在操作方式上方（WO-101：主題排在兩者之前）', () => {
+    expect(APPEARANCE_ROW_ORDER).toEqual(['theme', 'body-font-scale', 'input-mode']);
     expect(APPEARANCE_SECTION).toBe('外觀');
     const html = renderSettings('touch', 'phone');
+    const theme = html.indexOf('data-testid="theme-setting"');
     const font = html.indexOf('data-testid="body-font-setting"');
     const input = html.indexOf('data-testid="input-mode-setting"');
-    expect(font).toBeGreaterThan(-1);
+    expect(theme).toBeGreaterThan(-1);
+    expect(font).toBeGreaterThan(theme);
     expect(input).toBeGreaterThan(font);
   });
 
@@ -80,7 +82,7 @@ describe('WO-94：設定頁外觀組', () => {
     expect(html).toContain('用滑鼠');
     expect(html).toContain('列和按鈕比較寬，好點中');
     expect(html).toContain('列和按鈕比較窄，一個畫面看得到比較多');
-    expect(html).toContain(inputModeDescription('phone'));
+    expect(html).toContain(INPUT_MODE_DESCRIPTION);
     expect(html).toContain('正文字級');
     expect(html).not.toContain('介面字級');
     expect(html).not.toContain('這台裝置');
@@ -90,29 +92,26 @@ describe('WO-94：設定頁外觀組', () => {
     expect(html).toContain('aria-label="用滑鼠，列和按鈕比較窄，點兩下改成這個"');
   });
 
-  it('說明小字依裝置種類換成這支手機、這台電腦、這台平板或這個裝置', () => {
+  it('WO-101：外觀組三列說明統一「這個裝置」，不再依裝置換字；deviceKindPhrase 本身不變', () => {
+    // 裝置稱呼函式保留原樣，只有外觀組三列不再使用它。
     expect(deviceKindPhrase('phone')).toBe('這支手機');
     expect(deviceKindPhrase('computer')).toBe('這台電腦');
     expect(deviceKindPhrase('tablet')).toBe('這台平板');
     expect(deviceKindPhrase('unknown')).toBe('這個裝置');
-    expect(inputModeDescription('computer')).toBe(
-      '依你操作的方式調整列和按鈕的間距。要調正文的字有多大，請用上面的「正文字級」。只會套用在這台電腦。',
+    expect(INPUT_MODE_DESCRIPTION).toBe(
+      '依你操作的方式調整列和按鈕的間距。要調正文的字有多大，請用上面的「正文字級」。只會套用在這個裝置。',
     );
-    expect(bodyFontScaleDescription('phone')).toBe(
-      '調整寫作時正文的字有多大。只會套用在這支手機。',
-    );
-    expect(bodyFontScaleDescription('computer')).toBe(
-      '調整寫作時正文的字有多大。只會套用在這台電腦。',
-    );
-    expect(bodyFontScaleDescription('tablet')).toBe(
-      '調整寫作時正文的字有多大。只會套用在這台平板。',
-    );
-    expect(bodyFontScaleDescription('unknown')).toBe(
-      '調整寫作時正文的字有多大。只會套用在這個裝置。',
-    );
-    expect(renderSettings('mouse', 'computer')).toContain('只會套用在這台電腦。');
-    expect(renderSettings('touch', 'tablet')).toContain('只會套用在這台平板。');
-    expect(renderSettings('touch', 'unknown')).toContain('只會套用在這個裝置。');
+    expect(BODY_FONT_SCALE_DESCRIPTION).toBe('調整寫作時正文的字有多大。只會套用在這個裝置。');
+    // 四種裝置種類，外觀組三列都寫「這個裝置」，不出現依裝置換字的稱呼。
+    for (const kind of ['phone', 'computer', 'tablet', 'unknown'] as const) {
+      const html = renderSettings(kind === 'computer' ? 'mouse' : 'touch', kind);
+      const section = html.match(/<section class="appearance-section"[\s\S]*?<\/section>/)?.[0] ?? '';
+      expect(section).not.toBe('');
+      expect(section.split('只會套用在這個裝置。').length - 1).toBe(3);
+      expect(section).not.toContain('這支手機');
+      expect(section).not.toContain('這台電腦');
+      expect(section).not.toContain('這台平板');
+    }
     expect(inputModeGroupAria('mouse')).toBe('操作方式，目前是用滑鼠');
     expect(inputModeOptionAria('mouse', true)).toBe('用滑鼠，已選取，列和按鈕比較窄');
     expect(inputModeOptionAria('touch', false)).toBe('用手指點，列和按鈕比較寬，點兩下改成這個');
@@ -133,7 +132,7 @@ describe('WO-96：設定頁正文字級', () => {
     expect(html).toContain('>100%（標準）<');
     expect(html).toContain('A−');
     expect(html).toContain('A＋');
-    expect(html).toContain(bodyFontScaleDescription('phone'));
+    expect(html).toContain(BODY_FONT_SCALE_DESCRIPTION);
     expect(html).toMatch(/class="body-font-preview"[^>]*aria-hidden="true"[^>]*>月台上的狐狸/);
     expect(html).toContain(`font-size:${bodyPreviewFontPx('phone-portrait', 100)}px`);
     expect(html).toContain(`aria-label="${bodyFontScaleAria(100)}"`);

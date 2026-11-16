@@ -4,6 +4,7 @@ import { appSpace } from './browserSpace';
 import type { StoredBook } from './appSpace';
 import { externalFileFromStored, type BookFileMark } from '../domain/bookTitle';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
+import type { TransferEvent, TransferRead } from './transferMeta';
 import { openMemoryDb } from './wasmDb';
 
 export type { StoredBook };
@@ -34,6 +35,8 @@ export interface ImportedBook {
   hasExternalFile: boolean;
   titleInFile: string | null;
   titleSavePending: BookFileMark['titleSavePending'];
+  /** WO-100：檔內附加表的匯入事件。 */
+  transfer: TransferRead;
 }
 
 /** 從檔案裡的寫作紀錄排出每日目標結算狀態（WO-69 單元測試也用來核對重開結果）。 */
@@ -83,6 +86,7 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         hasExternalFile: mark.hasExternalFile,
         titleInFile: mark.titleInFile,
         titleSavePending: mark.titleSavePending,
+        transfer: loaded.transfer,
       });
     } finally {
       db.close();
@@ -91,13 +95,16 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
   return books;
 }
 
-export async function importBook(filename: string, bytes: Uint8Array, now = new Date()): Promise<ImportedBook> {
+/**
+ * WO-100：把使用者選入的 .db 位元組讀成一份稿子（不寫入 App 本機）。
+ * 回傳的 bytes 是重新匯出的位元組；原始位元組的指紋請在呼叫前另外算（本機事件對應用）。
+ */
+export async function readBookBytes(filename: string, bytes: Uint8Array, key: string, now = new Date()): Promise<ImportedBook> {
   const db = await openMemoryDb(bytes);
   try {
     const loaded = readFileProject(db.sql);
     const exported = db.exportBytes();
-    const key = `file-${now.getTime()}`;
-    const book: ImportedBook = {
+    return {
       key,
       filename: filename || '未命名.db',
       title: loaded.info.title,
@@ -111,17 +118,43 @@ export async function importBook(filename: string, bytes: Uint8Array, now = new 
       hasExternalFile: true,
       titleInFile: loaded.info.title,
       titleSavePending: null,
+      transfer: loaded.transfer,
     };
-    await putBook({
-      key,
-      filename: book.filename,
-      title: book.title,
-      bytes: exported,
-      hasExternalFile: true,
-      titleInFile: loaded.info.title,
-      titleSavePending: null,
-    });
-    return book;
+  } finally {
+    db.close();
+  }
+}
+
+export async function importBook(filename: string, bytes: Uint8Array, now = new Date()): Promise<ImportedBook> {
+  const book = await readBookBytes(filename, bytes, `file-${now.getTime()}`, now);
+  await putBook({
+    key: book.key,
+    filename: book.filename,
+    title: book.title,
+    bytes: book.bytes,
+    hasExternalFile: true,
+    titleInFile: book.info.title,
+    titleSavePending: null,
+  });
+  return book;
+}
+
+/**
+ * WO-100：在既有位元組（沒有就從空白庫）上差異寫入這份稿子，回傳新位元組。
+ * 沿用原資料庫再差異寫入，未知表與未知欄留著；匯入事件與正文同一筆交易寫入。
+ */
+export async function writeBookBytes(
+  base: Uint8Array | null | undefined,
+  info: FileProjectInfo,
+  tree: ImportedBook['tree'],
+  cards: FileCard[],
+  logs: FileLog[],
+  importEvents?: Readonly<Record<string, TransferEvent>>,
+): Promise<Uint8Array> {
+  const db = await openMemoryDb(base ?? new Uint8Array());
+  try {
+    writeFileProject(db.sql, info, tree, cards, logs, importEvents);
+    return db.exportBytes();
   } finally {
     db.close();
   }
@@ -137,31 +170,26 @@ export async function saveBookBytes(
   logs: FileLog[],
   bookkeeping?: BookFileMark,
   persist = true,
+  importEvents?: Readonly<Record<string, TransferEvent>>,
 ): Promise<Uint8Array> {
   const existing = await getBook(key);
-  const db = await openMemoryDb(existing?.bytes ?? new Uint8Array());
-  try {
-    writeFileProject(db.sql, info, tree, cards, logs);
-    const exported = db.exportBytes();
-    if (!persist) return exported;
-    const mark = bookkeeping ?? {
-      titleInFile: existing?.titleInFile ?? null,
-      hasExternalFile: existing?.hasExternalFile,
-      titleSavePending: existing?.titleSavePending ?? null,
-    };
-    await putBook({
-      key,
-      filename,
-      title,
-      bytes: exported,
-      titleInFile: mark.titleInFile,
-      hasExternalFile: mark.hasExternalFile,
-      titleSavePending: mark.titleSavePending,
-    });
-    return exported;
-  } finally {
-    db.close();
-  }
+  const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents);
+  if (!persist) return exported;
+  const mark = bookkeeping ?? {
+    titleInFile: existing?.titleInFile ?? null,
+    hasExternalFile: existing?.hasExternalFile,
+    titleSavePending: existing?.titleSavePending ?? null,
+  };
+  await putBook({
+    key,
+    filename,
+    title,
+    bytes: exported,
+    titleInFile: mark.titleInFile,
+    hasExternalFile: mark.hasExternalFile,
+    titleSavePending: mark.titleSavePending,
+  });
+  return exported;
 }
 
 export async function exportBook(key: string): Promise<{ filename: string; bytes: Uint8Array } | null> {

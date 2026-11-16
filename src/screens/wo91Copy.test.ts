@@ -20,7 +20,7 @@ import {
   VISUAL_WRITING_RECORD,
   categoryRowAria,
   dailyProgressAriaLabel,
-  dailyProgressCompactLabel,
+  dailyProgressDisplayLabel,
   lastEditDisplay,
   localDevicePhrase,
   stashDraftHint,
@@ -87,10 +87,11 @@ describe('WO-91 用字與朗讀', () => {
   });
 
   it('進度條朗讀與畫面一致，打字精簡數字有千分位和「字」', () => {
+    // WO-101：朗讀改定稿句（達標尾句「已經達標」）；精簡畫面與完整畫面同為「今天 N／M 字」
     expect(dailyProgressAriaLabel(12345, 10000, false)).toBe('今天寫了 12,345 字，每日目標 10,000 字');
-    expect(dailyProgressAriaLabel(12345, 10000, true)).toBe('✦ 今天寫了 12,345 字，已達標，每日目標 10,000 字');
-    expect(dailyProgressCompactLabel(12345, 10000)).toBe('12,345／10,000 字');
-    expect(dailyProgressCompactLabel(300, 1000)).toBe('300／1,000 字');
+    expect(dailyProgressAriaLabel(12345, 10000, true)).toBe('今天寫了 12,345 字，每日目標 10,000 字，已經達標');
+    expect(dailyProgressDisplayLabel(12345, 10000, false)).toBe('今天 12,345／10,000 字');
+    expect(dailyProgressDisplayLabel(300, 1000, false)).toBe('今天 300／1,000 字');
 
     const full = renderToStaticMarkup(createElement(DailyProgressBar, { words: 12345, goal: 10000, met: false }));
     expect(full).toContain('今天寫了 12,345 字');
@@ -239,7 +240,7 @@ describe('WO-91 用字與朗讀', () => {
       SETTINGS_WRITING_LOG_HINT,
       SAVE_FATAL_FAIL,
       dailyProgressAriaLabel(12345, 10000, true),
-      dailyProgressCompactLabel(12345, 10000),
+      dailyProgressDisplayLabel(12345, 10000, true),
       categoryRowAria('角色', 12),
       restoredCardToast('【範例】霧丘站', '角色'),
       undoToastSpoken('已刪除「【範例】陸承安」'),

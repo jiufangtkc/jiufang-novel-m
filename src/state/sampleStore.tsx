@@ -16,6 +16,7 @@ import {
   createSchedule,
   glowing,
   withClock,
+  writingDayKey,
   type GoalSchedule,
 } from '../domain/dailyGoal';
 import type { ProgressCode } from '../domain/labels';
@@ -47,10 +48,52 @@ import {
   type SaveOutcome,
 } from '../db/saveProject';
 import { verifyExportedDatabase } from '../db/verifyDatabase';
-import { BOOK_RENAME_FAIL, BOOK_RENAMED_TOAST, SAVE_FATAL_FAIL, STASH_FAIL, STORED_ON_PHONE_LABEL } from '../copy/userFacing';
+import {
+  BOOK_RENAME_FAIL,
+  BOOK_RENAMED_TOAST,
+  IMPORT_DEFAULT_CHAPTER_TITLE,
+  IMPORT_PREFACE_TITLE,
+  SAVE_FATAL_FAIL,
+  STASH_FAIL,
+  STORED_ON_PHONE_LABEL,
+  TOAST_NEW_BOOK,
+} from '../copy/userFacing';
+import {
+  decodeTextBytes,
+  importTitleFromFilename,
+  normalizeNewlines,
+  splitChaptersInBatches,
+  type SplitChapter,
+  type StrictDecoderFactory,
+} from '../domain/textImport';
+import {
+  IMPORT_EVENTS_KEY,
+  countImportEvents,
+  emptyImportEvents,
+  importCountOf,
+  importOnlyDays,
+  projectImportEvents,
+  readImportEvents,
+  updateImportEvents,
+  withAdoptedFile,
+  withFileLink,
+  withImportEvent,
+  writeImportEvents,
+  type ImportEventRecord,
+  type ProjectImportEvents,
+} from './importEvents';
 import { countBookWords } from '../domain/wordCount';
+import { startedMsFromProjectId } from '../domain/staleSaveReminder';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
-import { importBook, loadStoredBooks, saveBookBytes, shareDatabase } from '../db/library';
+import {
+  importBook,
+  loadStoredBooks,
+  saveBookBytes,
+  shareDatabase,
+  writeBookBytes,
+  type ImportedBook,
+} from '../db/library';
+import { assertTransferDataWritable, type TransferRead } from '../db/transferMeta';
 import {
   bindLeaveFlush,
   clearLiveDraft,
@@ -122,7 +165,7 @@ export interface SampleState {
   logsById: Record<string, WritingLogRow[]>;
   toast: string | null;
   /** 匯入檔的卡片與寫作紀錄，另存時原樣帶出。 */
-  fileExtras: Record<string, { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] }>;
+  fileExtras: Record<string, FileExtras>;
   saveMeta: Record<
     string,
     {
@@ -132,11 +175,31 @@ export interface SampleState {
       lastProjectSaveMs: number | null;
     }
   >;
+  /** WO-98：各稿在這台裝置的建立（或第一次遇到）時間，只存本機，不寫進 .db。 */
+  startedById: Record<string, number>;
+  /**
+   * WO-99：TXT 匯入事件的本機紀錄（與瀏覽器本機儲存同步）。
+   * WO-100：只是新匯入稿存檔前的暫存與舊檔遷移來源；檔內事件放在 fileExtras[...].transfer，
+   * 畫面次數一律用 projectImportEventsOf（兩者以事件代號取聯集）。
+   */
+  importEvents: ImportEventRecord;
+}
+
+/** 開檔帶進來、存檔時原樣帶出的檔案額外資訊。 */
+export interface FileExtras {
+  info: FileProjectInfo;
+  cards: FileCard[];
+  logs: FileLog[];
+  /** WO-100：開檔時讀到的檔內附加資料（匯入事件）。沒有代表不是從檔案讀來的（例如剛升格的新稿）。 */
+  transfer?: TransferRead;
 }
 
 export type Action =
   | { type: 'dismiss-recent'; id: string }
-  | { type: 'add-project'; id: string; title: string; shape: 'novel' | 'single' }
+  | { type: 'add-project'; id: string; title: string; shape: 'novel' | 'single'; startedMs?: number }
+  | { type: 'note-started'; startedById: Record<string, number> }
+  | { type: 'import-text'; project: DemoProject; dayKey: string; startedMs: number; importEvents: ImportEventRecord }
+  | { type: 'set-import-events'; importEvents: ImportEventRecord }
   | { type: 'remember-place'; projectId: string; nodeId: string; cursor: number }
   | { type: 'toggle'; projectId: string; nodeId: string }
   | { type: 'set-progress'; projectId: string; nodeId: string; progress: ProgressCode }
@@ -153,7 +216,7 @@ export type Action =
       type: 'attach-file';
       project: DemoProject;
       schedule: GoalSchedule;
-      extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
+      extras: FileExtras;
       quiet?: boolean;
     }
   | { type: 'toast'; message: string | null }
@@ -333,6 +396,8 @@ export function createState(now: Date): SampleState {
     toast: null,
     fileExtras: {},
     saveMeta: record.saveMeta,
+    startedById: record.startedById,
+    importEvents: readImportEvents(store),
   };
 }
 
@@ -343,12 +408,37 @@ export function createState(now: Date): SampleState {
 export function persistDeviceSaveRecord(store: KeyValueStore, state: SampleState): void {
   saveDeviceSaveRecord(store, {
     saveMeta: state.saveMeta,
+    startedById: state.startedById,
     logsById: state.logsById,
     goalById: state.goalById,
     draftIds: state.projects
       .filter((project) => project.origin !== 'file' && !isSampleBook(project))
       .map((project) => project.id),
   });
+}
+
+/**
+ * WO-99：存成 .db 成功後，把這份稿子的匯入事件對應到寫出去那份檔的內容指紋。
+ * 沒有匯入事件的稿子不記。回傳更新後的紀錄；沒變或做不到時回傳 null。
+ */
+export async function linkImportEventsToBytes(
+  store: KeyValueStore,
+  projectId: string,
+  bytes: Uint8Array,
+): Promise<ImportEventRecord | null> {
+  if (importCountOf(readImportEvents(store), projectId) === 0) return null;
+  const fingerprint = await fingerprintBytes(bytes);
+  if (!fingerprint) return null;
+  return updateImportEvents(store, (record) => withFileLink(record, projectId, fingerprint));
+}
+
+/** WO-99：開回 .db 時，內容指紋對得上就把同一批匯入事件接到新開的稿子（同一事件不重複算）。 */
+export async function adoptImportEventsFromBytes(
+  store: KeyValueStore,
+  bytes: Uint8Array,
+  projectId: string,
+): Promise<ImportEventRecord | null> {
+  return adoptImportEventsByFingerprint(store, await fingerprintBytes(bytes), projectId);
 }
 
 /** WO-77：另存成功後，記下交出去的那份檔案指紋，開回同一份檔時對得上另存時間。 */
@@ -361,6 +451,70 @@ export async function noteExportedBytes(store: KeyValueStore, bytes: Uint8Array,
 export async function exportTimeOfBytes(store: KeyValueStore, bytes: Uint8Array): Promise<number | null> {
   const fingerprint = await fingerprintBytes(bytes);
   return fingerprint ? recallExportedFile(store, fingerprint) : null;
+}
+
+/**
+ * WO-100：這份稿子的匯入事件集合（統計頁全書、寫作過程紀錄卡、存檔快照共用同一份）。
+ * = 檔內附加表的事件 ∪ 本機紀錄裡可靠對應到這份稿子的事件，以事件代號去重。
+ * 檔內附加資料損壞時不把它當 0，也不採用；只剩本機可靠對應（外部存檔會被擋下）。
+ */
+export function projectImportEventsOf(state: SampleState, projectId: string | null | undefined): ProjectImportEvents {
+  if (!projectId) return {};
+  const project = state.projects.find((item) => item.id === projectId);
+  const key = project?.dbKey ?? projectId;
+  const transfer = state.fileExtras[key]?.transfer;
+  return projectImportEvents(state.importEvents, projectId, transfer?.kind === 'ok' ? transfer.importEvents : null);
+}
+
+/**
+ * WO-100：寫作過程紀錄卡要顯示的列（新到舊）。有匯入事件、卻沒有紀錄列的寫作日補一張只供顯示的空白卡，
+ * 事件不會因為檔案裡沒有那天的紀錄列就消失；補的卡不寫回檔案、不改既有紀錄列。
+ */
+export function displayLogRows(state: SampleState, projectId: string): WritingLogRow[] {
+  const events = projectImportEventsOf(state, projectId);
+  const extra = importOnlyDays(state.logs.map((log) => log.date), events).map((day, index) =>
+    emptyWritingLog(-(index + 1), day),
+  );
+  return [...state.logs, ...extra].sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/**
+ * WO-100：開檔時，先用「使用者選入的原始位元組」的指紋查本機 byFile，把同一批事件接到新開的稿子。
+ * 指紋必須在任何重新匯出或遷移之前算好再傳進來。
+ */
+export function adoptImportEventsByFingerprint(
+  store: KeyValueStore,
+  fingerprint: string | null,
+  projectId: string,
+): ImportEventRecord | null {
+  if (!fingerprint || !readImportEvents(store).byFile[fingerprint]) return null;
+  return updateImportEvents(store, (record) => withAdoptedFile(record, fingerprint, projectId));
+}
+
+/** 開檔與重整共用：把讀好的檔案變成 attach-file 動作。 */
+export function attachActionForBook(
+  book: ImportedBook,
+  options: { updatedLabel: string; nodes?: ChapterNode[]; quiet?: boolean },
+): Action {
+  return {
+    type: 'attach-file',
+    ...(options.quiet ? { quiet: true } : {}),
+    project: {
+      id: book.key,
+      title: book.title,
+      updatedLabel: options.updatedLabel,
+      bookGoal: book.info.targetWordCount,
+      nodes: options.nodes ?? book.tree,
+      origin: 'file',
+      dbKey: book.key,
+      filename: book.filename,
+      hasExternalFile: book.hasExternalFile,
+      titleInFile: book.titleInFile,
+      titleSavePending: book.titleSavePending,
+    },
+    schedule: book.schedule,
+    extras: { info: book.info, cards: book.cards, logs: book.logs, transfer: book.transfer },
+  };
 }
 
 function patchSaveMeta(
@@ -839,7 +993,7 @@ export function buildPromotedFileExtras(
   state: SampleState,
   project: DemoProject,
   key: string,
-): { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] } {
+): FileExtras {
   const existing =
     state.fileExtras[key] ??
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ??
@@ -889,8 +1043,31 @@ export function reduce(state: SampleState, action: Action): SampleState {
       return patchSaveMeta(state, action.projectId, { lastManualSaveMs: action.atMs });
     case 'record-export':
       return patchSaveMeta(state, action.projectId, { lastExportMs: action.atMs });
+    case 'note-started': {
+      // 已有起算時間就不重設；只補還沒有的。
+      const missing = Object.entries(action.startedById).filter(([id]) => state.startedById[id] == null);
+      if (missing.length === 0) return state;
+      return { ...state, startedById: { ...state.startedById, ...Object.fromEntries(missing) } };
+    }
     case 'record-project-save':
       return patchSaveMeta(state, action.projectId, { lastProjectSaveMs: action.atMs });
+    case 'import-text': {
+      // WO-99：一次加入完整新稿子、它自己的空白結算狀態、當日紀錄列與匯入事件；代號重複就不動。
+      const id = action.project.id;
+      if (state.projects.some((item) => item.id === id)) return state;
+      return {
+        ...state,
+        projects: [action.project, ...state.projects],
+        recentIds: [id, ...state.recentIds.filter((item) => item !== id)],
+        goalById: { ...state.goalById, [id]: freshSchedule(state, now) },
+        logsById: { ...state.logsById, [id]: [emptyWritingLog(1, action.dayKey)] },
+        startedById: { ...state.startedById, [id]: action.startedMs },
+        importEvents: action.importEvents,
+        toast: TOAST_NEW_BOOK,
+      };
+    }
+    case 'set-import-events':
+      return action.importEvents === state.importEvents ? state : { ...state, importEvents: action.importEvents };
     case 'set-filename':
       return {
         ...state,
@@ -982,6 +1159,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
         // WO-69：新稿子有自己的空白寫作紀錄與結算狀態，不借範例書的。
         goalById: { ...state.goalById, [action.id]: freshSchedule(state, now) },
         logsById: { ...state.logsById, [action.id]: [] },
+        startedById: { ...state.startedById, [action.id]: action.startedMs ?? now.getTime() },
         toast: '已開新稿子',
       };
     }
@@ -1341,9 +1519,11 @@ interface SampleActions {
   attachImported: (payload: {
     project: DemoProject;
     schedule: GoalSchedule;
-    extras: { info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] };
+    extras: FileExtras;
   }) => void;
   importFile: (file: File, diskFile?: DiskFile | null) => Promise<{ id: string; chapterId: string | null }>;
+  /** WO-99：匯入 TXT 開成新稿子。 */
+  importTextFile: (file: File) => Promise<TextImportOutcome>;
   openWithPicker: () => Promise<{ id: string; chapterId: string | null } | null>;
   stashDraft: () => Promise<void>;
   renameBook: (projectId: string, rawTitle: string) => {
@@ -1371,20 +1551,27 @@ interface SampleContextValue {
 
 const SampleContext = createContext<SampleContextValue | null>(null);
 
+/**
+ * 交給外部（儲存、另存、分享／下載、預備分享）前的檢查。
+ * WO-100：附加資料有破壞疑慮（損壞、衝突、不支援的修訂值）就不交出去，沿用既有存檔失敗提示。
+ */
+export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
+  await verifyExportedDatabase(bytes, async (payload) => {
+    const db = await openMemoryDb(payload);
+    try {
+      assertTransferDataWritable(db.sql);
+      return currentSchemaVersion(db.sql);
+    } finally {
+      db.close();
+    }
+  });
+}
+
 function browserSaveEnv(): SaveEnvironment {
   return {
     canPickFiles: canPickLocalFiles(),
     targets: createBrowserTargetStore(),
-    verify: async (bytes) => {
-      await verifyExportedDatabase(bytes, async (payload) => {
-        const db = await openMemoryDb(payload);
-        try {
-          return currentSchemaVersion(db.sql);
-        } finally {
-          db.close();
-        }
-      });
-    },
+    verify: verifyBytesForSave,
     pickSaveLocation: (suggestedName, startIn) => pickSaveFile(suggestedName, startIn?.directoryHint),
     share: (filename, bytes) => shareDatabase(filename, bytes),
   };
@@ -1394,14 +1581,26 @@ function browserSaveEnv(): SaveEnvironment {
 export function manuscriptSnapshotParts(
   state: SampleState,
   project: DemoProject,
-): { key: string; info: FileProjectInfo; cards: FileCard[]; logs: FileLog[] } {
+): { key: string; info: FileProjectInfo; cards: FileCard[]; logs: FileLog[]; importEvents: ProjectImportEvents } {
   const key = project.dbKey ?? project.id;
   const extra =
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
   const info = buildFileProjectInfo(state, project);
   // 還沒有檔案紀錄時，只寫這份稿子自己的紀錄，不借目前畫面上別份稿子的。
   const logs: FileLog[] = extra?.logs ?? toFileLogs(trackingOf(state, project, new Date()).logs);
-  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs };
+  // WO-100：暫存、儲存、另存、分享預備都帶同一份事件集合寫進 .db。
+  const importEvents = projectImportEventsOf(state, project.id);
+  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents };
+}
+
+/** WO-100：在給定的底稿位元組上建出這份稿子的 .db（與 snapshotManuscript 同一套內容；測試也用）。 */
+export async function manuscriptBytesOn(
+  state: SampleState,
+  project: DemoProject,
+  base: Uint8Array | null,
+): Promise<Uint8Array> {
+  const { info, cards, logs, importEvents } = manuscriptSnapshotParts(state, project);
+  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents);
 }
 
 async function snapshotManuscript(
@@ -1409,7 +1608,7 @@ async function snapshotManuscript(
   project: DemoProject,
   persist = true,
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const { key, info, cards, logs } = manuscriptSnapshotParts(state, project);
+  const { key, info, cards, logs, importEvents } = manuscriptSnapshotParts(state, project);
   const bytes = await saveBookBytes(
     key,
     projectSaveFilename(project.title, project.filename),
@@ -1420,11 +1619,12 @@ async function snapshotManuscript(
     logs,
     bookkeepingOf(project),
     persist,
+    importEvents,
   );
   return { key, bytes };
 }
 
-function applySaveOutcome(
+export function applySaveOutcome(
   dispatch: (action: Action) => void,
   projectId: string,
   outcome: SaveOutcome,
@@ -1448,6 +1648,170 @@ function applySaveOutcome(
   }
 }
 
+/**
+ * 另存專案的主體（actions.saveProjectAs 呼叫）。
+ * WO-98 返工 1：交出去之前只備好內容，不存本機副本、不升格稿子；
+ * 取消或沒有成功交付時，稿子與本機儲存都維持點擊前原樣。
+ * 成功（另存成功、分享／下載交付）才存本機副本並升格，結果與原本成功路徑相同。
+ */
+export async function runSaveProjectAs(input: {
+  state: SampleState;
+  project: DemoProject;
+  dispatch: (action: Action) => void;
+  env: SaveEnvironment;
+  preparedBytes: Uint8Array | null;
+  snapshot?: typeof snapshotManuscript;
+}): Promise<{ snap: { key: string; bytes: Uint8Array }; bytes: Uint8Array; outcome: SaveOutcome }> {
+  const { state, project, dispatch, env } = input;
+  const snapshot = input.snapshot ?? snapshotManuscript;
+  const snap = await snapshot(state, project, false);
+  const bytes = shareBytesForSaveAs({ prepared: input.preparedBytes, latest: snap.bytes });
+  const outcome = await saveProjectAsNew(env, snap.key, bytes, exportDbFilename(project.title));
+  if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
+    await snapshot(state, project, true);
+    dispatch({
+      type: 'promote-stored',
+      projectId: project.id,
+      key: snap.key,
+      filename: projectSaveFilename(project.title, project.filename),
+    });
+  }
+  applySaveOutcome(dispatch, project.id, outcome, 'save-as');
+  return { snap, bytes, outcome };
+}
+
+export type TextImportOutcome =
+  | { kind: 'imported'; id: string; chapterId: string }
+  | { kind: 'unreadable' }
+  | { kind: 'storage-failed' }
+  | { kind: 'busy' };
+
+let lastImportIdMs = 0;
+
+/** WO-99：新稿子代號。沿用 p-（13 位毫秒）格式；同一毫秒或已有同代號時往後推，保證不撞。 */
+function nextImportProjectId(state: SampleState, nowMs: number): { id: string; ms: number } {
+  const taken = new Set([...state.projects.map((project) => project.id), ...state.recentIds]);
+  let ms = Math.max(nowMs, lastImportIdMs + 1);
+  while (taken.has(`p-${ms}`)) ms += 1;
+  lastImportIdMs = ms;
+  return { id: `p-${ms}`, ms };
+}
+
+/** WO-99：用分好的章建立完整新稿子（長篇形式，章都在最上層，跟開新稿子的第一章同一種節點）。 */
+export function buildImportedProject(id: string, title: string, chapters: readonly SplitChapter[]): DemoProject {
+  const firstId = newChapterId(id);
+  const nodes: ChapterNode[] = chapters.map((chapter, index) => ({
+    id: index === 0 ? firstId : `${firstId}-${index + 1}`,
+    type: 'file',
+    title: chapter.title,
+    progress: 'Draft',
+    content: chapter.content,
+  }));
+  return {
+    id,
+    title,
+    updatedLabel: '剛剛',
+    bookGoal: 100000,
+    shape: 'novel',
+    lastOpenedNodeId: firstId,
+    lastCursor: 0,
+    cards: [],
+    categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
+    expandedCategoriesRaw: null,
+    categoriesMetaRaw: '{}',
+    nodes,
+  };
+}
+
+function defaultYieldToUi(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+function defaultImportEventId(projectId: string): string {
+  const random =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `imp-${projectId}-${random}`;
+}
+
+/**
+ * WO-99：匯入文字檔，開成新稿子。
+ *
+ * 讀位元組 → 解碼與檢查 → 統一換行 → 分批分章（期間讓出主執行緒）→ 建好完整新稿子 →
+ * 先把匯入事件與稿子清單寫進本機（任一個寫不進去就把事件復原，不建稿、不計次）→ 一次 dispatch。
+ * 處理中再按一次直接回 busy，不會重複建立。既有稿子一律不碰。
+ */
+export async function runTextImport(input: {
+  filename: string;
+  readBytes: () => Promise<Uint8Array>;
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  store: KeyValueStore | null;
+  busy: { current: boolean };
+  now?: () => Date;
+  yieldToUi?: () => Promise<void>;
+  decoder?: StrictDecoderFactory;
+  newEventId?: (projectId: string) => string;
+}): Promise<TextImportOutcome> {
+  const { busy, store } = input;
+  if (busy.current) return { kind: 'busy' };
+  busy.current = true;
+  const yieldToUi = input.yieldToUi ?? defaultYieldToUi;
+  try {
+    // 先讓「處理中」畫面有機會畫出來。
+    await yieldToUi();
+    let bytes: Uint8Array;
+    try {
+      bytes = await input.readBytes();
+    } catch {
+      return { kind: 'unreadable' };
+    }
+    const decoded = decodeTextBytes(bytes, input.decoder);
+    if (!decoded.ok) return { kind: 'unreadable' };
+    const text = normalizeNewlines(decoded.text);
+    await yieldToUi();
+    const chapters = await splitChaptersInBatches(
+      text,
+      { prefaceTitle: IMPORT_PREFACE_TITLE, defaultTitle: IMPORT_DEFAULT_CHAPTER_TITLE },
+      yieldToUi,
+    );
+    if (!store) return { kind: 'storage-failed' };
+
+    const state = input.getState();
+    const at = (input.now ?? (() => new Date()))();
+    const { id, ms } = nextImportProjectId(state, at.getTime());
+    const project = buildImportedProject(id, importTitleFromFilename(input.filename), chapters);
+    const dayKey = freshSchedule(state, at).open?.dayKey ?? writingDayKey(at, state.schedule.dayEndHour);
+    const eventId = (input.newEventId ?? defaultImportEventId)(id);
+
+    let record: ImportEventRecord;
+    let previousRaw: string | null = null;
+    let wroteEvents = false;
+    try {
+      previousRaw = store.getItem(IMPORT_EVENTS_KEY);
+      record = withImportEvent(readImportEvents(store), id, eventId, { dayKey, atMs: ms });
+      writeImportEvents(store, record);
+      wroteEvents = true;
+      saveProjects(store, [project, ...state.projects.filter((item) => item.origin !== 'file')]);
+    } catch {
+      if (wroteEvents) {
+        try {
+          store.setItem(IMPORT_EVENTS_KEY, previousRaw ?? JSON.stringify(emptyImportEvents()));
+        } catch {
+          // 連復原都寫不進去時，畫面上的次數仍以記憶體裡的舊紀錄為準。
+        }
+      }
+      return { kind: 'storage-failed' };
+    }
+
+    input.dispatch({ type: 'import-text', project, dayKey, startedMs: ms, importEvents: record });
+    return { kind: 'imported', id, chapterId: project.nodes[0]!.id };
+  } finally {
+    busy.current = false;
+  }
+}
+
 export function SampleProvider({
   children,
   initialState,
@@ -1459,6 +1823,7 @@ export function SampleProvider({
   const [state, dispatch] = useReducer(reduce, undefined, () => initialState ?? createState(new Date()));
   const stateRef = useRef(state);
   stateRef.current = state;
+  const importBusyRef = useRef(false);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
@@ -1485,7 +1850,18 @@ export function SampleProvider({
     } catch {
       // 私人瀏覽可能不准寫入，畫面仍可繼續用。
     }
-  }, [state.saveMeta, state.logsById, state.goalById, state.projects]);
+  }, [state.saveMeta, state.startedById, state.logsById, state.goalById, state.projects]);
+
+  // WO-98：沒有建立時間的稿子，能由新稿代號回推就回推，否則記下第一次遇到的時間；記下後不再重設。
+  useEffect(() => {
+    const nowMs = Date.now();
+    const missing: Record<string, number> = {};
+    for (const project of state.projects) {
+      if (state.startedById[project.id] != null || isSampleBook(project)) continue;
+      missing[project.id] = startedMsFromProjectId(project.id, nowMs) ?? nowMs;
+    }
+    if (Object.keys(missing).length > 0) dispatch({ type: 'note-started', startedById: missing });
+  }, [state.projects, state.startedById]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1500,25 +1876,7 @@ export function SampleProvider({
             tree = updateNode(book.tree, draft.chapterId, (node) => ({ ...node, content: draft.text }));
             appliedDraft = true;
           }
-          dispatch({
-            type: 'attach-file',
-            quiet: true,
-            project: {
-              id: book.key,
-              title: book.title,
-              updatedLabel: STORED_ON_PHONE_LABEL,
-              bookGoal: book.info.targetWordCount,
-              nodes: tree,
-              origin: 'file',
-              dbKey: book.key,
-              filename: book.filename,
-              hasExternalFile: book.hasExternalFile,
-              titleInFile: book.titleInFile,
-              titleSavePending: book.titleSavePending,
-            },
-            schedule: book.schedule,
-            extras: { info: book.info, cards: book.cards, logs: book.logs },
-          });
+          dispatch(attachActionForBook(book, { updatedLabel: STORED_ON_PHONE_LABEL, nodes: tree, quiet: true }));
         }
         if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
         for (const book of books) {
@@ -1553,6 +1911,8 @@ export function SampleProvider({
         extra.cards,
         extra.logs,
         bookkeepingOf(project),
+        true,
+        projectImportEventsOf(state, project.id),
       ).then(() => {
         dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
       });
@@ -1561,7 +1921,7 @@ export function SampleProvider({
       window.clearTimeout(timer);
       void save();
     };
-  }, [state.projects, state.fileExtras, state.activeProjectId]);
+  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents]);
 
   useEffect(() => {
     const flush = () => {
@@ -1620,8 +1980,9 @@ export function SampleProvider({
     () => ({
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
       addProject: (title, shape = 'novel') => {
-        const id = `p-${Date.now()}`;
-        dispatch({ type: 'add-project', id, title, shape });
+        const startedMs = Date.now();
+        const id = `p-${startedMs}`;
+        dispatch({ type: 'add-project', id, title, shape, startedMs });
         return id;
       },
       rememberPlace: (projectId, nodeId, cursor) =>
@@ -1653,28 +2014,22 @@ export function SampleProvider({
       importFile: async (file: File, diskFile?: DiskFile | null) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
         const store = deviceStore();
+        // WO-100：先對使用者選入的原始位元組算指紋（重新匯出後的位元組會不同，對不上本機舊對應）。
+        const rawFingerprint = await fingerprintBytes(bytes).catch(() => null);
         const exportedAt = store ? await exportTimeOfBytes(store, bytes).catch(() => null) : null;
         const book = await importBook(file.name, bytes);
+        // WO-99／WO-100：開回的檔若是這台裝置從匯入稿存出去的，接回同一批匯入事件（以事件代號去重，不再加一次）。
+        const adopted = store ? (() => {
+          try {
+            return adoptImportEventsByFingerprint(store, rawFingerprint, book.key);
+          } catch {
+            return null;
+          }
+        })() : null;
+        if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
         rememberOpenFile(book.key, diskFile ?? null);
-        dispatch({
-          type: 'attach-file',
-          project: {
-            id: book.key,
-            title: book.title,
-            updatedLabel: '剛剛',
-            bookGoal: book.info.targetWordCount,
-            nodes: book.tree,
-            origin: 'file',
-            dbKey: book.key,
-            filename: book.filename,
-            hasExternalFile: book.hasExternalFile,
-            titleInFile: book.titleInFile,
-            titleSavePending: book.titleSavePending,
-          },
-          schedule: book.schedule,
-          extras: { info: book.info, cards: book.cards, logs: book.logs },
-        });
+        dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
         // WO-77：開回的正是這台裝置另存出去的那份檔，「上次另存」沿用當時時間。
         if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return { id: book.key, chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null };
@@ -1685,34 +2040,35 @@ export function SampleProvider({
         const copy = new Uint8Array(picked.bytes.byteLength);
         copy.set(picked.bytes);
         const store = deviceStore();
+        const rawFingerprint = await fingerprintBytes(copy).catch(() => null);
         const exportedAt = store ? await exportTimeOfBytes(store, copy).catch(() => null) : null;
         const book = await importBook(picked.file.name, copy);
+        const adopted = store ? (() => {
+          try {
+            return adoptImportEventsByFingerprint(store, rawFingerprint, book.key);
+          } catch {
+            return null;
+          }
+        })() : null;
+        if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
         rememberOpenFile(book.key, picked.file);
-        dispatch({
-          type: 'attach-file',
-          project: {
-            id: book.key,
-            title: book.title,
-            updatedLabel: '剛剛',
-            bookGoal: book.info.targetWordCount,
-            nodes: book.tree,
-            origin: 'file',
-            dbKey: book.key,
-            filename: book.filename,
-            hasExternalFile: book.hasExternalFile,
-            titleInFile: book.titleInFile,
-            titleSavePending: book.titleSavePending,
-          },
-          schedule: book.schedule,
-          extras: { info: book.info, cards: book.cards, logs: book.logs },
-        });
+        dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
         if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return {
           id: book.key,
           chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null,
         };
       },
+      importTextFile: (file) =>
+        runTextImport({
+          filename: file.name,
+          readBytes: async () => new Uint8Array(await file.arrayBuffer()),
+          getState: () => stateRef.current,
+          dispatch,
+          store: deviceStore(),
+          busy: importBusyRef,
+        }),
       stashDraft: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
         if (!project) return;
@@ -1791,6 +2147,7 @@ export function SampleProvider({
           hasExternalFile: Boolean(project.hasExternalFile),
         });
         const plan = needsNewName ? 'pick-new-name' : pickFirst ? 'pick-first-save' : 'write-back';
+        let builtBytes: Uint8Array | null = null;
         try {
           const outcome = await saveProjectFromClick({
             env: browserSaveEnv(),
@@ -1808,10 +2165,18 @@ export function SampleProvider({
                 key: snap.key,
                 filename: project.filename || projectSaveFilename(project.title, project.filename),
               });
+              builtBytes = snap.bytes;
               return snap.bytes;
             },
           });
           applySaveOutcome(dispatch, project.id, outcome, 'save');
+          const saved = outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title';
+          const store = deviceStore();
+          if (saved && store && builtBytes) {
+            // WO-99：寫出去的那份檔對上這份稿子的匯入事件，之後開回同一份檔次數不遺失、不重複。
+            const linked = await linkImportEventsToBytes(store, project.id, builtBytes).catch(() => null);
+            if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
+          }
           if (
             (outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title')
             && recallOpenFile(key) == null
@@ -1831,22 +2196,18 @@ export function SampleProvider({
         const prepared = peekPreparedShare(project.id);
         dismissRenameSavePrompt(project.id);
         try {
-          const snap = await snapshotManuscript(state, project);
-          const bytes = shareBytesForSaveAs({
-            prepared: prepared?.bytes ?? null,
-            latest: snap.bytes,
+          const { snap, bytes, outcome } = await runSaveProjectAs({
+            state,
+            project,
+            dispatch,
+            env: browserSaveEnv(),
+            preparedBytes: prepared?.bytes ?? null,
           });
-          dispatch({
-            type: 'promote-stored',
-            projectId: project.id,
-            key: snap.key,
-            filename: projectSaveFilename(project.title, project.filename),
-          });
-          const outcome = await saveProjectAsNew(browserSaveEnv(), snap.key, bytes, exportDbFilename(project.title));
-          applySaveOutcome(dispatch, project.id, outcome, 'save-as');
           const store = deviceStore();
           if (store && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
             await noteExportedBytes(store, bytes, Date.now()).catch(() => undefined);
+            const linked = await linkImportEventsToBytes(store, project.id, bytes).catch(() => null);
+            if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
           }
           if (outcome.kind === 'saved-as') {
             const target = await createBrowserTargetStore().load(snap.key);
@@ -1868,7 +2229,12 @@ export function SampleProvider({
 
   const achievementCount = countAchievements(state.schedule.settled);
   const isGlowing = glowing(state.schedule);
-  const stats = summarizeStats(state.schedule, state.logs, achievementCount);
+  const stats = summarizeStats(
+    state.schedule,
+    state.logs,
+    achievementCount,
+    countImportEvents(projectImportEventsOf(state, state.activeProjectId)),
+  );
   const bookWords = useCallback(
     (projectId: string) => {
       const project = state.projects.find((item) => item.id === projectId);

@@ -36,7 +36,7 @@
   padding: 0 14px;
   border-radius: 22px;
   border: 1px solid var(--border);
-  background: #2d2d30;
+  background: var(--button-bg);
   color: var(--text);
   font-size: 14px;
   white-space: nowrap;
@@ -149,7 +149,7 @@ html[data-focus-mode="true"] .half-width-bubble {
   width: 44px;
   height: 26px;
   border-radius: 13px;
-  background: #3c3c3c;
+  background: var(--border);
   transition: background 0.2s ease;
 }
 .setting-switch > span {

@@ -132,7 +132,7 @@
   margin-bottom: 0;
 }
 
-/* 行內程式碼 */
+/* 行內程式碼：程式碼不是警告，字用 --code-text 淺紫灰（WO-101）。區塊程式碼仍用 --text、連結仍用 --accent。 */
 .card-md-codespan {
   font-family: monospace, monospace;
   font-size: 0.9em;
@@ -140,7 +140,7 @@
   border: 1px solid var(--border);
   padding: 2px 6px;
   border-radius: 4px;
-  color: var(--warning);
+  color: var(--code-text);
   word-break: break-all;
 }
 

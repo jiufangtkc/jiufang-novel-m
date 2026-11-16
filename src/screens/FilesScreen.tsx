@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '../components/Icons';
@@ -11,6 +11,9 @@ import {
   FILES_GROUP_SAVE,
   IMPORT_TEXT_FILE_BUTTON,
   IMPORT_TEXT_FILE_HINT,
+  IMPORT_TEXT_STORAGE_FAIL,
+  IMPORT_TEXT_UNREADABLE,
+  IMPORT_TEXT_WORKING,
   lastEditDisplay,
   OPEN_DB_FAIL,
   OPEN_DB_HINT,
@@ -39,6 +42,9 @@ export function FilesScreen() {
   const { state, actions } = useSample();
   const navigate = useNavigate();
   const openInputRef = useRef<HTMLInputElement>(null);
+  const textInputRef = useRef<HTMLInputElement>(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState<string | null>(null);
   const computer = useComputerLayout();
   if (!project) return <ManuscriptNotFound />;
 
@@ -71,6 +77,30 @@ export function FilesScreen() {
 
   const handlePreparingAction = () => {
     actions.toast(FEATURE_IN_PREPARATION);
+  };
+
+  // WO-99：匯入文字檔。處理中再按不會重複匯入；取消選檔（沒有選到檔）什麼都不做、不顯示錯誤。
+  const pickTextFile = () => {
+    if (importing) return;
+    textInputRef.current?.click();
+  };
+
+  const importTextFile = async (file: File) => {
+    setImportError(null);
+    setImporting(true);
+    try {
+      const result = await actions.importTextFile(file);
+      if (result.kind === 'imported') {
+        navigate(writePath(result.id, result.chapterId));
+        return;
+      }
+      if (result.kind === 'unreadable') setImportError(IMPORT_TEXT_UNREADABLE);
+      if (result.kind === 'storage-failed') setImportError(IMPORT_TEXT_STORAGE_FAIL);
+    } catch {
+      setImportError(IMPORT_TEXT_UNREADABLE);
+    } finally {
+      setImporting(false);
+    }
   };
 
   return (
@@ -232,17 +262,16 @@ export function FilesScreen() {
         <section className="files-group" aria-label={FILES_GROUP_IMPORT_EXPORT} data-testid="files-group-import-export">
           <div className="files-group-head">
             <h2 className="files-group-title">{FILES_GROUP_IMPORT_EXPORT}</h2>
-            <span className="badge-preparing" data-testid="files-preparing-badge">
-              {PREPARING_BADGE}
-            </span>
           </div>
 
+          {/* WO-99：匯入文字檔已開放；準備中徽章只留在後面的「匯出全文」。 */}
           <button
             type="button"
-            className="setting-row is-preparing"
+            className="setting-row"
             data-testid="import-text-file"
-            aria-disabled="true"
-            onClick={handlePreparingAction}
+            aria-busy={importing ? 'true' : undefined}
+            aria-describedby={importError ? 'import-text-error' : undefined}
+            onClick={pickTextFile}
           >
             <span className="setting-icon" aria-hidden="true">
               <svg
@@ -260,13 +289,28 @@ export function FilesScreen() {
               </svg>
             </span>
             <span>
-              <strong className="setting-title-with-badge">
-                {IMPORT_TEXT_FILE_BUTTON}
-                <span className="badge-preparing">{PREPARING_BADGE}</span>
-              </strong>
-              <small>{IMPORT_TEXT_FILE_HINT}</small>
+              <strong>{IMPORT_TEXT_FILE_BUTTON}</strong>
+              <small aria-live="polite">{importing ? IMPORT_TEXT_WORKING : IMPORT_TEXT_FILE_HINT}</small>
             </span>
           </button>
+          <input
+            ref={textInputRef}
+            type="file"
+            accept=".txt,text/plain"
+            hidden
+            data-testid="import-text-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file || importing) return;
+              void importTextFile(file);
+            }}
+          />
+          {importError ? (
+            <p className="files-import-error" id="import-text-error" role="alert" data-testid="import-text-error">
+              {importError}
+            </p>
+          ) : null}
 
           <button
             type="button"

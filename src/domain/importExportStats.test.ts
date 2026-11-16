@@ -6,40 +6,63 @@ import {
   getDayImportExportStats,
   getTotalImportExportStats,
   IMPORT_EXPORT_UNAVAILABLE_DISPLAY,
+  isFullTextExportAvailable,
   isImportExportAvailable,
+  isTextImportAvailable,
 } from './importExportStats';
 import { applyLargeEvent, classifyTextDelta, emptyWritingLog } from './writingLog';
 
 describe('WO-60 匯入匯出統計預留端口與格式化', () => {
-  it('WO-60：預設尚未開放狀態，回傳 available 為 false 且顯示為破折號', () => {
+  it('WO-60／WO-99：共用開關仍為 false（匯出未開放）；匯入、匯出各自判斷，未開放顯示破折號', () => {
     expect(isImportExportAvailable()).toBe(false);
+    expect(isTextImportAvailable()).toBe(true);
+    expect(isFullTextExportAvailable()).toBe(false);
     expect(IMPORT_EXPORT_UNAVAILABLE_DISPLAY).toBe('—');
     expect(formatImportExportValue(null)).toBe('—');
     expect(formatImportExportValue(10, false)).toBe('—');
     expect(formatImportExportValue(undefined as unknown as number)).toBe('—');
   });
 
-  it('WO-60：單日寫作紀錄預留狀態包含全形空白與破折號', () => {
-    const row = emptyWritingLog(1, '2026-11-12');
-    const dayStats = getDayImportExportStats(row);
+  it('WO-60／WO-99：單日紀錄卡匯入顯示實際次數，匯出仍為全形空白加破折號', () => {
+    const none = getDayImportExportStats();
+    expect(none.available).toBe(false);
+    expect(none.importAvailable).toBe(true);
+    expect(none.exportAvailable).toBe(false);
+    expect(none.importCount).toBe(0);
+    expect(none.importLabel).toBe('匯入\u30000 次');
+    expect(none.exportCount).toBeNull();
+    expect(none.exportDisplay).toBe('—');
+    expect(none.exportLabel).toBe('匯出\u3000— 次');
+    // 包含全形空白
+    expect(none.exportLabel).toContain('匯出\u3000—');
 
+    const one = getDayImportExportStats(1);
+    expect(one.importCount).toBe(1);
+    expect(one.importDisplay).toBe('1');
+    expect(one.importLabel).toBe('匯入\u30001 次');
+    expect(one.exportLabel).toBe('匯出\u3000— 次');
+  });
+
+  it('WO-60／WO-99：全書合計匯入為實際次數、匯出仍為 null 與破折號', () => {
+    const totalStats = getTotalImportExportStats(2);
+    expect(totalStats.available).toBe(false);
+    expect(totalStats.importCount).toBe(2);
+    expect(totalStats.importDisplay).toBe('2');
+    expect(totalStats.exportCount).toBeNull();
+    expect(totalStats.exportDisplay).toBe('—');
+    // 沒有匯入過的稿子是 0，不是破折號。
+    expect(getTotalImportExportStats().importDisplay).toBe('0');
+  });
+
+  it('WO-60：匯入與匯出都未開放時（預留狀態）仍回傳破折號', () => {
+    const closed = { importAvailable: false, exportAvailable: false };
+    const dayStats = getDayImportExportStats(5, closed);
     expect(dayStats.available).toBe(false);
     expect(dayStats.importCount).toBeNull();
     expect(dayStats.exportCount).toBeNull();
-    expect(dayStats.importDisplay).toBe('—');
-    expect(dayStats.exportDisplay).toBe('—');
     expect(dayStats.importLabel).toBe('匯入\u3000— 次');
     expect(dayStats.exportLabel).toBe('匯出\u3000— 次');
-    // 包含全形空白
-    expect(dayStats.importLabel).toContain('匯入\u3000—');
-    expect(dayStats.exportLabel).toContain('匯出\u3000—');
-  });
-
-  it('WO-60：全書合計預留狀態回傳 available 為 false 且次數為 null', () => {
-    const totalStats = getTotalImportExportStats([]);
-    expect(totalStats.available).toBe(false);
-    expect(totalStats.importCount).toBeNull();
-    expect(totalStats.exportCount).toBeNull();
+    const totalStats = getTotalImportExportStats(5, closed);
     expect(totalStats.importDisplay).toBe('—');
     expect(totalStats.exportDisplay).toBe('—');
   });
@@ -50,7 +73,8 @@ describe('WO-60 匯入匯出統計預留端口與格式化', () => {
     expect(formatLogImportLabel(12, true)).toBe('匯入\u300012 次');
     expect(formatLogExportLabel(5, true)).toBe('匯出\u30005 次');
 
-    const dayStats = getDayImportExportStats(null, true);
+    const open = { importAvailable: true, exportAvailable: true };
+    const dayStats = getDayImportExportStats(null, open);
     expect(dayStats.available).toBe(true);
     expect(dayStats.importCount).toBe(0);
     expect(dayStats.exportCount).toBe(0);
@@ -59,7 +83,7 @@ describe('WO-60 匯入匯出統計預留端口與格式化', () => {
     expect(dayStats.importLabel).toBe('匯入\u30000 次');
     expect(dayStats.exportLabel).toBe('匯出\u30000 次');
 
-    const totalStats = getTotalImportExportStats([], true);
+    const totalStats = getTotalImportExportStats(null, open);
     expect(totalStats.available).toBe(true);
     expect(totalStats.importCount).toBe(0);
     expect(totalStats.exportCount).toBe(0);

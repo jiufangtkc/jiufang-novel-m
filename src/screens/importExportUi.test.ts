@@ -51,7 +51,7 @@ function renderWithLayout(
 }
 
 describe('WO-60 畫面驗收測試', () => {
-  it('WO-60：紀錄頁 HTML 不含「大量貼上」，仍含「大量刪除」，含「匯入　—」「匯出　—」與「準備中」', () => {
+  it('WO-60／WO-99：紀錄頁 HTML 不含「大量貼上」，仍含「大量刪除」，匯入顯示次數、「匯出　—」與「準備中」', () => {
     const html = renderWithLayout(
       createElement(LogsScreen),
       '/p/:projectId/logs',
@@ -65,12 +65,16 @@ describe('WO-60 畫面驗收測試', () => {
     // 2. 仍保留「大量刪除」
     expect(html).toContain('大量刪除');
 
-    // 3. 包含全形空白的「匯入　—」與「匯出　—」
-    expect(html).toContain('匯入\u3000—');
+    // 3. WO-99：匯入已開放，沒匯入過的稿子是「匯入　0 次」；匯出仍是全形空白加「—」
+    expect(html).toContain('匯入\u30000 次');
+    expect(html).not.toContain('匯入\u3000—');
     expect(html).toContain('匯出\u3000—');
 
-    // 4. 旁標「準備中」
+    // 4. 旁標「準備中」（只剩匯出列）
     expect(html).toContain('準備中');
+    const importRows = html.match(/data-testid="log-import-row"><span>[^<]*<\/span><\/span>/g) ?? [];
+    expect(importRows.length).toBeGreaterThan(0);
+    for (const row of importRows) expect(row).not.toContain('準備中');
 
     // 5. 不含簡體字
     expect(html).not.toMatch(/[导汇备录档开关写]/);
@@ -116,7 +120,7 @@ describe('WO-60 畫面驗收測試', () => {
     expect(htmlWide).toContain('is-wide');
     expect(htmlWide).toContain('stats-wide-logs');
     expect(htmlWide).toContain('視覺化的寫作記錄');
-    expect(htmlWide).toContain('匯入\u3000—');
+    expect(htmlWide).toContain('匯入\u30000 次');
     expect(htmlWide).toContain('匯出\u3000—');
     expect(htmlWide).not.toContain('大量貼上');
   });
@@ -164,7 +168,7 @@ describe('WO-60 畫面驗收測試', () => {
     expect(html).toContain('關閉稿子並回首頁');
   });
 
-  it('WO-60：檔案頁匯入與匯出兩顆按鈕帶 aria-disabled 或等效淡色狀態，說明小字正確', () => {
+  it('WO-60／WO-99：檔案頁匯入已開放（無 aria-disabled、無準備中）、匯出仍帶 aria-disabled 與淡色，說明小字正確', () => {
     const html = renderWithLayout(
       createElement(FilesScreen),
       '/p/:projectId/files',
@@ -175,17 +179,31 @@ describe('WO-60 畫面驗收測試', () => {
     // 1. 匯入文字檔按鈕與說明
     expect(html).toContain(IMPORT_TEXT_FILE_BUTTON);
     expect(html).toContain(IMPORT_TEXT_FILE_HINT);
-    expect(html).toContain('把文字檔的內容加進這份稿子');
+    expect(html).toContain('把文字檔的內容開成新稿子');
+    expect(html).not.toContain('把文字檔的內容加進這份稿子');
 
     // 2. 匯出全文按鈕與說明
     expect(html).toContain(EXPORT_FULL_TEXT_BUTTON);
     expect(html).toContain(EXPORT_FULL_TEXT_HINT);
     expect(html).toContain('把整份稿子匯出成一個 TXT 或 Markdown 檔');
 
-    // 3. aria-disabled 與淡色樣式
+    // 3. 匯出仍是 aria-disabled 與淡色樣式；匯入按鈕本身沒有
     expect(html).toContain('aria-disabled="true"');
     expect(html).toContain('is-preparing');
     expect(html).toContain(PREPARING_BADGE);
+    const importTag = html.match(/<button[^>]*data-testid="import-text-file"[^>]*>/)?.[0] ?? '';
+    expect(importTag).not.toBe('');
+    expect(importTag).not.toContain('aria-disabled');
+    expect(importTag).not.toContain('is-preparing');
+    const exportTag = html.match(/<button[^>]*data-testid="export-full-text"[^>]*>/)?.[0] ?? '';
+    expect(exportTag).toContain('aria-disabled="true"');
+    expect(exportTag).toContain('is-preparing');
+    // 準備中徽章只出現一次（匯出全文那一列），群組標題旁不再放
+    expect(html.split(PREPARING_BADGE).length - 1).toBe(1);
+    const importButtonHtml = html.slice(html.indexOf('data-testid="import-text-file"'), html.indexOf('data-testid="export-full-text"'));
+    expect(importButtonHtml).not.toContain(PREPARING_BADGE);
+    // 選檔欄位只收文字檔
+    expect(html).toMatch(/<input[^>]*type="file"[^>]*accept="\.txt,text\/plain"[^>]*data-testid="import-text-input"/);
 
     // 4. 新文字沒有簡體字
     expect(html).not.toMatch(/[导汇备录档开关写]/);
@@ -214,7 +232,7 @@ describe('WO-60 畫面驗收測試', () => {
     }
   });
 
-  it('WO-60：檔案頁匯入與匯出兩顆按鈕點擊處理只叫出「功能還在準備中。」', () => {
+  it('WO-60／WO-99：匯入按鈕點擊不再叫出「功能還在準備中。」，匯出按鈕仍只叫出這句', () => {
     let importBtnProps: any = null;
     let exportBtnProps: any = null;
     let toastMessage: string | null = null;
@@ -269,12 +287,12 @@ describe('WO-60 畫面驗收測試', () => {
 
     expect(importBtnProps).not.toBeNull();
     expect(exportBtnProps).not.toBeNull();
-    expect(importBtnProps['aria-disabled']).toBe('true');
+    expect(importBtnProps['aria-disabled']).toBeUndefined();
     expect(exportBtnProps['aria-disabled']).toBe('true');
 
-    // 觸發匯入按鈕點擊
+    // 觸發匯入按鈕點擊：只會去開選檔（測試環境沒有真的 input），不叫出準備中
     importBtnProps.onClick();
-    expect(toastMessage).toBe(FEATURE_IN_PREPARATION);
+    expect(toastMessage).toBeNull();
 
     // 重設並觸發匯出按鈕點擊
     toastMessage = null;

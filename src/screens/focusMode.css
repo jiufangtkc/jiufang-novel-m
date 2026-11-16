@@ -46,10 +46,10 @@ html[data-layout="phone-portrait"] .thumb-focus-button {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--panel, #252526);
-  border: 1px solid var(--border, #3c3c3c);
+  background: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 8px;
-  color: var(--text, #cccccc);
+  color: var(--text);
   font-size: 15px;
   cursor: pointer;
   white-space: nowrap;
@@ -60,7 +60,7 @@ html[data-layout="phone-portrait"] .thumb-focus-button {
 .thumb-button:hover,
 .thumb-button:active {
   background: rgba(255, 255, 255, 0.08);
-  border-color: var(--accent, #38bdf8);
+  border-color: var(--accent);
 }
 
 /* 直拿欄寬不到一般手機時（頁面放大，或很窄的直拿）：三顆鈕改成圖在上、字在下，
@@ -149,9 +149,9 @@ html[data-layout="phone-landscape"] .landscape-focus-trigger {
   min-width: 44px;
   min-height: 44px;
   border-radius: 50%;
-  background: var(--panel, #252526);
-  border: 1px solid var(--border, #3c3c3c);
-  color: var(--text, #cccccc);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
   z-index: 80;
   padding: 0;
@@ -195,8 +195,8 @@ html[data-layout="medium"] .focus-enter-button {
   min-width: var(--hit-size, 44px);
   min-height: var(--hit-size, 44px);
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border, #3c3c3c);
-  color: var(--text, #cccccc);
+  border: 1px solid var(--border);
+  color: var(--text);
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 13px;
@@ -206,7 +206,7 @@ html[data-layout="medium"] .focus-enter-button {
 
 html[data-layout="medium"] .focus-enter-button:hover {
   background: rgba(255, 255, 255, 0.12);
-  border-color: var(--accent, #38bdf8);
+  border-color: var(--accent);
 }
 
 /* WO-81：手機直拿打字中（鍵盤開著，.editor.is-keyboard）時，拇指區會收起，
@@ -227,7 +227,7 @@ html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--text, #cccccc);
+  color: var(--text);
   cursor: pointer;
 }
 
@@ -279,7 +279,7 @@ html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-exit-button {
   min-width: 44px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--muted, #888888);
+  color: var(--muted);
   font-size: 13px;
   padding: 0 14px;
   border-radius: 6px;
@@ -294,7 +294,7 @@ html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-exit-button:ho
 html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-exit-button:active {
   opacity: 1;
   border-color: rgba(255, 255, 255, 0.4);
-  color: var(--text, #ffffff);
+  color: var(--text);
 }
 
 /* 中等版面專注模式離開按鈕與底列字數 */
@@ -310,7 +310,7 @@ html[data-focus-mode="true"][data-layout="medium"] .focus-exit-button {
   min-width: 44px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--muted, #888888);
+  color: var(--muted);
   font-size: 13px;
   padding: 0 14px;
   border-radius: 6px;
@@ -325,7 +325,7 @@ html[data-focus-mode="true"][data-layout="medium"] .focus-exit-button:hover,
 html[data-focus-mode="true"][data-layout="medium"] .focus-exit-button:active {
   opacity: 1;
   border-color: rgba(255, 255, 255, 0.4);
-  color: var(--text, #ffffff);
+  color: var(--text);
 }
 
 html[data-focus-mode="true"][data-layout="medium"] .focus-bottom-status {
@@ -338,7 +338,7 @@ html[data-focus-mode="true"][data-layout="medium"] .focus-bottom-status {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--muted, #888888);
+  color: var(--muted);
   opacity: 0.55;
   pointer-events: none;
   z-index: 50;
@@ -356,8 +356,8 @@ html[data-layout="wide"] .focus-enter-button {
   min-width: 44px;
   min-height: 44px;
   background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--border, #3c3c3c);
-  color: var(--text, #cccccc);
+  border: 1px solid var(--border);
+  color: var(--text);
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 13px;
@@ -368,7 +368,7 @@ html[data-layout="wide"] .focus-enter-button {
 html[data-layout="wide"] .focus-enter-button:hover,
 html[data-layout="wide"] .focus-enter-button:active {
   background: rgba(255, 255, 255, 0.12);
-  border-color: var(--accent, #38bdf8);
+  border-color: var(--accent);
 }
 
 html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button {
@@ -383,7 +383,7 @@ html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button {
   min-width: 44px;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--muted, #888888);
+  color: var(--muted);
   font-size: 13px;
   padding: 0 14px;
   border-radius: 6px;
@@ -398,7 +398,7 @@ html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button:hover,
 html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button:active {
   opacity: 1;
   border-color: rgba(255, 255, 255, 0.4);
-  color: var(--text, #ffffff);
+  color: var(--text);
 }
 
 html[data-focus-mode="true"][data-layout="wide"] .focus-bottom-status {
@@ -411,7 +411,7 @@ html[data-focus-mode="true"][data-layout="wide"] .focus-bottom-status {
   align-items: center;
   gap: 8px;
   font-size: 12px;
-  color: var(--muted, #888888);
+  color: var(--muted);
   opacity: 0.55;
   pointer-events: none;
   z-index: 50;
@@ -432,7 +432,7 @@ html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button {
   border-radius: 50%;
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.18);
-  color: var(--muted, #888888);
+  color: var(--muted);
   padding: 0;
   cursor: pointer;
   z-index: 100;
@@ -446,7 +446,7 @@ html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button:h
 html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button:active {
   opacity: 1;
   border-color: rgba(255, 255, 255, 0.4);
-  color: var(--text, #ffffff);
+  color: var(--text);
 }
 
 html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button::before {
@@ -467,5 +467,5 @@ html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button.i
   gap: 6px;
   opacity: 1;
   border-color: rgba(255, 255, 255, 0.4);
-  color: var(--text, #ffffff);
+  color: var(--text);
 }

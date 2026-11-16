@@ -22,7 +22,7 @@
   font-size: 14px;
   color: var(--muted);
   border-bottom: 1px solid var(--border);
-  background: var(--panel);
+  background: var(--writing-surround);
   touch-action: none;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -7,6 +7,7 @@ import { CardsScreen } from './screens/CardsScreen';
 import { FilesScreen } from './screens/FilesScreen';
 import { FontLicenseScreen } from './screens/FontLicenseScreen';
 import { LogsScreen } from './screens/LogsScreen';
+import { PrivacyScreen } from './screens/PrivacyScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
 import { Workspace } from './screens/Workspace';
@@ -47,6 +48,7 @@ export function App() {
                 <Route path="stats" element={<StatsScreen />} />
                 <Route path="settings" element={<SettingsScreen />} />
                 <Route path="font-license" element={<FontLicenseScreen />} />
+                <Route path="privacy" element={<PrivacyScreen />} />
                 <Route path="logs" element={<LogsScreen />} />
               </Route>
             </Routes>
