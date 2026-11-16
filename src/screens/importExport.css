@@ -195,7 +195,7 @@
 
 .files-import-error {
   margin: 0;
-  color: var(--danger, #e06c75);
+  color: var(--danger);
   font-size: 14px;
   line-height: 1.6;
   overflow-wrap: anywhere;
