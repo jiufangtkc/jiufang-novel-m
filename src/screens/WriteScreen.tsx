@@ -41,6 +41,7 @@ import {
   CARDS_PANEL_ARIA,
   CHAPTER_NOT_FOUND,
   CLOSE_CHAPTER_TREE_ARIA,
+  OPEN_CHAPTER_TREE_ARIA,
   MANUSCRIPT_NOT_FOUND,
   TREE_ADD_CHAPTER,
   TREE_ADD_CHAPTER_BELOW,
@@ -129,7 +130,7 @@ export function WriteScreen() {
   const project = useProject(projectId);
   const { actions } = useSample();
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
-  const { mode: layoutMode, sidePanels, closePanel, openPanel, focusMode, pointer } = useLayout();
+  const { mode: layoutMode, sidePanels, closePanel, openPanel, focusMode, pointer, panelOverlay, setHasBody } = useLayout();
   const desktop = useDesktop();
   const showKeyboardHints = desktop && pointer !== 'touch';
   // WO-64：寬版編輯卡片時右欄放寬；iPad（觸控）橫拿時把目錄收起，編輯完再還原
@@ -149,6 +150,17 @@ export function WriteScreen() {
     // 只在開始或結束編輯時動目錄
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cardEditing, layoutMode]);
+  // WO-94：尚未選章時沒有正文要保住 36 字，目錄不因寬度不足被收起；選章後回到容量規則
+  useLayoutEffect(() => {
+    setHasBody(Boolean(chapterId));
+    return () => setHasBody(true);
+  }, [chapterId, setHasBody]);
+  // 目錄若是浮在正文上暫時打開的，選好章就收起來，讓出整個正文
+  useEffect(() => {
+    if (chapterId && panelOverlay === 'left') closePanel('left');
+    // 只在換章時處理
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterId]);
   const rename = useBookRename(project);
   // WO-65：從別的分頁回來時右欄原本就開著：卡片若有暫存只顯示提示，游標與鍵盤先回正文
   const rightPanelOpenAtEntry = useRef(sidePanels.right);
@@ -832,6 +844,16 @@ export function WriteScreen() {
         ) : (
           <div className="editor-empty wide-hint">
             <p>點左邊的章或幕開始寫作。</p>
+            {!sidePanels.left ? (
+              <button
+                type="button"
+                className="button primary wide-hint-open-tree"
+                onClick={() => openPanel('left')}
+                data-testid="open-tree-empty"
+              >
+                {OPEN_CHAPTER_TREE_ARIA}
+              </button>
+            ) : null}
           </div>
         )}
       </section>
