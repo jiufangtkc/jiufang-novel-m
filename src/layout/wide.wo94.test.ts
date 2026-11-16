@@ -7,6 +7,7 @@ import { SampleProvider } from '../state/sampleStore';
 import { WriteScreen } from '../screens/WriteScreen';
 import { LayoutProvider } from './layoutContext';
 import { fitWidePanels, needsPanelOverlay, wideChars, type WideFitInput } from './widePanels';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
 
@@ -81,7 +82,7 @@ function renderWrite(width: number, chapterId: string | null): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         {
