@@ -3,7 +3,7 @@
 /* 分類清單最下方：最近刪除入口 */
 .category-list-bottom-section {
   padding: 8px 12px 16px;
-  border-top: 1px dashed var(--border, #3c3c3c);
+  border-top: 1px dashed var(--border);
   margin-top: 8px;
 }
 
@@ -15,23 +15,23 @@
   min-height: 48px;
   padding: 0 16px;
   background-color: transparent;
-  border: 1px dashed var(--border, #444);
+  border: 1px dashed var(--border);
   border-radius: 8px;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
   cursor: pointer;
   box-sizing: border-box;
 }
 
 .category-card.deleted-cards-entry:hover {
-  background-color: var(--button-hover, #2a2a2a);
-  color: var(--text, #d4d4d4);
-  border-color: var(--border-hover, #666);
+  background-color: var(--button-hover);
+  color: var(--text);
+  border-color: var(--border-hover);
 }
 
 .category-card.deleted-cards-entry.is-active {
-  background-color: var(--surface, #2a2d2e);
-  color: var(--primary, #007acc);
-  border-color: var(--primary, #007acc);
+  background-color: var(--surface);
+  color: var(--primary);
+  border-color: var(--primary);
 }
 
 .deleted-entry-icon {
@@ -44,17 +44,17 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border, #333);
-  background: var(--panel, #1e1e1e);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
 }
 
 .cards-organize-btn {
   flex: 1;
   min-height: 44px;
   padding: 0 16px;
-  background-color: var(--surface, #252526);
-  color: var(--text, #d4d4d4);
-  border: 1px solid var(--border, #3c3c3c);
+  background-color: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.95rem;
@@ -65,15 +65,15 @@
 }
 
 .cards-organize-btn:hover {
-  background-color: var(--button-hover, #333);
+  background-color: var(--button-hover);
 }
 
 .cards-add-cat-btn {
   flex: 1;
   min-height: 44px;
   padding: 0 16px;
-  background-color: var(--primary, #007acc);
-  color: #fff;
+  background-color: var(--primary);
+  color: var(--on-accent);
   border: none;
   border-radius: 8px;
   cursor: pointer;
@@ -86,7 +86,7 @@
 }
 
 .cards-add-cat-btn:hover {
-  background-color: var(--primary-hover, #0062a3);
+  background-color: var(--primary-hover);
 }
 
 /* 卡片預覽底部拇指區：編輯（高 48）＋「⋯」 */
@@ -95,8 +95,8 @@
   align-items: center;
   gap: 12px;
   padding: 12px 16px;
-  border-top: 1px solid var(--border, #333);
-  background: var(--panel, #1e1e1e);
+  border-top: 1px solid var(--border);
+  background: var(--panel);
   min-height: 60px;
   box-sizing: border-box;
 }
@@ -106,8 +106,8 @@
   height: 48px;
   min-height: 48px;
   padding: 0 20px;
-  background-color: var(--primary, #007acc);
-  color: #fff;
+  background-color: var(--primary);
+  color: var(--on-accent);
   border: none;
   border-radius: 8px;
   font-size: 1rem;
@@ -120,7 +120,7 @@
 }
 
 .card-detail-edit-btn:hover {
-  background-color: var(--primary-hover, #0062a3);
+  background-color: var(--primary-hover);
 }
 
 .card-detail-more-btn {
@@ -128,9 +128,9 @@
   height: 48px;
   min-width: 44px;
   min-height: 44px;
-  background-color: var(--surface, #252526);
-  color: var(--text, #d4d4d4);
-  border: 1px solid var(--border, #3c3c3c);
+  background-color: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
   display: inline-flex;
@@ -141,7 +141,7 @@
 }
 
 .card-detail-more-btn:hover {
-  background-color: var(--button-hover, #333);
+  background-color: var(--button-hover);
 }
 
 /* 更多動作彈出面板（Action Sheet） */
@@ -158,7 +158,7 @@
 .card-action-sheet {
   width: 100%;
   max-width: 480px;
-  background-color: var(--panel, #1e1e1e);
+  background-color: var(--panel);
   border-top-left-radius: 16px;
   border-top-right-radius: 16px;
   padding: 16px;
@@ -172,7 +172,7 @@
 .card-action-sheet-title {
   font-size: 1rem;
   font-weight: 600;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
   padding: 8px 12px;
   margin: 0;
 }
@@ -181,9 +181,9 @@
   width: 100%;
   min-height: 48px;
   padding: 0 16px;
-  background-color: var(--surface, #252526);
-  color: var(--text, #d4d4d4);
-  border: 1px solid var(--border, #3c3c3c);
+  background-color: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
   border-radius: 8px;
   cursor: pointer;
   font-size: 0.95rem;
@@ -194,7 +194,7 @@
 }
 
 .card-action-sheet-item:hover {
-  background-color: var(--button-hover, #333);
+  background-color: var(--button-hover);
 }
 
 .card-action-sheet-delete {
@@ -204,7 +204,7 @@
 .card-action-sheet-cancel {
   margin-top: 8px;
   background-color: transparent;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
   justify-content: center;
 }
 
@@ -224,8 +224,8 @@
 .card-delete-dialog-card {
   width: 100%;
   max-width: 400px;
-  background-color: var(--panel, #1e1e1e);
-  border: 1px solid var(--border, #3c3c3c);
+  background-color: var(--panel);
+  border: 1px solid var(--border);
   border-radius: 12px;
   padding: 20px;
   display: flex;
@@ -253,7 +253,7 @@
   margin: 4px 0 0 20px;
   padding: 0;
   font-size: 0.9rem;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
   max-height: 120px;
   overflow-y: auto;
 }
@@ -261,7 +261,7 @@
 .card-delete-dialog-hint {
   font-size: 0.85rem;
   line-height: 1.5;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
   margin: 0;
 }
 
@@ -286,8 +286,8 @@
 
 .card-delete-dialog-cancel {
   background-color: transparent;
-  color: var(--text-muted, #8c8c8c);
-  border: 1px solid var(--border, #3c3c3c);
+  color: var(--text-muted);
+  border: 1px solid var(--border);
 }
 
 .card-delete-dialog-confirm {
@@ -321,8 +321,8 @@
   max-width: 480px;
   margin: 0 auto;
   z-index: 950;
-  background-color: var(--surface, #252526);
-  border: 1px solid var(--border, #444);
+  background-color: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 12px 16px;
   display: flex;
@@ -343,7 +343,7 @@
 .card-undo-toast-title {
   font-size: 0.95rem;
   font-weight: 600;
-  color: var(--text, #d4d4d4);
+  color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -351,7 +351,7 @@
 
 .card-undo-toast-sub {
   font-size: 0.8rem;
-  color: var(--text-muted, #8c8c8c);
+  color: var(--text-muted);
 }
 
 .card-undo-btn {
@@ -359,8 +359,8 @@
   min-width: 80px;
   padding: 0 16px;
   background-color: transparent;
-  color: var(--primary, #007acc);
-  border: 1px solid var(--primary, #007acc);
+  color: var(--primary);
+  border: 1px solid var(--primary);
   border-radius: 6px;
   cursor: pointer;
   font-size: 0.95rem;
@@ -373,7 +373,7 @@
 }
 
 .card-undo-btn:hover {
-  background-color: rgba(0, 122, 204, 0.15);
+  background-color: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 /* 寬版與中等：整理分類時分類欄放寬到 400 */
@@ -400,7 +400,7 @@ html[data-layout="phone-landscape"] .cards-landscape-view .cards-drawer-pane.is-
   height: 44px;
   padding: 0 12px;
   background-color: transparent;
-  color: var(--primary, #007acc);
+  color: var(--primary);
   border: none;
   cursor: pointer;
   font-size: 0.95rem;
@@ -412,7 +412,7 @@ html[data-layout="phone-landscape"] .cards-landscape-view .cards-drawer-pane.is-
 }
 
 .cards-header-action-btn:hover {
-  color: var(--primary-hover, #0062a3);
+  color: var(--primary-hover);
 }
 
 /* 分類內尚無卡片時的空狀態（WO-73） */
