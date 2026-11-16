@@ -148,9 +148,10 @@ describe('WO-55：側欄讓位樣式驗證（手機橫拿與中等開抽屜時�
     expect(css).toMatch(/html\[data-layout="phone-landscape"\][\s\S]*?\.writing-cards-overlay[\s\S]*?display:\s*none\s*!important/);
     expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.writing-cards-overlay[\s\S]*?display:\s*none\s*!important/);
 
-    // 手機橫拿看卡片讓位 290px、中等看卡片讓位 380px
+    // 手機橫拿看卡片讓位 290px；中等看卡片讓位改用與抽屜共用的寬度變數（WO-89，最多 380px）
     expect(css).toMatch(/html\[data-layout="phone-landscape"\][\s\S]*?\.editor\.yield-right[\s\S]*?margin-right:\s*290px/);
-    expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor\.yield-right[\s\S]*?margin-right:\s*380px/);
+    expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor\.yield-right[\s\S]*?margin-right:\s*var\(--medium-cards-width\)/);
+    expect(css).toMatch(/--medium-cards-width:\s*min\(380px,\s*45vw\)/);
   });
 
   it('WO-55：手機橫拿與中等開側欄時，正文容器套上讓位樣式（yield-left 或 yield-right）', () => {
