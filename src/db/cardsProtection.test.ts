@@ -20,7 +20,7 @@ import {
 } from '../domain/cardOps';
 import { filterVisibleCategories, isCategoryHidden } from '../domain/cards';
 import { renameNode } from '../domain/chapterOps';
-import { createState, reduce } from '../state/sampleStore';
+import { reduce } from '../state/sampleStore';
 import { openNodeSql } from './nodeSql';
 import {
   idsInChildFirstDeleteOrder,
@@ -44,6 +44,7 @@ import {
   SAMPLE_NON_DEFAULT_COLOR,
 } from './testing/desktopSampleDb';
 import { openMemoryDb } from './wasmDb';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 function dumpAllTablesExceptSequence(sql: Sql): Record<string, Record<string, unknown>[]> {
   const names = [...tableNames(sql)]
@@ -514,7 +515,7 @@ describe('WO-51 卡片讀寫邏輯與 .db 保護（P0 / P1 / 回歸測試）', (
     const sampleMetaRaw = JSON.stringify({ [SAMPLE_CUSTOM_CATEGORY_CODE]: '【範例】自訂分類' });
 
     // 1. 測試範例書（fog）在升格前已有卡片與分類設定
-    let state = createState(new Date('2026-11-11T10:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-11T10:00:00Z'));
     state = {
       ...state,
       projects: state.projects.map((p) =>
