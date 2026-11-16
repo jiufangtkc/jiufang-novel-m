@@ -1,3 +1,8 @@
+import {
+  keepBodyFocusOnPointerDown,
+  refocusBodyIfLost,
+  snapshotForCardsClose,
+} from '../editor/bodyFocusGuard';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
@@ -42,7 +47,7 @@ import {
   type WritingCaretSnapshot,
 } from '../domain/writingCards';
 import { writingPlaceLabel } from '../copy/writingCardEditCopy';
-import { revealCaret } from '../editor/caret';
+import { restorePanelRoom, revealCaret, revealCaretAbovePanel } from '../editor/caret';
 import {
   flushCardEdit,
   getCardEditSnapshot,
@@ -234,6 +239,13 @@ export function EditorPane({
     };
   }, []);
 
+  // WO-82：進出專注鈕按下時正文若有焦點，就擋掉按鈕搶焦點；切換完成後再保險叫回
+  // 只認這次按下後一秒內的切換，避免按了又移開、之後別的原因切換時誤把焦點拉回正文
+  const bodyHadFocusRef = useRef(0);
+  const handleFocusSwitchPointerDown = (e: React.PointerEvent) => {
+    bodyHadFocusRef.current = keepBodyFocusOnPointerDown(ref.current, e) ? Date.now() : 0;
+  };
+
   const handleExitClick = () => {
     if (layoutMode === 'phone-landscape') {
       const result = landscapeExitReducer(landscapeExitState, { type: 'click' });
@@ -278,6 +290,8 @@ export function EditorPane({
     const isTextareaActive = Boolean(
       ref.current && (document.activeElement === ref.current || focused),
     );
+    // WO-82：僅查看卡片時焦點與鍵盤留在正文，不讓按鈕搶走
+    keepBodyFocusOnPointerDown(ref.current, e);
     const result = handleCardsPointerDown(isComposingRef.current);
     if (result.preventDefault) {
       e.preventDefault();
@@ -296,6 +310,46 @@ export function EditorPane({
     caretSnapshotRef.current = snapshot;
     setIsCardsOpen(true);
     openPanel('right');
+    revealCaretWhenPanelReady();
+  };
+
+  // WO-88：面板有上滑動畫（約 0.25s）。不能只靠第一幀量測：
+  // 第一幀與動畫途中面板位置偏低、遮擋高度會估小。
+  // 這裡在第一幀、animationend／getAnimations().finished、約 300ms 保底各量一次；
+  // revealCaretAbovePanel 只會往需要的方向補捲（已可見就不動），所以最後一次（最終幾何）為準。
+  const revealCaretWhenPanelReady = () => {
+    let tries = 0;
+    const timers: number[] = [];
+    const findPanel = () =>
+      document.querySelector<HTMLElement>('[data-testid="writing-cards-drawer"]');
+    const apply = (panel: HTMLElement) => {
+      const el = ref.current;
+      if (!el || !panel.isConnected || panel.dataset.cardEditing === 'true') return;
+      try {
+        revealCaretAbovePanel(el, panel);
+      } catch {
+        // 沒有版面計算的環境略過
+      }
+    };
+    const run = () => {
+      const panel = findPanel();
+      if (!panel) {
+        if (tries++ < 5) requestAnimationFrame(run);
+        return;
+      }
+      if (panel.dataset.cardEditing === 'true') return;
+      const again = () => apply(panel);
+      again();
+      panel.addEventListener('animationend', again, { once: true });
+      if (typeof panel.getAnimations === 'function') {
+        const animations = panel.getAnimations();
+        if (animations.length > 0) {
+          Promise.all(animations.map((a) => a.finished)).then(again, again);
+        }
+      }
+      timers.push(window.setTimeout(again, 300));
+    };
+    requestAnimationFrame(run);
   };
 
   // WO-64：編輯卡片時正文唯讀；開始前先收好組字、記住位置，結束後（完成／取消）游標與鍵盤回正文
@@ -335,7 +389,9 @@ export function EditorPane({
     clearPendingComposition();
     setIsCardsOpen(false);
     closePanel('right');
-    restoreCaretSnapshot(ref.current, caretSnapshotRef.current);
+    restorePanelRoom(ref.current);
+    // WO-82：焦點取開啟時的記錄，位置以現在為準（僅查看時使用者可能繼續打字）
+    restoreCaretSnapshot(ref.current, snapshotForCardsClose(ref.current, caretSnapshotRef.current));
     caretSnapshotRef.current = null;
     capturedSnapshotRef.current = null;
   };
@@ -528,6 +584,9 @@ export function EditorPane({
   useLayoutEffect(() => {
     if (prevFocusModeRef.current !== focusMode) {
       prevFocusModeRef.current = focusMode;
+      // WO-82：按下當下正文有焦點、切換後卻不在正文，立即叫回（不動選取範圍）
+      refocusBodyIfLost(ref.current, Date.now() - bodyHadFocusRef.current < 1000 && bodyHadFocusRef.current > 0);
+      bodyHadFocusRef.current = 0;
       handleEditorLayoutChange({
         textarea: ref.current,
         isComposing: isComposingRef.current,
@@ -591,6 +650,7 @@ export function EditorPane({
           .filter(Boolean)
           .join(' ')}
         aria-label={FOCUS_MODE_EXIT_BUTTON}
+        onPointerDown={handleFocusSwitchPointerDown}
         onClick={handleExitClick}
         data-testid="exit-focus-mode"
       >
@@ -647,7 +707,8 @@ export function EditorPane({
           type="button"
           className="focus-enter-button"
           aria-label={FOCUS_MODE_ENTER_BUTTON}
-          onClick={enterFocusMode}
+          onPointerDown={handleFocusSwitchPointerDown}
+        onClick={enterFocusMode}
           data-testid="enter-focus-mode"
         >
           <FocusIcon size={18} />
@@ -702,6 +763,7 @@ export function EditorPane({
         type="button"
         className="landscape-focus-trigger"
         aria-label={FOCUS_MODE_LANDSCAPE_ENTER_ARIA}
+        onPointerDown={handleFocusSwitchPointerDown}
         onClick={enterFocusMode}
         data-testid="toggle-focus-landscape"
       >
@@ -838,7 +900,8 @@ export function EditorPane({
             type="button"
             className="thumb-button thumb-focus-button"
             aria-label={FOCUS_MODE_THUMB_ENTER_LABEL}
-            onClick={enterFocusMode}
+            onPointerDown={handleFocusSwitchPointerDown}
+        onClick={enterFocusMode}
             data-testid="thumb-focus-button"
           >
             <FocusIcon size={18} />

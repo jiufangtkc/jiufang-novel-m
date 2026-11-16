@@ -1619,6 +1619,14 @@ html[data-layout="phone-landscape"] .workspace[data-landscape-rail="show"] .writ
   display: none !important;
 }
 
+/* WO-87：手機橫拿目錄抽屜打開時，左側「展開目錄」鈕與右側「看卡片」鈕一併收起（display: none，不攔截點擊），
+   避免蓋住章名、展開箭頭、狀態列或正文行尾。只看 .tree-open，與 WO-68 的 data-landscape-rail 無關；
+   專注模式鈕的同類規則在 focusMode.css。目錄用既有關閉鈕收合後，本規則不再命中，三顆入口依原本規則回來。 */
+html[data-layout="phone-landscape"] .write-layout.tree-open .floating-tree-trigger,
+html[data-layout="phone-landscape"] .write-layout.tree-open .landscape-cards-trigger {
+  display: none !important;
+}
+
 /* 4. ③ 中等（medium）：
    正文置中，字級 20，左右邊界 40，行寬上限 30 字。
    左上「目錄」開左側約 340 寬抽屜（讓位、點章名跳章後自動收）、右上「看卡片」。保留下方分頁。
@@ -1679,10 +1687,22 @@ html[data-layout="medium"] .write-layout.has-chapter .editor-pane {
   transition: margin-right 0.2s ease;
 }
 
-/* 讓位樣式（中等）：正文框讓位 380px 緊貼面板左緣，正文於剩餘寬度置中 */
+/* 讓位樣式（中等，WO-89）：卡片抽屜寬度與讓位共用同一個變數（380px，最多 45vw），
+ * 窄畫面抽屜縮小時讓位同步縮小，面板與正文間不留固定空隙。 */
+html[data-layout="medium"] {
+  --medium-cards-width: min(380px, 45vw);
+}
+
 html[data-layout="medium"] .editor.yield-right,
 html[data-layout="medium"] .editor-pane.yield-right {
-  margin-right: 380px;
+  margin-right: var(--medium-cards-width);
+}
+
+/* WO-89：中等開目錄或看卡片時，正文左右內距由 40px 收到 16px，把寬度交給正文，
+ * 768px 寬也能保有約 19 字；關閉讓位後此規則不再生效，內距恢復 40px。 */
+html[data-layout="medium"] .is-yielding .editor-input {
+  padding-left: 16px;
+  padding-right: 16px;
 }
 
 /* 讓位只算一次：當子層 .editor 位於已讓位的 .editor-pane 內時，不重複套用 margin */
@@ -1700,8 +1720,8 @@ html[data-layout="medium"] .writing-cards-drawer {
   bottom: 0;
   right: 0;
   left: auto;
-  width: 380px;
-  max-width: 45vw;
+  width: var(--medium-cards-width);
+  max-width: var(--medium-cards-width);
   height: 100%;
   max-height: 100%;
   border-top: 0;

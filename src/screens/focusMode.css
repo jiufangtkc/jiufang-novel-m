@@ -209,6 +209,37 @@ html[data-layout="medium"] .focus-enter-button:hover {
   border-color: var(--accent, #38bdf8);
 }
 
+/* WO-81：手機直拿打字中（鍵盤開著，.editor.is-keyboard）時，拇指區會收起，
+   改在頁首顯示既有的專注模式鈕（與中等、寬版共用同一顆），順序為放大鏡、專注模式、看卡片。
+   只留圖示（朗讀仍是 aria-label「專注模式」），熱區維持 44×44。
+   鍵盤收起後這條規則不成立，頁首專注鈕回到預設隱藏，改由拇指區第三顆進入。
+   專注模式內整個頁首已被收起，不受此規則影響。 */
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text, #cccccc);
+  cursor: pointer;
+}
+
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button:hover,
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button .focus-enter-label {
+  display: none;
+}
+
 /* ==========================================================================
    4. 專注模式共同規則（四種版面全收頁首、分頁、側欄、浮動鈕）
    ========================================================================== */

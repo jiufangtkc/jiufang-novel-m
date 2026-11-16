@@ -391,7 +391,7 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     expect(css).toMatch(/\.landscape-focus-trigger\s*\{[\s\S]*?display:\s*none;/);
     expect(css).toMatch(/\.focus-enter-button\s*\{[\s\S]*?display:\s*none;/);
 
-    // 2. ① 手機直拿（phone-portrait）：僅顯示拇指區專注鈕，其餘入口不顯示
+    // 2. ① 手機直拿（phone-portrait）：拇指區專注鈕為主；僅打字中（.is-keyboard）才另顯示頁首既有專注鈕（WO-81）
     expect(css).toMatch(/html\[data-layout="phone-portrait"\]\s+\.thumb-bar[\s\S]*?display:\s*flex;/);
     expect(css).toMatch(/html\[data-layout="phone-portrait"\]\s+\.thumb-focus-button[\s\S]*?display:\s*inline-flex;/);
     expect(css).not.toMatch(/html\[data-layout="phone-portrait"\][^{]*?\.(landscape-focus-trigger|focus-enter-button)[^{]*?display:\s*(inline-flex|flex|grid|block)/);
@@ -480,5 +480,64 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('WO-81：直拿打字中頁首專注鈕', () => {
+  const css = readFileSync(new URL('./focusMode.css', import.meta.url), 'utf8');
+  const editorSrc = readFileSync(new URL('./EditorPane.tsx', import.meta.url), 'utf8');
+  const rule = (selector: string) => {
+    const start = css.indexOf(`${selector} {`);
+    expect(start).toBeGreaterThan(-1);
+    return css.slice(start, css.indexOf('}', start));
+  };
+
+  it('WO-81：直拿頁首順序為放大鏡、專注模式、看卡片，專注鈕仍綁原進入路徑', () => {
+    const html = renderWriteScreenWithLayout('phone-portrait');
+    const search = html.indexOf('data-testid="search-open-topbar"');
+    const focus = html.indexOf('data-testid="enter-focus-mode"');
+    const cards = html.indexOf('data-testid="toggle-cards-topbar"');
+    expect(search).toBeGreaterThan(-1);
+    expect(focus).toBeGreaterThan(search);
+    expect(cards).toBeGreaterThan(focus);
+    expect(html).toContain(`aria-label="${FOCUS_MODE_ENTER_BUTTON}"`);
+    expect(editorSrc).toMatch(/data-testid="enter-focus-mode"/);
+    expect(editorSrc).toMatch(/className="focus-enter-button"[\s\S]*?onClick=\{enterFocusMode\}/);
+    // 鍵盤狀態沿用既有 is-keyboard，不另做偵測
+    expect(editorSrc).toMatch(/keyboardOpen \? 'editor is-keyboard' : 'editor'/);
+  });
+
+  it('WO-81：打字中（.is-keyboard）顯示頁首專注鈕，熱區 44×44，只留圖示', () => {
+    const shown = rule('html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button');
+    expect(shown).toMatch(/display:\s*inline-flex;/);
+    expect(shown).toMatch(/width:\s*44px;/);
+    expect(shown).toMatch(/min-width:\s*44px;/);
+    expect(shown).toMatch(/height:\s*44px;/);
+    expect(shown).toMatch(/min-height:\s*44px;/);
+    expect(shown).not.toMatch(/pointer-events:\s*none/);
+    expect(shown).not.toMatch(/visibility:\s*hidden/);
+    expect(rule('html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button .focus-enter-label'))
+      .toMatch(/display:\s*none;/);
+  });
+
+  it('WO-81：鍵盤收起時頁首專注鈕維持預設隱藏，拇指區三顆仍在且專注模式為第三顆', () => {
+    // 顯示規則只掛在 .is-keyboard 之下；沒有 .is-keyboard 的直拿規則不會顯示頁首專注鈕
+    expect(css).not.toMatch(/html\[data-layout="phone-portrait"\]\s+\.focus-enter-button\s*\{/);
+    expect(rule('.focus-enter-button')).toMatch(/display:\s*none;/);
+    expect(rule('.editor.is-keyboard .thumb-bar')).toMatch(/display:\s*none\s*!important;/);
+    const html = renderWriteScreenWithLayout('phone-portrait');
+    const thumb = html.slice(html.indexOf('data-testid="thumb-bar"'));
+    const order = ['thumb-tree-button', 'thumb-cards-button', 'thumb-focus-button'].map((id) => thumb.indexOf(id));
+    expect(order.every((v, i) => v > 0 && (i === 0 || v > order[i - 1]!))).toBe(true);
+  });
+
+  it('WO-81：進入專注模式後頁首整個收起，不被新增規則重新顯示；其他版面入口不變', () => {
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\s+\.editor \.topbar,[\s\S]*?display:\s*none\s*!important/);
+    expect(css).toMatch(/html\[data-layout="medium"\]\s+\.focus-enter-button\s*\{[\s\S]*?display:\s*inline-flex;/);
+    expect(css).toMatch(/html\[data-layout="wide"\]\s+\.focus-enter-button\s*\{[\s\S]*?display:\s*inline-flex;/);
+    expect(css).toMatch(/html\[data-layout="phone-landscape"\]\s+\.landscape-focus-trigger\s*\{[\s\S]*?display:\s*grid;/);
+    // 新規則只限直拿 + 鍵盤開著
+    const hits = css.match(/^[^\n{]*\.is-keyboard \.focus-enter-button[^\n{]*/gm) ?? [];
+    expect(hits.every((h) => h.includes('html[data-layout="phone-portrait"]'))).toBe(true);
   });
 });
