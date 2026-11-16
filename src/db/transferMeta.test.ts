@@ -119,6 +119,8 @@ describe('WO-100 附加資料表格式', () => {
         revision: 1,
         exportCount: null,
         importEvents: { 'imp-a': EVENT_A },
+        // WO-103：讀出也帶匯出事件；只寫匯入時是空的。
+        exportEvents: {},
       });
     });
   });
@@ -127,7 +129,7 @@ describe('WO-100 附加資料表格式', () => {
     const withEvent = await openAndSave(await richDesktopBytes(), { 'imp-a': EVENT_A });
     const emptied = await mutate(withEvent, (sql) => sql.exec(`DELETE FROM ${TRANSFER_EVENTS_TABLE}`));
     await withDb(emptied, (sql) => {
-      expect(readTransferData(sql)).toEqual({ kind: 'ok', revision: 1, exportCount: null, importEvents: {} });
+      expect(readTransferData(sql)).toEqual({ kind: 'ok', revision: 1, exportCount: null, importEvents: {}, exportEvents: {} });
       expect(() => assertTransferDataWritable(sql)).not.toThrow();
     });
   });
@@ -206,7 +208,7 @@ describe('WO-100 附加資料錯誤：不可讀成 0 後覆寫', () => {
       ).toThrow(TransferDataError);
       const after = readFileProject(sql);
       expect(after.tree[0]!.children![0]!.content).toBe('假正文第一章：霧裡的燈一閃一閃。');
-      expect(after.transfer).toEqual({ kind: 'ok', revision: 1, exportCount: null, importEvents: { 'imp-a': EVENT_A } });
+      expect(after.transfer).toEqual({ kind: 'ok', revision: 1, exportCount: null, importEvents: { 'imp-a': EVENT_A }, exportEvents: {} });
     });
   });
 
@@ -296,7 +298,7 @@ describe('WO-100 電腦版結構模型驗證（不是真實 Python 版測試）'
 
     // 清本機（這裡本來就沒有本機紀錄），只用新程式重開那份檔
     const reopened = await readBookBytes('舊程式存回.db', oldProgramSaved, 'file-reopen');
-    expect(reopened.transfer).toEqual({ kind: 'ok', revision: 1, exportCount: null, importEvents: { 'imp-a': EVENT_A } });
+    expect(reopened.transfer).toEqual({ kind: 'ok', revision: 1, exportCount: null, importEvents: { 'imp-a': EVENT_A }, exportEvents: {} });
     expect(reopened.tree[0]!.children!.map((node) => node.content)).toEqual([
       '假正文第一章：霧裡的燈一閃一閃。',
       '舊程式改過的假正文',
