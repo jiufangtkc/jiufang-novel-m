@@ -2,8 +2,6 @@ import { Link, useParams } from 'react-router-dom';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { CalendarIcon, ClockIcon, FlameIcon, PenIcon } from '../components/Icons';
 import {
-  FEATURE_IN_PREPARATION,
-  PREPARING_BADGE,
   STATS_EXPORT_COUNT_LABEL,
   STATS_HEADING,
   STATS_IMPORT_COUNT_LABEL,
@@ -15,14 +13,14 @@ import { getTotalImportExportStats } from '../domain/importExportStats';
 import { formatInteger } from '../domain/formatNumber';
 import { useLayout } from '../layout';
 import { countImportEvents, countImportEventsOn } from '../state/importEvents';
-import { displayLogRows, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
+import { displayLogRows, projectExportEventsOf, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
 import { LogCardItem } from './LogsScreen';
 import './importExport.css';
 
 export function StatsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
-  const { stats, bookWords, state, actions } = useSample();
+  const { stats, bookWords, state } = useSample();
   const { isWide } = useLayout();
   if (!project) return <ManuscriptNotFound />;
   const total = bookWords(project.id);
@@ -30,10 +28,12 @@ export function StatsScreen() {
   // WO-99：匯入次數是這份稿子（目前開著的這份）的全書合計，不是整台裝置合計。
   // WO-100：全書與每日都取同一份事件集合（檔內事件 ∪ 本機可靠對應）。
   const importEvents = projectImportEventsOf(state, project.id);
+  // WO-103：匯出次數同樣是這份稿子的全書合計，全書與每日取同一份匯出事件集合。
+  const exportEvents = projectExportEventsOf(state, project.id);
   const totalImportExport =
     state.activeProjectId === project.id && stats.importExport
       ? stats.importExport
-      : getTotalImportExportStats(countImportEvents(importEvents));
+      : getTotalImportExportStats(countImportEvents(importEvents), {}, countImportEvents(exportEvents));
   const sortedLogs = displayLogRows(state, project.id);
 
   return (
@@ -131,7 +131,7 @@ export function StatsScreen() {
             </p>
           </article>
 
-          {/* WO-60 匯入與匯出（全書合計）。WO-99：匯入已開放；準備中只標在匯出那一列。 */}
+          {/* WO-60 匯入與匯出（全書合計）。WO-99：匯入開放；WO-103：匯出也開放，不再有準備中。 */}
           <article className="panel stat-import-export-panel" data-testid="stats-import-export">
             <div className="panel-head">
               <h2>{STATS_IMPORT_EXPORT_HEADING}</h2>
@@ -159,11 +159,7 @@ export function StatsScreen() {
                 {totalImportExport.importDisplay}
               </span>
             </div>
-            <div
-              className="stat-import-export-row is-preparing"
-              data-testid="stats-export-row"
-              onClick={() => actions.toast(FEATURE_IN_PREPARATION)}
-            >
+            <div className="stat-import-export-row" data-testid="stats-export-row">
               <span className="stat-import-export-label">
                 <span className="stat-import-export-icon" aria-hidden="true">
                   <svg
@@ -181,11 +177,8 @@ export function StatsScreen() {
                   </svg>
                 </span>
                 <span>{STATS_EXPORT_COUNT_LABEL}</span>
-                <span className="badge-preparing" data-testid="stats-preparing-badge">
-                  {PREPARING_BADGE}
-                </span>
               </span>
-              <span className="stat-import-export-value" data-testid="stats-export-count">
+              <span className="stat-import-export-value is-open" data-testid="stats-export-count">
                 {totalImportExport.exportDisplay}
               </span>
             </div>
@@ -207,7 +200,7 @@ export function StatsScreen() {
                   key={row.id}
                   row={row}
                   importCount={countImportEventsOn(importEvents, row.date)}
-                  onPreparingClick={() => actions.toast(FEATURE_IN_PREPARATION)}
+                  exportCount={countImportEventsOn(exportEvents, row.date)}
                 />
               ))}
             </ul>
