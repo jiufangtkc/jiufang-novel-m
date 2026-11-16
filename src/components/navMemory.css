@@ -2,11 +2,11 @@
 .nav-memory-notice {
   margin: 8px 12px;
   padding: 10px 12px;
-  border: 1px solid var(--border, #333);
-  border-left: 3px solid var(--accent, #c9a227);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
   border-radius: 8px;
-  background-color: var(--panel, #1e1e1e);
-  color: var(--text, #d4d4d4);
+  background-color: var(--panel);
+  color: var(--text);
   font-size: 0.9rem;
   line-height: 1.5;
 }

@@ -197,12 +197,15 @@ describe('章節目錄文案', () => {
     expect(copy.cardsSubcardsCountLabel(1)).toBe('子卡片\u30001 張');
     expect(copy.cardsSubcardsCountLabel(1000)).toBe('子卡片\u30001,000 張');
 
-    // 3. dailyProgressWordsLabel 未達標與達標前後綴、四位數千分位
-    expect(copy.dailyProgressWordsLabel(300, false)).toBe('今天寫了 300 字');
-    expect(copy.dailyProgressWordsLabel(300, true)).toBe('✦ 今天寫了 300 字，已達標');
-    expect(copy.dailyProgressWordsLabel(12345, false)).toBe('今天寫了 12,345 字');
-    expect(copy.dailyProgressWordsLabel(12345, true)).toBe('✦ 今天寫了 12,345 字，已達標');
-    expect(copy.dailyProgressWordsLabel(0, false)).toBe('今天寫了 0 字');
+    // 3. WO-101：朗讀第一段「今天寫了 N 字」與四位數千分位；達標改由畫面「　達標了」與朗讀尾句「已經達標」表示
+    expect(copy.dailyProgressWordsLabel(300)).toBe('今天寫了 300 字');
+    expect(copy.dailyProgressWordsLabel(12345)).toBe('今天寫了 12,345 字');
+    expect(copy.dailyProgressWordsLabel(0)).toBe('今天寫了 0 字');
+    expect(copy.dailyProgressDisplayLabel(300, 1000, false)).toBe('今天 300／1,000 字');
+    expect(copy.dailyProgressDisplayLabel(12345, 10000, true)).toBe('今天 12,345／10,000 字\u3000達標了');
+    expect(copy.dailyProgressAriaLabel(300, 1000, true)).toBe('今天寫了 300 字，每日目標 1,000 字，已經達標');
+    expect(copy.DAILY_PROGRESS_MET_TEXT).toBe('達標了');
+    expect(copy.DAILY_PROGRESS_MET_ARIA).toBe('已經達標');
 
     // 4. dailyProgressGoalLabel 每日目標與千分位
     expect(copy.dailyProgressGoalLabel(1000)).toBe('每日目標 1,000 字');
