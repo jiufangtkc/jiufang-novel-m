@@ -34,6 +34,7 @@ import { LogsScreen } from './LogsScreen';
 import { SettingsScreen, goalApplyPlan } from './SettingsScreen';
 import { StatsScreen } from './StatsScreen';
 import { appSpaceStatusLine } from './filesStatus';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const SIMPLIFIED = /[这个录导汇备开关写预败]/;
 
@@ -41,7 +42,7 @@ function renderAt(element: ReactElement, path: string, url: string, mode: Layout
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode },

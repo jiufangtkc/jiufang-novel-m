@@ -34,6 +34,7 @@ import {
 import { SampleProvider } from '../state/sampleStore';
 import { EditorPane } from './EditorPane';
 import { WriteScreen } from './WriteScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const sampleChapter: ChapterNode = {
   id: 'ch-sample-wo55',
@@ -62,7 +63,8 @@ function renderEditorWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      // WO-95：頁首字數斷言需要「今天 300 字」，明確放入舊版範例紀錄當測試資料。
+      { initialState: demoFixtureState(new Date(), { withDemoStats: true }) },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns, initialPanels: panels },
@@ -93,7 +95,7 @@ function renderWriteScreenWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns, initialPanels: panels },
@@ -283,28 +285,28 @@ describe('WO-55：元件結構恆定驗證（renderToStaticMarkup）', () => {
       createElement(
         LayoutProvider,
         { initialMode: 'phone-portrait' },
-        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
+        createElement(SampleProvider, { initialState: demoFixtureState() }, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
     const drawerLandscape = renderToStaticMarkup(
       createElement(
         LayoutProvider,
         { initialMode: 'phone-landscape' },
-        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
+        createElement(SampleProvider, { initialState: demoFixtureState() }, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
     const drawerMedium = renderToStaticMarkup(
       createElement(
         LayoutProvider,
         { initialMode: 'medium' },
-        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
+        createElement(SampleProvider, { initialState: demoFixtureState() }, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
     const drawerWide = renderToStaticMarkup(
       createElement(
         LayoutProvider,
         { initialMode: 'wide', initialWideColumns: 'both' },
-        createElement(SampleProvider, null, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
+        createElement(SampleProvider, { initialState: demoFixtureState() }, createElement(WritingCardsDrawer, { projectId: 'fog', onClose: () => {} })),
       ),
     );
 
