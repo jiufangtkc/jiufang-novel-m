@@ -111,13 +111,15 @@ const css = readFileSync(new URL('./BookSearchPanel.css', import.meta.url), 'utf
 const pos = (html: string, needle: string) => html.indexOf(needle);
 
 describe('WO-63：四種版面的搜尋入口', () => {
-  it('WO-63：手機直拿入口在寫作頁頁首右上（44×44 放大鏡），在看卡片左邊；專注鈕仍在拇指區第三顆', () => {
+  it('WO-63：手機直拿入口在寫作頁頁首右上（44×44 放大鏡），在看卡片左邊；專注鈕仍在拇指區第三顆（WO-81：打字中另顯示頁首既有入口）', () => {
     const html = renderWrite('phone-portrait');
     const search = pos(html, 'data-testid="search-open-topbar"');
     expect(search).toBeGreaterThan(pos(html, '<h1>'));
     expect(search).toBeLessThan(pos(html, 'data-testid="toggle-cards-topbar"'));
     expect(html).toContain(`aria-label="${BOOK_SEARCH_OPEN_ARIA}"`);
-    // 拇指區仍是 目錄、看卡片、專注模式 三顆，專注鈕沒有搬到頁首
+    // 拇指區仍是 目錄、看卡片、專注模式 三顆（收鍵盤後入口）；WO-81：打字中另顯示既有頁首入口，順序為放大鏡、專注模式、看卡片
+    expect(search).toBeLessThan(pos(html, 'data-testid="enter-focus-mode"'));
+    expect(pos(html, 'data-testid="enter-focus-mode"')).toBeLessThan(pos(html, 'data-testid="toggle-cards-topbar"'));
     const thumb = html.slice(pos(html, 'data-testid="thumb-bar"'));
     const order = ['thumb-tree-button', 'thumb-cards-button', 'thumb-focus-button'].map((id) => thumb.indexOf(id));
     expect(order.every((value, i) => value > 0 && (i === 0 || value > order[i - 1]!))).toBe(true);
