@@ -18,7 +18,7 @@ export interface StatsSummary {
   totalDurationSeconds: number;
   totalHoursLabel: string;
   activeDays: number;
-  /** WO-60 匯入匯出全書合計。WO-99：匯入為這份稿子的成功匯入次數，匯出仍「—」。 */
+  /** WO-60 匯入匯出全書合計。WO-99：匯入為這份稿子的成功匯入次數；WO-103：匯出為成功匯出全文次數。 */
   importExport: TotalImportExportStats;
 }
 
@@ -52,6 +52,8 @@ export function summarizeStats(
   settledAchievements: number,
   /** WO-99：這份稿子的全書匯入次數（本機匯入事件）。 */
   importCount = 0,
+  /** WO-103：這份稿子的全書匯出全文次數。 */
+  exportCount = 0,
 ): StatsSummary {
   const open = schedule.open;
   const todayKey = open?.dayKey ?? '';
@@ -86,6 +88,6 @@ export function summarizeStats(
     totalDurationSeconds,
     totalHoursLabel: formatHours(totalDurationSeconds),
     activeDays: activeKeys.length,
-    importExport: getTotalImportExportStats(importCount),
+    importExport: getTotalImportExportStats(importCount, {}, exportCount),
   };
 }
