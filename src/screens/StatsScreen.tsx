@@ -1,8 +1,8 @@
 import { Link, useParams } from 'react-router-dom';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { CalendarIcon, ClockIcon, FlameIcon, PenIcon } from '../components/Icons';
 import {
   FEATURE_IN_PREPARATION,
-  MANUSCRIPT_NOT_FOUND,
   PREPARING_BADGE,
   STATS_EXPORT_COUNT_LABEL,
   STATS_HEADING,
@@ -23,7 +23,7 @@ export function StatsScreen() {
   const project = useProject(projectId);
   const { stats, bookWords, state, actions } = useSample();
   const { isWide } = useLayout();
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
   const total = bookWords(project.id);
   const bookRatio = project.bookGoal > 0 ? Math.min(100, (total / project.bookGoal) * 100) : 0;
   const totalImportExport = stats.importExport ?? getTotalImportExportStats(state.logs);

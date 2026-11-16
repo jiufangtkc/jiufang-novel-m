@@ -1,7 +1,8 @@
 import { useState } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, MANUSCRIPT_NOT_FOUND, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
 import { HALF_WIDTH_SETTING_TITLE, halfWidthSettingAria } from '../copy/halfWidthCopy';
@@ -38,7 +39,7 @@ export function SettingsScreen() {
   const [book, setBook] = useState(String(project?.bookGoal ?? 100000));
   const [error, setError] = useState('');
   const [halfWidthOn, setHalfWidthOn] = useHalfWidthReminder();
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
 
   return (
     <div className="page" data-testid="settings-screen">

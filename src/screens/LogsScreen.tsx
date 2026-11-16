@@ -1,6 +1,7 @@
 import { useNavigate, useParams } from 'react-router-dom';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { BackIcon } from '../components/Icons';
-import { FEATURE_IN_PREPARATION, MANUSCRIPT_NOT_FOUND, PREPARING_BADGE, VISUAL_WRITING_RECORD } from '../copy/userFacing';
+import { FEATURE_IN_PREPARATION, PREPARING_BADGE, VISUAL_WRITING_RECORD } from '../copy/userFacing';
 import { formatCalendarDate } from '../domain/formatCalendarDate';
 import { getDayImportExportStats } from '../domain/importExportStats';
 import { formatDuration, type WritingLogRow } from '../domain/writingLog';
@@ -47,7 +48,7 @@ export function LogsScreen() {
   const project = useProject(projectId);
   const { state, actions } = useSample();
   const navigate = useNavigate();
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
   const rows = [...state.logs].sort((a, b) => b.date.localeCompare(a.date));
 
   return (
