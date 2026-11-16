@@ -25,6 +25,7 @@ import {
   linkImportEventsToBytes,
   manuscriptBytesOn,
   manuscriptSnapshotParts,
+  projectExportEventsOf,
   projectImportEventsOf,
   persistDeviceSaveRecord,
   reduce,
@@ -125,7 +126,14 @@ async function openDb(state: SampleState, bytes: Uint8Array, key: string): Promi
 }
 
 function totalImportDisplay(state: SampleState) {
-  return summarizeStats(state.schedule, state.logs, 0, countImportEvents(projectImportEventsOf(state, state.activeProjectId))).importExport;
+  // WO-103：匯出次數也用真實的匯出事件集合（與 App 相同算法）；匯入不會產生匯出事件。
+  return summarizeStats(
+    state.schedule,
+    state.logs,
+    0,
+    countImportEvents(projectImportEventsOf(state, state.activeProjectId)),
+    countImportEvents(projectExportEventsOf(state, state.activeProjectId)),
+  ).importExport;
 }
 
 describe('WO-99 匯入文字檔開成新稿子', () => {
@@ -343,13 +351,13 @@ describe('WO-99 匯入次數（九方 15:39 補充）', () => {
     vi.useRealTimers();
   });
 
-  it('WO-99：成功一次 +1，記在新稿子的當日；統計頁與當日紀錄卡一致，匯出仍「—」', async () => {
+  it('WO-99：成功一次 +1，記在新稿子的當日；統計頁與當日紀錄卡一致，匯出為 0（WO-103 起開放）', async () => {
     const { state, outcome } = await importText(createState(NOW), '一次.txt', utf8('第一章\n內容'));
     const id = importedId(outcome);
     const opened = reduce(state, { type: 'focus-project', id });
     expect(importCountOf(opened.importEvents, id)).toBe(1);
     expect(importCountOn(opened.importEvents, id, TODAY)).toBe(1);
-    expect(totalImportDisplay(opened)).toMatchObject({ importCount: 1, importDisplay: '1', exportCount: null, exportDisplay: '—' });
+    expect(totalImportDisplay(opened)).toMatchObject({ importCount: 1, importDisplay: '1', exportCount: 0, exportDisplay: '0' });
     // 當日紀錄卡有一列，次數一致
     expect(opened.logs.map((log) => log.date)).toEqual([TODAY]);
 
@@ -367,10 +375,11 @@ describe('WO-99 匯入次數（九方 15:39 補充）', () => {
       );
     const stats = render(createElement(StatsScreen), '/p/:projectId/stats', `/p/${id}/stats`);
     expect(stats).toMatch(/data-testid="stats-import-count">1</);
-    expect(stats).toMatch(/data-testid="stats-export-count">—</);
+    expect(stats).toMatch(/data-testid="stats-export-count">0</);
     const logs = render(createElement(LogsScreen), '/p/:projectId/logs', `/p/${id}/logs`);
     expect(logs).toContain('匯入\u30001 次');
-    expect(logs).toContain('匯出\u3000— 次');
+    expect(logs).toContain('匯出\u30000 次');
+    expect(logs).not.toContain('匯出\u3000— 次');
     const wide = render(createElement(StatsScreen), '/p/:projectId/stats', `/p/${id}/stats`, 'wide');
     expect(wide).toContain('匯入\u30001 次');
   });
@@ -387,7 +396,7 @@ describe('WO-99 匯入次數（九方 15:39 補充）', () => {
     expect(Object.keys(readImportEvents(store).events)).toHaveLength(2);
     expect(importCountOf(state.importEvents, 'fog')).toBe(0);
     const fog = reduce(state, { type: 'focus-project', id: 'fog' });
-    expect(totalImportDisplay(fog)).toMatchObject({ importCount: 0, importDisplay: '0', exportDisplay: '—' });
+    expect(totalImportDisplay(fog)).toMatchObject({ importCount: 0, importDisplay: '0', exportDisplay: '0' });
   });
 
   it('WO-99：失敗、取消、busy 都不加次數', async () => {
@@ -445,7 +454,7 @@ describe('WO-99 匯入次數（九方 15:39 補充）', () => {
     ]);
     expect(reopened.logs.map((log) => log.date)).toContain(TODAY);
     reopened = reduce(reopened, { type: 'focus-project', id: 'file-a' });
-    expect(totalImportDisplay(reopened)).toMatchObject({ importDisplay: '1', exportDisplay: '—' });
+    expect(totalImportDisplay(reopened)).toMatchObject({ importDisplay: '1', exportDisplay: '0' });
 
     // 同一份檔再開一次，也還是 1（不累加）
     const again = await openDb(reopened, saved.bytes, 'file-b');
