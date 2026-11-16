@@ -30,7 +30,7 @@ export function SettingsScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
   const { state, actions } = useSample();
-  const { isAtLeastMedium, mode, pointer, deviceKind, setInputMode, bodyFontScale, setBodyFontScale } = useLayout();
+  const { isAtLeastMedium, mode, pointer, setInputMode, bodyFontScale, setBodyFontScale } = useLayout();
   const wide = isAtLeastMedium;
   const rename = useBookRename(project);
   const [editing, setEditing] = useState(false);
@@ -94,7 +94,6 @@ export function SettingsScreen() {
         </label>
         <AppearanceSettings
           pointer={pointer}
-          deviceKind={deviceKind}
           bodyFontScale={bodyFontScale}
           layoutMode={mode}
           onChange={setInputMode}

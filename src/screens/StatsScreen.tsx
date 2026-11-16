@@ -225,12 +225,12 @@ function Ring({ ratio }: { ratio: number }) {
   return (
     <div className="ring">
       <svg width="104" height="104" viewBox="0 0 104 104" aria-hidden="true">
-        <circle cx="52" cy="52" r={radius} stroke="#3C3C3C" strokeWidth="8" fill="none" />
+        <circle className="ring-track" cx="52" cy="52" r={radius} strokeWidth="8" fill="none" />
         <circle
           cx="52"
           cy="52"
           r={radius}
-          stroke="#61AFEF"
+          className="ring-value"
           strokeWidth="8"
           fill="none"
           strokeLinecap="round"

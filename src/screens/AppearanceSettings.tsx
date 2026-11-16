@@ -1,4 +1,4 @@
-import { useRef, type KeyboardEvent } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import {
   APPEARANCE_ROW_ORDER,
   APPEARANCE_SECTION,
@@ -7,14 +7,21 @@ import {
   BODY_FONT_INCREASE,
   BODY_FONT_INCREASE_ARIA,
   BODY_FONT_PREVIEW,
+  BODY_FONT_SCALE_DESCRIPTION,
   BODY_FONT_SCALE_TITLE,
-  bodyFontScaleDescription,
   inputModeCaption,
-  inputModeDescription,
+  INPUT_MODE_DESCRIPTION,
   inputModeGroupAria,
   inputModeName,
   inputModeOptionAria,
   INPUT_MODE_TITLE,
+  THEME_CAPTIONS,
+  THEME_CHANGED_ANNOUNCE,
+  THEME_DESCRIPTION,
+  THEME_GROUP_ARIA,
+  THEME_NAMES,
+  THEME_OPTION_ARIA,
+  THEME_TITLE,
 } from '../copy/appearanceCopy';
 import {
   bodyFontScaleAfterArrow,
@@ -25,8 +32,97 @@ import {
   stepBodyFontScale,
   type BodyFontScale,
 } from '../layout/bodyFontScale';
-import { inputModeAfterArrow, type DeviceKind } from '../layout/inputMode';
+import {
+  setDeviceTheme,
+  THEME_IDS,
+  themeAfterArrow,
+  useDeviceTheme,
+  type ThemeId,
+} from '../layout/deviceTheme';
+import { inputModeAfterArrow } from '../layout/inputMode';
 import type { LayoutMode, PointerMode } from '../layout/layoutMode';
+
+/** 小色塊：外框是四周的顏色，中間小方塊是正文欄的顏色。純裝飾，朗讀跳過。 */
+function ThemeSwatch({ theme }: { theme: ThemeId }) {
+  return (
+    <span className="theme-swatch" data-theme={theme} aria-hidden="true">
+      <span />
+    </span>
+  );
+}
+
+/**
+ * 主題（WO-101）。選了立刻換色並記在這台裝置；不寫進稿子。
+ * 選取狀態由 radio 語意提供；方向鍵在三套之間移動。
+ */
+function ThemeRow() {
+  const theme = useDeviceTheme();
+  const [announce, setAnnounce] = useState('');
+  const refs = useRef<Partial<Record<ThemeId, HTMLButtonElement | null>>>({});
+
+  function choose(next: ThemeId) {
+    refs.current[next]?.focus();
+    if (next === theme) return;
+    setDeviceTheme(next);
+    setAnnounce(THEME_CHANGED_ANNOUNCE[next]);
+  }
+
+  function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const next = themeAfterArrow(theme, event.key);
+    if (!next) return;
+    event.preventDefault();
+    choose(next);
+  }
+
+  return (
+    <div className="theme-setting" data-testid="theme-setting">
+      <p className="theme-title" aria-hidden="true">
+        {THEME_TITLE}
+      </p>
+      <p className="hint" data-testid="theme-hint">
+        {THEME_DESCRIPTION}
+      </p>
+      <div
+        className="theme-options"
+        role="radiogroup"
+        aria-label={THEME_GROUP_ARIA}
+        data-testid="theme-options"
+        onKeyDown={onKeyDown}
+      >
+        {THEME_IDS.map((id) => {
+          const selected = id === theme;
+          return (
+            <button
+              key={id}
+              ref={(node) => {
+                refs.current[id] = node;
+              }}
+              type="button"
+              role="radio"
+              className="theme-option"
+              data-testid={`theme-option-${id}`}
+              data-theme-option={id}
+              aria-checked={selected}
+              aria-label={THEME_OPTION_ARIA[id]}
+              tabIndex={selected ? 0 : -1}
+              onClick={() => choose(id)}
+            >
+              <span className="theme-radio" aria-hidden="true" />
+              <ThemeSwatch theme={id} />
+              <span className="theme-option-text">
+                <strong>{THEME_NAMES[id]}</strong>
+                <small>{THEME_CAPTIONS[id]}</small>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <span className="sr-only" role="status" aria-live="polite" data-testid="theme-announce">
+        {announce}
+      </span>
+    </div>
+  );
+}
 
 function DensityMark({ mode }: { mode: PointerMode }) {
   const count = mode === 'touch' ? 3 : 5;
@@ -71,12 +167,10 @@ function InputModeOption({
 
 function BodyFontScaleRow({
   scale,
-  deviceKind,
   layoutMode,
   onScale,
 }: {
   scale: BodyFontScale;
-  deviceKind: DeviceKind;
   layoutMode: LayoutMode;
   onScale: (scale: BodyFontScale) => void;
 }) {
@@ -148,7 +242,7 @@ function BodyFontScaleRow({
         </div>
       </div>
       <p className="hint" data-testid="body-font-hint">
-        {bodyFontScaleDescription(deviceKind)}
+        {BODY_FONT_SCALE_DESCRIPTION}
       </p>
       <p
         className="body-font-preview"
@@ -164,14 +258,12 @@ function BodyFontScaleRow({
 
 export function AppearanceSettings({
   pointer,
-  deviceKind,
   bodyFontScale,
   layoutMode,
   onChange,
   onBodyFontScale,
 }: {
   pointer: PointerMode;
-  deviceKind: DeviceKind;
   bodyFontScale: BodyFontScale;
   layoutMode: LayoutMode;
   onChange: (mode: PointerMode) => void;
@@ -199,13 +291,13 @@ export function AppearanceSettings({
         {APPEARANCE_SECTION}
       </h2>
       {APPEARANCE_ROW_ORDER.map((row) => {
+        if (row === 'theme') return <ThemeRow key={row} />;
         if (row === 'body-font-scale') {
           const scale = isBodyFontScale(bodyFontScale) ? bodyFontScale : 100;
           return (
             <BodyFontScaleRow
               key={row}
               scale={scale}
-              deviceKind={deviceKind}
               layoutMode={layoutMode}
               onScale={onBodyFontScale}
             />
@@ -242,7 +334,7 @@ export function AppearanceSettings({
               />
             </div>
             <p id="input-mode-hint" className="hint">
-              {inputModeDescription(deviceKind)}
+              {INPUT_MODE_DESCRIPTION}
             </p>
           </div>
         );
