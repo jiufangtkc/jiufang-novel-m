@@ -42,10 +42,19 @@ import {
 import { CardEditor, type CardEditorSavePayload } from './CardEditor';
 import './writingCardEdit.css';
 import { readWritingCardsData } from './writingCardsData';
+import { DEFAULT_WRITING_CARD_CATEGORY } from '../domain/writingCards';
+import { CARD_DELETED_NOTICE, CARD_DRAFT_KEPT_NOTICE } from '../copy/navMemoryCopy';
+import { DEFAULT_CARD_COLOR, formatCardColorForSave } from '../domain/cardColors';
 import {
-  getStoredWritingCardsView,
-  saveStoredWritingCardsView,
-} from '../domain/writingCards';
+  clearCardDraft,
+  emptyCardsPlace,
+  getCardDraft,
+  readCardsPlace,
+  resolveRememberedCard,
+  saveCardDraft,
+} from '../state/navMemory';
+import { useCardsPlaceMemory } from '../state/useCardsPlaceMemory';
+import './navMemory.css';
 
 export interface WritingCardsDrawerProps {
   projectId: string;
@@ -55,8 +64,14 @@ export interface WritingCardsDrawerProps {
   onClose: () => void;
   /** WO-64：卡片存好後的提示（手機直拿面板收起後仍要看得到，由外層顯示） */
   onSaved?: (message: string) => void;
-  /** WO-64：「⋯」的動作；有給才出現「⋯」，按了會先存卡片再離開寫作頁 */
+  /** WO-64：「⋯」的動作；有給才出現「⋯」。WO-65 起離開前只暫存，不正式存卡片 */
   onOpenInDataset?: () => void;
+  /**
+   * WO-65：面板打開時，若記住的卡片還有沒按「完成」的暫存，是否直接回到編輯中。
+   * 使用者自己打開或重新打開面板時為 true；從資料集回寫作頁、面板原本就開著時為 false，
+   * 讓游標與鍵盤先回正文（卡片顯示「還沒按完成」的提示，按「編輯」接著改）。
+   */
+  resumeEditing?: boolean;
 }
 
 /**
@@ -77,6 +92,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   onClose,
   onSaved,
   onOpenInDataset,
+  resumeEditing = true,
 }) => {
   const { state: sampleState, actions } = useSample();
   const { mode: layoutMode } = useLayout();
@@ -92,37 +108,44 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
     projectId,
     project,
   );
-  const sessionStorage = typeof window !== 'undefined' ? window.sessionStorage : null;
-  const stored = getStoredWritingCardsView(projectId, sessionStorage);
+  // WO-65：與資料集共用同一份每書記憶（本機 localStorage）；外層有指定初始畫面時照指定（測試用）
+  const fromProps = initialCategoryId !== undefined || initialCardId !== undefined;
+  const [remembered] = useState(() => (fromProps ? null : readCardsPlace(projectId)));
 
   const [state, dispatch] = useReducer(cardsViewReducer, {
-    selectedCategoryId:
-      initialCategoryId !== undefined ? initialCategoryId : stored.categoryId,
-    selectedCardId:
-      initialCardId !== undefined ? initialCardId : stored.cardId,
-    collapsedIds: new Set(initialCollapsedIds ?? []),
+    selectedCategoryId: fromProps
+      ? (initialCategoryId ?? null)
+      : remembered
+        ? remembered.categoryId
+        : DEFAULT_WRITING_CARD_CATEGORY,
+    selectedCardId: fromProps ? (initialCardId ?? null) : (remembered?.cardId ?? null),
+    collapsedIds: new Set(fromProps ? (initialCollapsedIds ?? []) : (remembered?.collapsedIds ?? [])),
   });
 
   const { selectedCategoryId, selectedCardId, collapsedIds } = state;
+  const placeMemory = useCardsPlaceMemory(
+    projectId,
+    { categoryId: selectedCategoryId, cardId: selectedCardId, collapsedIds },
+    !fromProps,
+  );
+  const [cardDeletedNotice, setCardDeletedNotice] = useState(false);
 
-  // 切換分類或卡片時記錄進 storage，換稿件不沿用
   const handleSelectCategory = (categoryId: string) => {
-    saveStoredWritingCardsView(projectId, { categoryId, cardId: null }, sessionStorage);
+    setCardDeletedNotice(false);
     dispatch({ type: 'SELECT_CATEGORY', categoryId });
   };
 
   const handleSelectCard = (cardId: string) => {
-    saveStoredWritingCardsView(projectId, { categoryId: selectedCategoryId, cardId }, sessionStorage);
+    setCardDeletedNotice(false);
     dispatch({ type: 'SELECT_CARD', cardId });
   };
 
   const handleBackToCards = () => {
-    saveStoredWritingCardsView(projectId, { categoryId: selectedCategoryId, cardId: null }, sessionStorage);
     dispatch({ type: 'BACK_TO_CARDS' });
   };
 
   const handleBackToCategories = () => {
-    saveStoredWritingCardsView(projectId, { categoryId: null, cardId: null }, sessionStorage);
+    setCardDeletedNotice(false);
     dispatch({ type: 'BACK_TO_CATEGORIES' });
   };
 
@@ -145,29 +168,48 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
 
-  // 存卡片只走既有的 actions.updateCard（與資料集同一個動作）
+  // 只有按「完成」才經既有的 actions.updateCard 正式寫回（與資料集同一個動作），寫回後清掉暫存
   const commitCard = (cardId: string, patch: CardEditorSavePayload) => {
     actions.updateCard(projectIdRef.current, cardId, patch);
+    if (!fromProps) clearCardDraft(projectIdRef.current, cardId);
     const message = savedCardToast(patch.title);
     setSavedNotice(message);
     onSavedRef.current?.(message);
   };
-  const commitRef = useRef(commitCard);
-  commitRef.current = commitCard;
 
-  // 登記「先存卡片再結束編輯」的出口：點正文、往下滑、點背景、關閉、切走都走這裡
+  // WO-65：記住的卡片已被刪除：停在原分類清單並提示；不把暫存套到別張卡片
+  const checkedRemembered = useRef(fromProps);
+  useEffect(() => {
+    if (checkedRemembered.current) return;
+    checkedRemembered.current = true;
+    const resolved = resolveRememberedCard(
+      { ...(remembered ?? emptyCardsPlace()), categoryId: selectedCategoryId, cardId: selectedCardId },
+      new Set(bookCards.map((c) => c.id)),
+    );
+    if (resolved.cardDeleted) {
+      setCardDeletedNotice(true);
+      dispatch({ type: 'BACK_TO_CARDS' });
+      return;
+    }
+    // 自己打開面板時，記住的卡片若還在編輯中（有暫存）就直接回到編輯畫面
+    if (resumeEditing && selectedCardId && getCardDraft(projectId, selectedCardId)) startCardEdit();
+    // 只在面板剛打開時判斷一次
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // WO-65：點正文、往下滑、點背景、收起、切走、面板被拿掉都走這裡：只暫存並結束編輯，不正式存卡片
   useEffect(() => {
     registerCardEditFlush((kind) => {
       const card = currentCardRef.current;
       const draft = draftRef.current?.();
-      if (card && draft) commitRef.current(card.id, draft);
+      if (card && draft && !fromProps) saveCardDraft(projectIdRef.current, card.id, draft);
       endCardEdit(kind);
     });
     return () => {
-      // 面板被拿掉時若還在編輯，先存再結束，不讓草稿掉掉
-      flushCardEdit('close');
+      flushCardEdit('leave');
       registerCardEditFlush(null);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 編輯中面板高度跟著鍵盤上方的可視高度（手機直拿全高、橫拿與中等縮到鍵盤上方）
@@ -239,6 +281,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
     );
 
     const placeLabel = edit.placeLabel;
+    const pendingDraft = fromProps ? null : getCardDraft(projectId, currentCard.id);
     return (
       <>
         <div
@@ -303,17 +346,37 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
             </div>
           )}
 
+          {!editing && pendingDraft && (
+            <p className="nav-memory-notice" role="status" data-testid="card-draft-kept-notice">
+              {CARD_DRAFT_KEPT_NOTICE}
+            </p>
+          )}
+
           <div
             className="writing-cards-scroll card-detail-pane writing-card-editor-wrap"
             data-testid={editing ? undefined : 'card-preview-content'}
+            key={`preview-${currentCard.id}`}
+            {...placeMemory.bind('preview')}
           >
             <CardEditor
-              key={currentCard.id}
+              key={`${currentCard.id}:${editing ? 'edit' : 'preview'}`}
               card={currentCard}
               mode={editing ? 'edit' : 'preview'}
+              initialDraft={pendingDraft}
+              onDraftChange={
+                fromProps ? undefined : (next) => saveCardDraft(projectId, currentCard.id, next)
+              }
               onModeChange={(next) => {
                 if (next === 'edit') {
                   setSavedNotice(undefined);
+                  if (!fromProps && !pendingDraft) {
+                    // 一進編輯就記下「編輯中」，沒改字就切走，回來也仍是編輯畫面
+                    saveCardDraft(projectId, currentCard.id, {
+                      title: currentCard.title,
+                      content: currentCard.content,
+                      color: formatCardColorForSave(currentCard.color || DEFAULT_CARD_COLOR),
+                    });
+                  }
                   startCardEdit();
                 } else {
                   endCardEdit('cancel');
@@ -333,7 +396,11 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
                 endCardEdit('done');
                 if (destination === 'text') onClose();
               }}
-              onCancel={() => endCardEdit('cancel')}
+              onCancel={() => {
+                // 「取消」是明確放棄這次修改，連同暫存一起清掉
+                if (!fromProps) clearCardDraft(projectId, currentCard.id);
+                endCardEdit('cancel');
+              }}
             />
           </div>
 
@@ -429,7 +496,18 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
             </div>
           )}
 
-          <div className="writing-cards-scroll">
+          {(cardDeletedNotice ||
+            Boolean(remembered?.cardId && selectedCardId === remembered.cardId && !currentCard)) && (
+            <p className="nav-memory-notice" role="status" data-testid="card-deleted-notice">
+              {CARD_DELETED_NOTICE}
+            </p>
+          )}
+
+          <div
+            className="writing-cards-scroll"
+            key={`list-${currentCategory.id}`}
+            {...placeMemory.bind('list')}
+          >
             {rows.length === 0 && (
               <p className="empty-note" data-testid="category-cards-empty">
                 {CARDS_EMPTY_IN_CATEGORY_HINT}
@@ -531,7 +609,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
           </div>
         )}
 
-        <div className="writing-cards-scroll">
+        <div className="writing-cards-scroll" key="category" {...placeMemory.bind('category')}>
           {bookCards.length === 0 && (
             <p className="empty-note" data-testid="writing-cards-empty">
               {WRITING_CARDS_EMPTY_BOOK_HINT}

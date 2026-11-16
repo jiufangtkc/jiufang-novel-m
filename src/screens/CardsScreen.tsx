@@ -81,6 +81,19 @@ import { useLayout } from '../layout';
 import { isBuiltinSampleBook } from '../domain/builtinSampleBook';
 import { getProjectCards, getProjectCategorySettings, useProject, useSample } from '../state/sampleStore';
 import { loadTreePlace } from './treeScroll';
+import { CARD_DELETED_NOTICE } from '../copy/navMemoryCopy';
+import { DEFAULT_CARD_COLOR, formatCardColorForSave } from '../domain/cardColors';
+import {
+  clearCardDraft,
+  emptyCardsPlace,
+  getCardDraft,
+  readCardsPlace,
+  resolveRememberedCard,
+  saveCardDraft,
+  writeReturnPath,
+} from '../state/navMemory';
+import { useCardsPlaceMemory } from '../state/useCardsPlaceMemory';
+import '../components/navMemory.css';
 
 function findFirstContentNode(nodes: readonly ChapterNode[]): ChapterNode | null {
   for (const node of nodes) {
@@ -110,7 +123,21 @@ export interface CardsScreenProps {
   initialIsOrganizingCategories?: boolean;
 }
 
+/**
+ * WO-65：每本書各記各的。換書時整個重新掛載，直接讀那本書自己的記憶，
+ * 不會先顯示上一本書的分類或卡片再改掉。
+ */
 export function CardsScreen(props: CardsScreenProps = {}) {
+  const { projectId = '' } = useParams();
+  return <CardsScreenBody key={projectId} {...props} />;
+}
+
+function CardsScreenBody(props: CardsScreenProps) {
+  // WO-65：測試或外層有指定初始畫面時照指定；否則讀這本書記住的位置（與寫作頁看卡片共用）
+  const fromProps =
+    props.initialCategoryId !== undefined ||
+    props.initialCardId !== undefined ||
+    props.initialEditorMode !== undefined;
   const {
     initialCategoryId = null,
     initialCardId = null,
@@ -130,8 +157,14 @@ export function CardsScreen(props: CardsScreenProps = {}) {
   const project = useProject(projectId);
   const { state: sampleState, actions } = useSample();
   const { mode: layoutMode, pointer: pointerMode } = useLayout();
+  const [remembered] = useState(() => (fromProps ? null : readCardsPlace(projectId)));
+  // 有還沒按「完成」的暫存就是編輯中
+  const hasDraft = (cardId: string | null) => Boolean(cardId && !fromProps && getCardDraft(projectId, cardId));
 
-  const [editorMode, setEditorMode] = useState<'preview' | 'edit'>(initialEditorMode);
+  const [editorMode, setEditorMode] = useState<'preview' | 'edit'>(() =>
+    fromProps ? initialEditorMode : hasDraft(remembered?.cardId ?? null) ? 'edit' : 'preview',
+  );
+  const [cardDeletedNotice, setCardDeletedNotice] = useState(false);
   const [pickingColor, setPickingColor] = useState(initialPickingColor);
   const [savedNotice, setSavedNotice] = useState<string | undefined>(undefined);
 
@@ -171,14 +204,30 @@ export function CardsScreen(props: CardsScreenProps = {}) {
     return null;
   });
 
-  const [state, dispatch] = useReducer(cardsViewReducer, {
-    selectedCategoryId: initialCategoryId,
-    selectedCardId: initialCardId,
-    collapsedIds: new Set(initialCollapsedIds ?? []),
-  });
+  const [state, dispatch] = useReducer(
+    cardsViewReducer,
+    fromProps || !remembered
+      ? {
+          selectedCategoryId: initialCategoryId,
+          selectedCardId: initialCardId,
+          collapsedIds: new Set(initialCollapsedIds ?? []),
+        }
+      : {
+          selectedCategoryId: remembered.categoryId,
+          selectedCardId: remembered.cardId,
+          collapsedIds: new Set(remembered.collapsedIds),
+        },
+  );
 
   const { selectedCategoryId, selectedCardId, collapsedIds } = state;
   const prevProjectIdRef = useRef(projectId);
+  const placeMemory = useCardsPlaceMemory(
+    projectId,
+    { categoryId: selectedCategoryId, cardId: selectedCardId, collapsedIds },
+    !fromProps,
+  );
+  const checkedRemembered = useRef(fromProps);
+  const cardIdsRef = useRef<readonly string[]>([]);
 
   // 訂閱 IndexedDB 歸檔庫之最近刪除紀錄
   useEffect(() => {
@@ -226,6 +275,22 @@ export function CardsScreen(props: CardsScreenProps = {}) {
     }
   }, [projectId]);
 
+  // WO-65：記住的那張卡片已被刪除：停在原分類清單（保留清單位置），提示可到最近刪除找回。
+  // 不把那張卡片的暫存套到別張卡片，也不自動復活它。
+  useEffect(() => {
+    if (checkedRemembered.current || !project) return;
+    checkedRemembered.current = true;
+    const resolved = resolveRememberedCard(
+      { ...(remembered ?? emptyCardsPlace()), categoryId: selectedCategoryId, cardId: selectedCardId },
+      new Set(cardIdsRef.current),
+    );
+    if (resolved.cardDeleted) {
+      setCardDeletedNotice(true);
+      setEditorMode('preview');
+      dispatch({ type: 'BACK_TO_CARDS' });
+    }
+  });
+
   if (!project) {
     return (
       <div className="page" data-testid="cards-screen">
@@ -252,6 +317,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
         })()
       : (project.cards ?? (projectId ? getProjectCards(sampleState, projectId) : []));
   const cards = rawProjectCards.filter((c) => !deletedIds.has(c.id));
+  cardIdsRef.current = cards.map((c) => c.id);
 
   const categorySettings = (() => {
     if (project?.origin === 'file' && !project.categoryOrderRaw && !project.categoriesMetaRaw) {
@@ -307,7 +373,9 @@ export function CardsScreen(props: CardsScreenProps = {}) {
   };
 
   const handleSelectCard = (cardId: string) => {
-    setEditorMode('preview');
+    // WO-65：這張卡片有還沒按「完成」的暫存，就直接回到編輯中
+    setEditorMode(hasDraft(cardId) ? 'edit' : 'preview');
+    setCardDeletedNotice(false);
     setPickingColor(false);
     setSavedNotice(undefined);
     setShowCardMenu(false);
@@ -318,6 +386,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
 
   const handleSelectCategory = (categoryId: string) => {
     setEditorMode('preview');
+    setCardDeletedNotice(false);
     setPickingColor(false);
     setSavedNotice(undefined);
     setShowCardMenu(false);
@@ -326,6 +395,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
     dispatch({ type: 'SELECT_CATEGORY', categoryId });
   };
 
+  // WO-65：「返回」只離開編輯畫面，打到一半的字已隨打隨存在這台裝置，不當作放棄
   const handleBackToCards = () => {
     setEditorMode('preview');
     setPickingColor(false);
@@ -336,6 +406,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
 
   const handleBackToCategories = () => {
     setEditorMode('preview');
+    setCardDeletedNotice(false);
     setPickingColor(false);
     setSavedNotice(undefined);
     setShowCardMenu(false);
@@ -479,19 +550,37 @@ export function CardsScreen(props: CardsScreenProps = {}) {
     </button>
   );
 
+  // 記住的卡片已不在（剛打開、還沒切回清單前也一樣顯示提示）
+  const rememberedCardGone = Boolean(
+    remembered?.cardId && selectedCardId === remembered.cardId && !cards.some((c) => c.id === selectedCardId),
+  );
+  const deletedNotice = cardDeletedNotice || rememberedCardGone ? (
+    <p className="nav-memory-notice" role="status" data-testid="card-deleted-notice">
+      {CARD_DELETED_NOTICE}
+    </p>
+  ) : null;
+
   const renderCategoryCardsPane = (
     rows: readonly VisibleCardRow[],
     selectedId: string | null,
   ) => {
     if (rows.length === 0) {
       return (
-        <div className="cards-empty-category-pane" data-testid="category-cards-empty">
-          <p className="empty-note">{CARDS_EMPTY_IN_CATEGORY_HINT}</p>
-          {renderAddCardButton('add-card-btn-empty')}
-        </div>
+        <>
+          {deletedNotice}
+          <div className="cards-empty-category-pane" data-testid="category-cards-empty">
+            <p className="empty-note">{CARDS_EMPTY_IN_CATEGORY_HINT}</p>
+            {renderAddCardButton('add-card-btn-empty')}
+          </div>
+        </>
       );
     }
-    return renderCardList(rows, selectedId);
+    return (
+      <>
+        {deletedNotice}
+        {renderCardList(rows, selectedId)}
+      </>
+    );
   };
 
   // 刪除確認卡片資訊與子卡片（只在目前稿子的 cards 裡找）
@@ -758,14 +847,27 @@ export function CardsScreen(props: CardsScreenProps = {}) {
       .filter((c) => c.parent_id === card.id)
       .sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
+    const draft = fromProps ? null : getCardDraft(projectId, card.id);
     return (
       <CardEditor
-        key={card.id}
+        key={`${card.id}:${editorMode}`}
         card={card}
         initialMode={initialEditorMode}
         initialPickingColor={pickingColor}
         mode={editorMode}
+        initialDraft={draft}
+        onDraftChange={
+          fromProps ? undefined : (next) => saveCardDraft(projectId, card.id, next)
+        }
         onModeChange={(nextMode) => {
+          if (nextMode === 'edit' && !fromProps && !draft) {
+            // 一進編輯就記下「編輯中」，沒改字就切走，回來也仍是編輯畫面
+            saveCardDraft(projectId, card.id, {
+              title: card.title,
+              content: card.content,
+              color: formatCardColorForSave(card.color || DEFAULT_CARD_COLOR),
+            });
+          }
           setEditorMode(nextMode);
           if (nextMode === 'preview') {
             setPickingColor(false);
@@ -779,8 +881,10 @@ export function CardsScreen(props: CardsScreenProps = {}) {
         onDelete={() => setConfirmDeleteCardId(card.id)}
         onSave={(patch) => {
           if (projectId) {
+            // 按「完成」才正式寫回這本書的這張卡片，寫回後清掉暫存
             actions.updateCard(projectId, card.id, patch);
             setSavedNotice(savedCardToast(patch.title));
+            if (!fromProps) clearCardDraft(projectId, card.id);
           }
         }}
         onDone={() => {
@@ -788,6 +892,8 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           setPickingColor(false);
         }}
         onCancel={() => {
+          // 「取消」是明確放棄這次修改，連同暫存一起清掉
+          if (!fromProps) clearCardDraft(projectId, card.id);
           setEditorMode('preview');
           setPickingColor(false);
         }}
@@ -975,7 +1081,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
-              <div className="scroll-pane">{renderCategoryList(selectedCategoryId)}</div>
+              <div className="scroll-pane" key="category" {...placeMemory.bind('category')}>{renderCategoryList(selectedCategoryId)}</div>
             </>
           )}
         </section>
@@ -1004,7 +1110,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   </>
                 )}
               </header>
-              <div className="scroll-pane">
+              <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>
                 {currentCategory ? (
                   renderCategoryCardsPane(listCards, selectedCardId)
                 ) : (
@@ -1022,7 +1128,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           <header className="topbar">
             <h2>{CARDS_COLUMN_CONTENT}</h2>
           </header>
-          <div className="scroll-pane card-detail-pane">
+          <div className="scroll-pane card-detail-pane" key={`preview-${selectedCardId ?? ''}`} {...placeMemory.bind('preview')}>
             {!showDeletedCards && currentCard ? (
               renderCardDetail(currentCard)
             ) : (
@@ -1081,7 +1187,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
-              <div className="scroll-pane">{renderCategoryList(selectedCategoryId)}</div>
+              <div className="scroll-pane" key="category" {...placeMemory.bind('category')}>{renderCategoryList(selectedCategoryId)}</div>
             </>
           )}
         </section>
@@ -1110,7 +1216,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                 </button>
                 <h2>{currentCategory?.name ?? CARDS_HEADING}</h2>
               </header>
-              <div className="scroll-pane card-detail-pane">{renderCardDetail(currentCard)}</div>
+              <div className="scroll-pane card-detail-pane" key={`preview-${selectedCardId ?? ''}`} {...placeMemory.bind('preview')}>{renderCardDetail(currentCard)}</div>
             </>
           ) : currentCategory ? (
             <>
@@ -1121,7 +1227,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                 </span>
                 {renderAddCardButton()}
               </header>
-              <div className="scroll-pane">
+              <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>
                 {renderCategoryCardsPane(listCards, selectedCardId)}
               </div>
             </>
@@ -1153,7 +1259,8 @@ export function CardsScreen(props: CardsScreenProps = {}) {
       : [];
 
     const handleCloseDrawer = () => {
-      navigate(projectId ? `/p/${projectId}/write` : '/');
+      // WO-65：收起資料集抽屜就是回寫作，回到記住的那一章與位置
+      navigate(projectId ? writeReturnPath(projectId, project.nodes) : '/');
     };
 
     return (
@@ -1222,7 +1329,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
-              <div className="scroll-pane card-detail-pane">{renderCardDetail(currentCard)}</div>
+              <div className="scroll-pane card-detail-pane" key={`preview-${selectedCardId ?? ''}`} {...placeMemory.bind('preview')}>{renderCardDetail(currentCard)}</div>
             </>
           ) : currentCategory ? (
             <>
@@ -1256,7 +1363,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
-              <div className="scroll-pane">
+              <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>
                 {renderCategoryCardsPane(listCards, selectedCardId)}
               </div>
             </>
@@ -1280,7 +1387,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
-              <div className="scroll-pane">{renderCategoryList(selectedCategoryId)}</div>
+              <div className="scroll-pane" key="category" {...placeMemory.bind('category')}>{renderCategoryList(selectedCategoryId)}</div>
             </>
           )}
         </aside>
@@ -1387,7 +1494,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           </div>
         )}
 
-        <div className="scroll-pane card-detail-pane">{renderCardDetail(currentCard)}</div>
+        <div className="scroll-pane card-detail-pane" key={`preview-${selectedCardId ?? ''}`} {...placeMemory.bind('preview')}>{renderCardDetail(currentCard)}</div>
 
         {renderCardActionSheet()}
         {renderDeleteConfirmDialog()}
@@ -1422,7 +1529,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
           </div>
         )}
 
-        <div className="scroll-pane">{renderCategoryCardsPane(rows, selectedCardId)}</div>
+        <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>{renderCategoryCardsPane(rows, selectedCardId)}</div>
 
         {renderCardActionSheet()}
         {renderDeleteConfirmDialog()}
@@ -1444,7 +1551,7 @@ export function CardsScreen(props: CardsScreenProps = {}) {
         </div>
       )}
 
-      <div className="scroll-pane">{renderCategoryList(selectedCategoryId)}</div>
+      <div className="scroll-pane" key="category" {...placeMemory.bind('category')}>{renderCategoryList(selectedCategoryId)}</div>
 
       {renderCardActionSheet()}
       {renderDeleteConfirmDialog()}
