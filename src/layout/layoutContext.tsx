@@ -48,6 +48,7 @@ import {
 } from './sidePanels';
 import {
   fitWidePanels,
+  needsPanelOverlay,
   loadWidePanels,
   saveWidePanels,
   wideChars,
@@ -72,6 +73,13 @@ export interface LayoutContextValue {
   openPanel: (side: SidePanelName) => void;
   closePanel: (side: SidePanelName) => void;
   togglePanel: (side: SidePanelName) => void;
+  /**
+   * 寬版放不下容量（正文會少於 36 字）時，使用者明確要開的側欄改以「浮在正文上」的方式暫時顯示，
+   * 正文欄寬不變；沒有這種情況為 null（WO-94）。
+   */
+  panelOverlay: SidePanelName | null;
+  /** 寫作頁告知目前有沒有正文（尚未選章為 false）。 */
+  setHasBody: (hasBody: boolean) => void;
   enterFocusMode: () => void;
   exitFocusMode: () => void;
   toggleFocusMode: () => void;
@@ -270,6 +278,9 @@ export function LayoutProvider({
   });
   // 兩側都放不下時，先保留哪一邊（最後手動打開的那邊；預設左目錄）
   const [widePrefer, setWidePrefer] = useState<SidePanelName>('left');
+  const [peek, setPeek] = useState<SidePanelName | null>(null);
+  const [hasBody, setHasBodyState] = useState(true);
+  const setHasBody = useCallback((value: boolean) => setHasBodyState(value), []);
   const [viewportWidth, setViewportWidth] = useState<number | null>(() =>
     initialViewportWidth !== undefined
       ? initialViewportWidth
@@ -304,8 +315,10 @@ export function LayoutProvider({
       viewportWidth,
       scalePercent: layoutState.bodyFontScale,
       oneSide: layoutState.wideColumns === 'one-side',
+      noBody: !hasBody,
     });
   }, [
+    hasBody,
     isWideCapacity,
     panelsState.focusMode,
     panelsState.sidePanels,
@@ -314,14 +327,19 @@ export function LayoutProvider({
     layoutState.bodyFontScale,
     layoutState.wideColumns,
   ]);
-  const shownLeft = fitted.left;
-  const shownRight = fitted.right;
+  // WO-94：使用者明確打開、但容量放不下的側欄，浮在正文上顯示；放寬到放得下就回到一般欄位
+  const panelOverlay: SidePanelName | null =
+    isWideCapacity && !panelsState.focusMode && peek && !fitted[peek] ? peek : null;
+  const shownLeft = fitted.left || panelOverlay === 'left';
+  const shownRight = fitted.right || panelOverlay === 'right';
   const shownPanels = useMemo<SidePanelsState>(
     () => ({ left: shownLeft, right: shownRight }),
     [shownLeft, shownRight],
   );
   const shownRef = useRef(shownPanels);
   shownRef.current = shownPanels;
+  const overlayRef = useRef<SidePanelName | null>(null);
+  overlayRef.current = panelOverlay;
   const bodyChars =
     layoutState.mode !== 'wide'
       ? null
@@ -338,6 +356,14 @@ export function LayoutProvider({
   useEffect(() => {
     applyPanelsHtmlAttributes(shownPanels, panelsState.focusMode);
   }, [shownPanels, panelsState.focusMode]);
+
+  // WO-94：浮在正文上的側欄，CSS 依此改成覆蓋而不是擠正文
+  useEffect(() => {
+    if (typeof document === 'undefined' || !document.documentElement) return;
+    const root = document.documentElement;
+    if (panelOverlay) root.dataset.panelOverlay = panelOverlay;
+    else delete root.dataset.panelOverlay;
+  }, [panelOverlay]);
 
   // WO-W36：電腦寬版正文一行字數（36／40）
   useEffect(() => {
@@ -445,6 +471,14 @@ export function LayoutProvider({
     (side: SidePanelName, kind: 'open' | 'close' | 'toggle') => {
       const cur = panelsRef.current;
       if (cur.focusMode && kind === 'close') return;
+      // 浮出的側欄只是暫時顯示：關它不動使用者的收合選擇
+      if (
+        overlayRef.current === side &&
+        (kind === 'close' || (kind === 'toggle' && shownRef.current[side]))
+      ) {
+        setPeek(null);
+        return;
+      }
       const base = cur.focusMode ? (cur.savedBeforeFocus ?? widePrefRef.current) : cur.sidePanels;
       const shown = cur.focusMode ? { left: false, right: false } : shownRef.current;
       const open = kind === 'open' ? true : kind === 'close' ? false : !shown[side];
@@ -452,6 +486,27 @@ export function LayoutProvider({
       widePrefRef.current = next;
       saveWidePanels(next);
       if (open) setWidePrefer(side);
+      if (open) {
+        // 打開後若容量仍放不下這一側，就改以浮在正文上的方式顯示，正文維持 36 字
+        const f = fitInputRef.current;
+        setPeek(
+          needsPanelOverlay(
+            {
+              wanted: next,
+              prefer: side,
+              viewportWidth: f.viewportWidth ?? Number.MAX_SAFE_INTEGER,
+              scalePercent: f.scalePercent,
+              oneSide: f.oneSide,
+              noBody: f.noBody,
+            },
+            side,
+          )
+            ? side
+            : null,
+        );
+      } else {
+        setPeek(null);
+      }
       setPanelsState({
         sidePanels: next,
         focusMode: false,
@@ -461,6 +516,8 @@ export function LayoutProvider({
     },
     [],
   );
+  const fitInputRef = useRef({ viewportWidth: viewportWidth as number | null, scalePercent: layoutState.bodyFontScale as number, oneSide: layoutState.wideColumns === 'one-side', noBody: !hasBody });
+  fitInputRef.current = { viewportWidth, scalePercent: layoutState.bodyFontScale, oneSide: layoutState.wideColumns === 'one-side', noBody: !hasBody };
   const usesWideRules = () => capacityEnabled && layoutRef.current.mode === 'wide';
 
   const openPanel = useCallback(
@@ -564,11 +621,13 @@ export function LayoutProvider({
       openPanel,
       closePanel,
       togglePanel,
+      panelOverlay,
+      setHasBody,
       enterFocusMode: enterFocus,
       exitFocusMode: exitFocus,
       toggleFocusMode: toggleFocus,
     };
-  }, [layoutState, shownPanels, panelsState.focusMode, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode, setBodyFontScale]);
+  }, [layoutState, shownPanels, panelOverlay, setHasBody, panelsState.focusMode, openPanel, closePanel, togglePanel, enterFocus, exitFocus, toggleFocus, setInputMode, setBodyFontScale]);
 
   return <LayoutContext.Provider value={value}>{children}</LayoutContext.Provider>;
 }
@@ -601,6 +660,8 @@ export function useLayout(): LayoutContextValue {
     openPanel: () => {},
     closePanel: () => {},
     togglePanel: () => {},
+    panelOverlay: null,
+    setHasBody: () => {},
     enterFocusMode: () => {},
     exitFocusMode: () => {},
     toggleFocusMode: () => {},

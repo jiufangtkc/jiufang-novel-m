@@ -83,6 +83,11 @@ export interface WideFitInput {
   scalePercent: number;
   /** one-side（1024–1279）一次只開一側 */
   oneSide: boolean;
+  /**
+   * 目前畫面沒有正文要保住 36 字（例如尚未選章）。此時使用者想開的左目錄照樣顯示，
+   * 不因容量被收起；選章後正文出現，就回到容量規則（WO-94）。
+   */
+  noBody?: boolean;
 }
 
 /**
@@ -91,6 +96,14 @@ export interface WideFitInput {
  * 單側也放不下就全收。
  */
 export function fitWidePanels(input: WideFitInput): SidePanelsState {
+  const result = fitWidePanelsByCapacity(input);
+  if (input.noBody && input.wanted.left && !result.left) {
+    return { left: true, right: result.right && !input.oneSide };
+  }
+  return result;
+}
+
+function fitWidePanelsByCapacity(input: WideFitInput): SidePanelsState {
   const { wanted, prefer, viewportWidth, scalePercent, oneSide } = input;
   const ok = (p: SidePanelsState) => fits(viewportWidth, p, WIDE_CHARS_BASE, scalePercent);
   if (wanted.left && wanted.right) {
@@ -154,4 +167,13 @@ export function saveWidePanels(
   } catch {
     return false;
   }
+}
+
+/**
+ * WO-94：使用者明確打開某一側後，若容量仍放不下這一側，就要改用「浮在正文上」顯示
+ * （正文欄寬不變、仍保住 36 字），不能讓按鈕按了沒反應。
+ */
+export function needsPanelOverlay(input: WideFitInput, side: SidePanelName): boolean {
+  const next: SidePanelsState = { ...input.wanted, [side]: true };
+  return !fitWidePanels({ ...input, wanted: next, prefer: side })[side];
 }
