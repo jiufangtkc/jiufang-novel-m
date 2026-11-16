@@ -316,15 +316,16 @@ describe('WO-56：寫作時看卡片依版面調整與讓位驗證', () => {
     expect(state.savedForOneSide).toBeNull();
   });
 
-  it('WO-64：看卡片面板不再有「只能看」標記（拿掉原 WO-56 的標籤斷言），分類層仍無新增、刪除或 disabled 按鈕', () => {
+  it('WO-64／WO-94：看卡片面板不再有「只能看」標記；分類清單層無新增；分類內（預設落點）才有新增，仍無刪除或 disabled 按鈕', () => {
     const wideHtml = renderWriteScreenWithLayout('wide', 'both', { right: true });
 
     // WO-64 定案：拿掉「只能看」標籤
     expect(wideHtml).not.toContain(CARDS_READONLY_BADGE);
 
-    // 看卡片面板本體絕無編輯、新增、刪除或 disabled 變灰按鈕
+    // 看卡片面板預設落在分類內：WO-94 起此層有「新增卡片」，但絕無編輯卡片、刪除卡片或 disabled 變灰按鈕
     const drawerHtml = wideHtml.slice(wideHtml.indexOf('data-testid="writing-cards-drawer"'));
-    expect(drawerHtml).not.toContain('新增卡片');
+    expect(drawerHtml).toContain('新增卡片');
+    expect(drawerHtml).not.toContain('category-list');
     expect(drawerHtml).not.toContain('編輯卡片');
     expect(drawerHtml).not.toContain('刪除卡片');
     expect(drawerHtml).not.toContain('disabled');
