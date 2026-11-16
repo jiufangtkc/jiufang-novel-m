@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BackIcon } from '../components/Icons';
-import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { useProject } from '../state/sampleStore';
 import './fontLicense.css';
 
@@ -38,7 +38,7 @@ export function FontLicenseScreen() {
     };
   }, []);
 
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
 
   return (
     <div className="page" data-testid="font-license-screen">

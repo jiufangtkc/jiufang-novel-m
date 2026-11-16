@@ -1,4 +1,5 @@
 import React, { useEffect, useReducer, useRef, useState } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { useNavigate, useParams } from 'react-router-dom';
 import { BackIcon, ChevronIcon, CloseIcon } from '../components/Icons';
 import { CardEditor } from '../components/CardEditor';
@@ -24,7 +25,6 @@ import {
   categoryRowAria,
   CLOSE_CARDS_ARIA,
   displayCardTitle,
-  MANUSCRIPT_NOT_FOUND,
   SAMPLE_CARDS_NOTICE,
   TREE_UNDO_HINT,
 } from '../copy/userFacing';
@@ -50,7 +50,7 @@ import {
   undoCountdownText,
   undoToastSpoken,
 } from '../copy/cardEditCopy';
-import { DEMO_PROJECTS, type ChapterNode, findNode } from '../data/demo';
+import { type ChapterNode, findNode } from '../data/demo';
 import {
   DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
   DEMO_CARDS,
@@ -294,7 +294,7 @@ function CardsScreenBody(props: CardsScreenProps) {
   if (!project) {
     return (
       <div className="page" data-testid="cards-screen">
-        <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>
+        <ManuscriptNotFound />
       </div>
     );
   }
@@ -302,12 +302,9 @@ function CardsScreenBody(props: CardsScreenProps) {
   const isDesktopFile = project.origin === 'file';
   // WO-75：範例卡片提示只在內建範例書出現，與是否從檔案開啟無關
   const isSampleNotice = isBuiltinSampleBook(project);
-  const isBuiltinDemoProject = DEMO_PROJECTS.some(
-    (demo) => demo.id === project.id || demo.id === projectId,
-  );
   const rawProjectCards = isDesktopFile
     ? (project.cards ?? (projectId ? getProjectCards(sampleState, projectId) : []))
-    : isBuiltinDemoProject
+    : isSampleNotice
       ? (() => {
           // 範例卡片只在內建範例書使用
           const base = project.cards && project.cards.length > 0 ? project.cards : DEMO_CARDS;

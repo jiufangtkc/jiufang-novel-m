@@ -28,6 +28,7 @@ import { SampleProvider } from '../state/sampleStore';
 import { EditorPane } from './EditorPane';
 import { Workspace } from './Workspace';
 import { WriteScreen } from './WriteScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const sampleChapter: ChapterNode = {
   id: 'ch-sample-wo62',
@@ -48,7 +49,7 @@ function renderEditorWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns, initialPanels: panels },
@@ -79,7 +80,7 @@ function renderWriteScreenWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns, initialPanels: panels },
@@ -110,7 +111,7 @@ function renderWorkspaceWithLayout(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns, initialPanels: panels },

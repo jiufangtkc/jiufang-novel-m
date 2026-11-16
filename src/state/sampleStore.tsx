@@ -69,15 +69,15 @@ import {
 } from '../domain/writingLog';
 import { summarizeStats, type StatsSummary } from '../domain/stats';
 import {
-  createDemoSchedule,
-  DEMO_PROJECTS,
-  demoLogs,
   findNode,
   updateNode,
   type ChapterNode,
   type DemoProject,
 } from '../data/demo';
 import { DEFAULT_PROJECT_CATEGORY_ORDER_RAW } from '../data/demoCards';
+import { isBuiltinSampleBook } from '../domain/builtinSampleBook';
+import { navMemoryKey, readNavMemory } from './navMemory';
+import { dropUntouchedSamples } from './sampleCleanup';
 import { bookArchive, type ArchiveClient } from '../db/chapterArchive';
 import {
   archiveCardDeletion,
@@ -233,10 +233,10 @@ function retitleFileExtra(state: SampleState, projectId: string, title: string):
   };
 }
 
-function savedProjects(): DemoProject[] | null {
-  if (typeof localStorage === 'undefined') return null;
+function savedProjects(store: KeyValueStore | null): DemoProject[] | null {
+  if (!store) return null;
   try {
-    return loadProjects(localStorage);
+    return loadProjects(store);
   } catch {
     return null;
   }
@@ -254,22 +254,72 @@ function deviceStore(): KeyValueStore | null {
 /**
  * WO-65（WO-53 之後改）：範例書每次初始化都深層複製一份，章節樹、卡片與欄位彼此不共用，
  * 改其中一份 store 不會動到範例常數、其他書或其他 store。
+ * WO-95：App 啟動不再放範例書；這裡只留給測試建立範例情境用。
  */
 export function cloneDemoProject(project: DemoProject): DemoProject {
   return structuredClone(project);
 }
 
+/** WO-95：沒有任何稿子時的寫作狀態。每日目標與一天結束時刻沿用原本的預設值，字數、結算、紀錄都從 0 開始。 */
+function blankSchedule(now: Date): GoalSchedule {
+  return withClock(createSchedule({ dayEndHour: 0, defaultGoal: 1000 }), now);
+}
+
+/** WO-95：讀位置記憶裡這份稿子有沒有尚未完成的卡片草稿；讀不到時當作有（保守留稿）。 */
+function hasPendingCardDrafts(store: KeyValueStore, projectId: string): boolean {
+  try {
+    // 先直接讀一次：本機儲存讀不到（丟錯）時無法確定，當作有草稿。
+    store.getItem(navMemoryKey(projectId));
+    return Object.keys(readNavMemory(projectId, store).drafts).length > 0;
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * WO-95：舊裝置上沒改過的內建範例書清掉並寫回本機；改過、有草稿或拿不準的留著。
+ * 沒有拿掉任何一份時不寫入，也不動草稿與位置記憶。
+ */
+function cleanUpSamples(
+  store: KeyValueStore | null,
+  projects: DemoProject[],
+  record: ReturnType<typeof loadDeviceSaveRecord>,
+): DemoProject[] {
+  if (!store || projects.length === 0) return projects;
+  let liveDraft: ReturnType<typeof loadLiveDraft> = null;
+  try {
+    liveDraft = loadLiveDraft(store);
+  } catch {
+    // 讀不到草稿時不清任何範例。
+    return projects;
+  }
+  const { kept, removedIds } = dropUntouchedSamples(projects, {
+    liveDraft,
+    hasCardDrafts: (id) => hasPendingCardDrafts(store, id),
+    record,
+  });
+  if (removedIds.length === 0) return projects;
+  try {
+    saveProjects(store, kept.filter((project) => project.origin !== 'file'));
+  } catch {
+    // 寫不進去時這次畫面仍不顯示，下次開啟會再判斷一次（結果相同）。
+  }
+  return kept;
+}
+
 export function createState(now: Date): SampleState {
-  const schedule = createDemoSchedule(now);
-  const projects = (savedProjects() ?? DEMO_PROJECTS.map(cloneDemoProject)).map((project) =>
+  const schedule = blankSchedule(now);
+  const store = deviceStore();
+  // WO-77：讀回這台裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
+  const record = loadDeviceSaveRecord(store, now);
+  // WO-95：沒有存過稿子就是空的，不再放範例書。
+  const loaded = (savedProjects(store) ?? []).map((project) =>
     normalizeLoadedProject({
       ...project,
       origin: project.origin ?? 'demo',
     }),
   );
-  const logs = alignToday(demoLogs(), schedule);
-  // WO-77：讀回這台裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
-  const record = loadDeviceSaveRecord(deviceStore(), now);
+  const projects = cleanUpSamples(store, loaded, record);
   return {
     projects,
     recentIds: projects.map((project) => project.id),
@@ -277,8 +327,8 @@ export function createState(now: Date): SampleState {
     demoSchedule: schedule,
     goalById: record.goalById,
     activeProjectId: null,
-    logs,
-    demoLogs: logs,
+    logs: [],
+    demoLogs: [],
     logsById: record.logsById,
     toast: null,
     fileExtras: {},
@@ -450,11 +500,12 @@ function syncFileLog(
   };
 }
 
-/** WO-69：內建範例書（【範例】霧港紀事等）共用範例寫作紀錄；其他稿子各有自己的紀錄。 */
-const SAMPLE_BOOK_IDS = new Set(DEMO_PROJECTS.map((project) => project.id));
-
+/**
+ * WO-69：內建範例書（【範例】霧港紀事等）共用範例寫作紀錄；其他稿子各有自己的紀錄。
+ * WO-95：只剩舊裝置上改過而留下的範例書會走這裡；共用紀錄從 0 開始，不再帶固定範例數字。
+ */
 function isSampleBook(project: DemoProject): boolean {
-  return project.origin !== 'file' && SAMPLE_BOOK_IDS.has(project.id);
+  return isBuiltinSampleBook(project);
 }
 
 /** WO-69：新稿子的空白寫作狀態。每日目標與一天結束時刻沿用目前設定，紀錄與達成次數從 0 開始。 */
@@ -463,7 +514,7 @@ function freshSchedule(state: SampleState, now: Date): GoalSchedule {
   return withClock(createSchedule({ dayEndHour: state.schedule.dayEndHour, defaultGoal: goal }), now);
 }
 
-/** WO-69：目前 state.schedule／state.logs 代表的是不是這份稿子。沒有開著的稿子時代表範例書。 */
+/** WO-69：目前 state.schedule／state.logs 代表的是不是這份稿子。沒有開著的稿子時代表範例書（WO-95：沒有範例書時就是空白狀態）。 */
 function isCurrentTracking(state: SampleState, project: DemoProject): boolean {
   return state.activeProjectId ? state.activeProjectId === project.id : isSampleBook(project);
 }
@@ -1397,8 +1448,15 @@ function applySaveOutcome(
   }
 }
 
-export function SampleProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(reduce, undefined, () => createState(new Date()));
+export function SampleProvider({
+  children,
+  initialState,
+}: {
+  children?: ReactNode;
+  /** WO-95：測試明確放入的起始狀態（例如範例書情境）；App 不傳，一律從本機儲存讀。 */
+  initialState?: SampleState;
+}) {
+  const [state, dispatch] = useReducer(reduce, undefined, () => initialState ?? createState(new Date()));
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -1473,7 +1531,7 @@ export function SampleProvider({ children }: { children: ReactNode }) {
         }
       })
       .catch(() => {
-        // 沒有手機儲存空間時，範例專案仍可寫。
+        // 沒有手機儲存空間時，其他稿子仍可寫。
       });
     return () => {
       cancelled = true;

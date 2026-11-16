@@ -9,6 +9,7 @@ import { readFileProject, treeWordCount, writeFileProject } from '../db/projectF
 import { createVersion14Shell } from '../db/schemaFixture';
 import { scheduleFromLogs } from '../db/library';
 import { createState, manuscriptSnapshotParts, reduce, type SampleState } from './sampleStore';
+import { demoFixtureState } from './testing/sampleFixture';
 
 /** 與 qa/存檔再開/run.mjs 相同的兩段正文：本章 28。 */
 const P1 = '港口起霧，燈塔還看得見。';
@@ -113,7 +114,7 @@ describe('WO-76 同一段文字，各路徑字數相同', () => {
   });
 
   it('WO-76：範例書暫存前後字數相同，刪章提示與章節舊版也用同一套', () => {
-    const state = createState(NOON);
+    const state = demoFixtureState(NOON);
     const fog = projectOf(state, 'fog');
     const first = fog.nodes.find((node) => node.type !== 'folder') ?? fog.nodes[0]!;
     const asFile = { ...fog, origin: 'file' as const };

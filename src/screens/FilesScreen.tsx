@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '../components/Icons';
 import {
@@ -11,7 +12,6 @@ import {
   IMPORT_TEXT_FILE_BUTTON,
   IMPORT_TEXT_FILE_HINT,
   lastEditDisplay,
-  MANUSCRIPT_NOT_FOUND,
   OPEN_DB_FAIL,
   OPEN_DB_HINT,
   PREPARING_BADGE,
@@ -40,7 +40,7 @@ export function FilesScreen() {
   const navigate = useNavigate();
   const openInputRef = useRef<HTMLInputElement>(null);
   const computer = useComputerLayout();
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
 
   const supportsDirectWriteback = canPickLocalFiles();
   const layout = filesPageLayout(supportsDirectWriteback);

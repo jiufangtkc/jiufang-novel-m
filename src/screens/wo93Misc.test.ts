@@ -12,6 +12,7 @@ import { StatsScreen } from './StatsScreen';
 import { Workspace } from './Workspace';
 import { WriteScreen } from './WriteScreen';
 import { treeAddedToast } from '../copy/userFacing';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 describe('WO-93 其餘小事包', () => {
   const workspaceSrc = () => readFileSync(new URL('./Workspace.tsx', import.meta.url), 'utf8');
@@ -41,7 +42,7 @@ describe('WO-93 其餘小事包', () => {
       renderToStaticMarkup(
         createElement(
           SampleProvider,
-          null,
+          { initialState: demoFixtureState() },
           createElement(
             LayoutProvider,
             { initialMode: 'phone-portrait' },

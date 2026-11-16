@@ -7,12 +7,13 @@ import { LayoutProvider, type LayoutMode } from '../layout';
 import { SampleProvider } from '../state/sampleStore';
 import { TREE_ADD_CHAPTER, TREE_ORGANIZE } from '../copy/userFacing';
 import { WriteScreen } from './WriteScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 function renderWrite(mode: LayoutMode): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: mode === 'wide' ? 'both' : null },

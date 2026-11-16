@@ -25,6 +25,7 @@ import {
   writeHalfWidthReminder,
 } from './halfWidthReminder';
 import { createState, manuscriptSnapshotParts, reduce, type SampleState } from './sampleStore';
+import { demoFixtureState } from './testing/sampleFixture';
 
 const NOON = new Date('2026-11-14T04:00:00Z');
 
@@ -94,7 +95,7 @@ describe('WO-76 乙段：「先不用」與本機開關', () => {
   });
 
   it('WO-76 乙段：開關不寫進稿子：另存內容裡沒有這把鍵', () => {
-    const state = createState(NOON);
+    const state = demoFixtureState(NOON);
     const parts = manuscriptSnapshotParts(state, projectOf(state, 'fog'));
     expect(JSON.stringify(parts)).not.toContain('half-width');
   });
@@ -138,7 +139,7 @@ describe('WO-76 乙段：改成全形與一次復原走既有 commit-text', () =
   });
 
   it('WO-76 乙段：只改這一章，同一本範例書的別章不動', () => {
-    const state = createState(NOON);
+    const state = demoFixtureState(NOON);
     type Node = SampleState['projects'][number]['nodes'][number];
     const flat = (nodes: Node[]): Node[] => nodes.flatMap((node) => [node, ...flat(node.children ?? [])]);
     const all = flat(projectOf(state, 'fog').nodes);

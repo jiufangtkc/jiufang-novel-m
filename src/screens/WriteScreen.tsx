@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { useNavigate, useParams } from 'react-router-dom';
 import { formatInteger } from '../domain/formatNumber';
 import { formatCalendarDateFromDate } from '../domain/formatCalendarDate';
@@ -42,7 +43,6 @@ import {
   CHAPTER_NOT_FOUND,
   CLOSE_CHAPTER_TREE_ARIA,
   OPEN_CHAPTER_TREE_ARIA,
-  MANUSCRIPT_NOT_FOUND,
   TREE_ADD_CHAPTER,
   TREE_ADD_CHAPTER_BELOW,
   TREE_ADD_SCENE,
@@ -373,7 +373,7 @@ export function WriteScreen() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
   const book = project;
 
   const picked = pickedId ? findNode(book.nodes, pickedId) : null;

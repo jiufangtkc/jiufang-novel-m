@@ -10,6 +10,7 @@ import { SampleProvider } from '../state/sampleStore';
 import { FontLicenseScreen } from './FontLicenseScreen';
 import { SettingsScreen } from './SettingsScreen';
 import { Workspace } from './Workspace';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const PROJECT_ID = 'fog';
 const LAYOUT_MODES: LayoutMode[] = ['phone-portrait', 'phone-landscape', 'medium', 'wide'];
@@ -23,7 +24,7 @@ function renderWorkspaceAt(path: string, mode: LayoutMode): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode },

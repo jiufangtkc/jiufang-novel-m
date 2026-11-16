@@ -26,7 +26,8 @@ export function readWritingCardsData(
   projectId: string,
   project: DemoProject | null,
 ): WritingCardsData {
-  const isSample = isBuiltinSampleBook(project) || isBuiltinSampleBook({ id: projectId });
+  // WO-95：只看真的存在的稿子；稿子不在（例如範例已清掉）時不補範例卡片。
+  const isSample = isBuiltinSampleBook(project);
   let cards: readonly FileCard[];
   if (project?.origin === 'file') {
     cards = project.cards ?? getProjectCards(state, projectId);

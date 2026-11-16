@@ -7,7 +7,6 @@ import * as cardArchive from '../domain/cardArchive';
 import { resolveVisibleCategories } from '../domain/cardCategories';
 import { emptyArchive, type BookArchive } from '../domain/chapterVersions';
 import {
-  createState,
   deleteProjectCardWithArchive,
   getProjectCards,
   getProjectCategorySettings,
@@ -16,6 +15,7 @@ import {
   type Action,
   type SampleState,
 } from './sampleStore';
+import { demoFixtureState } from './testing/sampleFixture';
 
 vi.mock('../domain/cardArchive', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../domain/cardArchive')>();
@@ -55,7 +55,7 @@ afterEach(() => {
 describe('WO-65：WO-53 之後改 2 項', () => {
   it('WO-65：恢復卡片的放回位置只在 reducer 計算一次，原位置、放到最後與歸檔結果與原行為相同', async () => {
     for (const atEnd of [false, true]) {
-      let state = createState(new Date('2026-11-15T12:00:00Z'));
+      let state = demoFixtureState(new Date('2026-11-15T12:00:00Z'));
       const archive = memoryArchive();
       const dispatch = (action: Action) => {
         state = reduce(state, action);
@@ -79,7 +79,7 @@ describe('WO-65：WO-53 之後改 2 項', () => {
   });
 
   it('WO-65：恢復前卡片清單已變時，reducer 依最新狀態重新計算，不用過時結果蓋掉期間修改', async () => {
-    let state = createState(new Date('2026-11-15T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-15T12:00:00Z'));
     const archive = memoryArchive();
     const record = await deleteProjectCardWithArchive(
       state,
@@ -112,8 +112,8 @@ describe('WO-65：WO-53 之後改 2 項', () => {
   it('WO-65：範例書初始化深層複製：兩次 store、不同書與範例常數互不影響', () => {
     const constantsBefore = JSON.stringify(DEMO_PROJECTS);
     const cardsBefore = JSON.stringify(DEMO_CARDS);
-    const first = createState(new Date());
-    const second = createState(new Date());
+    const first = demoFixtureState(new Date());
+    const second = demoFixtureState(new Date());
     const fogA = first.projects.find((p) => p.id === 'fog')!;
     const fogB = second.projects.find((p) => p.id === 'fog')!;
     const otherA = first.projects.find((p) => p.id === 'second')!;

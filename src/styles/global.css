@@ -792,6 +792,14 @@ html[data-layout="medium"] .workspace .scroll-pane.logs-page {
   color: var(--muted);
   text-align: center;
 }
+/* WO-95：找不到稿子提示裡的「回首頁」：沿用連結色加底線，點按範圍上下加大但不推動版面。 */
+.not-found-home-link {
+  display: inline-block;
+  padding: 12px 4px;
+  margin: -12px -4px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .editor-empty {
   flex: 1;
   display: flex;

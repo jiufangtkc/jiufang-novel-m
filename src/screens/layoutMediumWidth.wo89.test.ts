@@ -12,6 +12,7 @@ import {
 } from '../layout';
 import { SampleProvider } from '../state/sampleStore';
 import { WriteScreen } from './WriteScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const css = readFileSync(new URL('../styles/global.css', import.meta.url), 'utf8');
 
@@ -57,7 +58,7 @@ function render(mode: LayoutMode, panels: { left?: boolean; right?: boolean }): 
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: null, initialPanels: panels },

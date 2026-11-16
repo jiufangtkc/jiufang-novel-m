@@ -20,6 +20,7 @@ import {
   WritingCardsDrawer,
   type WritingCardsDrawerProps,
 } from '../components/WritingCardsDrawer';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const OWN_CARDS = [
   {
@@ -84,7 +85,7 @@ function renderEditorPane(projectId = 'fog', chapter = mockChapter): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         MemoryRouter,
         { initialEntries: [`/p/${projectId}/write/${chapter.id}`] },
@@ -103,7 +104,7 @@ function renderEditorPane(projectId = 'fog', chapter = mockChapter): string {
 
 function renderDrawer(props: WritingCardsDrawerProps): string {
   return renderToStaticMarkup(
-    createElement(SampleProvider, null, createElement(WritingCardsDrawer, props)),
+    createElement(SampleProvider, { initialState: demoFixtureState() }, createElement(WritingCardsDrawer, props)),
   );
 }
 

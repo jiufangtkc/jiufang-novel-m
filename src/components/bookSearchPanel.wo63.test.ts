@@ -29,7 +29,6 @@ import { findNode, type ChapterNode } from '../data/demo';
 import { findInBook } from '../domain/bookSearch';
 import { LayoutProvider, type LayoutMode, type WideColumns } from '../layout';
 import {
-  createState,
   getProjectCards,
   manuscriptSnapshotParts,
   reduce,
@@ -53,10 +52,11 @@ import {
   withLiveText,
   type BodyCommit,
 } from './BookSearchPanelModel';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 const NOON = new Date('2026-11-15T04:00:00Z');
 
-// 固定「今天」：reducer 內的 new Date() 要與 createState(NOON) 同一天，測試才不會因執行日期而失敗。
+// 固定「今天」：reducer 內的 new Date() 要與 demoFixtureState(NOON) 同一天，測試才不會因執行日期而失敗。
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOON);
@@ -89,7 +89,7 @@ function renderWrite(mode: LayoutMode, wideColumns: WideColumns | null = null, c
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode, initialWideColumns: wideColumns, initialPanels: mode === 'wide' ? { left: true } : {} },
@@ -172,7 +172,7 @@ describe('WO-63：四種版面的搜尋入口', () => {
 
 describe('WO-63：取代只改正文，卡片逐字不變', () => {
   it('WO-63：取代全部後正文符合預期，資料集卡片（含被搜尋的同字詞）全部內容逐字不變，存檔用的卡片也不變', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const cards0 = JSON.stringify(getProjectCards(state0, 'fog'));
     const saved0 = JSON.stringify(manuscriptSnapshotParts(state0, fog(state0)).cards);
     // 範例卡片確實含「燈塔」，不是拿空卡片當保護證據
@@ -193,7 +193,7 @@ describe('WO-63：取代只改正文，卡片逐字不變', () => {
   });
 
   it('WO-63：「這一章」只改這一章（含其下的幕），其他章與卡片不動', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const plan = planReplaceAll(fog(state0).nodes, Q, R, 'chapter', 'ch-2', 2)!;
     expect(plan.commits.map((commit) => commit.nodeId)).toEqual(['ch-2', 'sc-1', 'sc-2']);
     const state1 = commitAll(state0, plan.commits);
@@ -202,7 +202,7 @@ describe('WO-63：取代只改正文，卡片逐字不變', () => {
   });
 
   it('WO-63：取代走 commit-text，本章字數照既有算法更新（同字數不增減，多一字加一）', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const today0 = state0.schedule.open?.wordCount ?? 0;
     const same = commitAll(state0, planReplaceAll(fog(state0).nodes, Q, R, 'book', null, 1)!.commits);
     expect(same.schedule.open?.wordCount ?? 0).toBe(today0);
@@ -213,7 +213,7 @@ describe('WO-63：取代只改正文，卡片逐字不變', () => {
 
 describe('WO-63：復原上次取代', () => {
   it('WO-63：只還原該次正文，不還原先前的取代這處，也不碰卡片', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const cards0 = JSON.stringify(getProjectCards(state0, 'fog'));
     const one = planReplaceOne(fog(state0).nodes, { nodeId: 'ch-1', ordinal: 0 }, Q, R, 1)!;
     const state1 = commitAll(state0, one.commits);
@@ -238,7 +238,7 @@ describe('WO-63：復原上次取代', () => {
   });
 
   it('WO-63：復原紀錄只記受影響章節的正文，不含卡片或整本專案', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const plan = planReplaceAll(fog(state0).nodes, Q, R, 'chapter', 'ch-3', 1)!;
     expect(Object.keys(plan.record).sort()).toEqual(['chapters', 'entries', 'id', 'query', 'replacement', 'total']);
     expect(plan.record.entries.map((entry) => entry.nodeId)).toEqual(['ch-3']);
@@ -248,7 +248,7 @@ describe('WO-63：復原上次取代', () => {
 
 describe('WO-63：取代這處與結果分組', () => {
   it('WO-63：取代這處只改那一處、留下「已取代」標記，目前結果移到下一筆', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const nodes = fog(state0).nodes;
     const plan = planReplaceOne(nodes, { nodeId: 'ch-1', ordinal: 1 }, Q, R, 1)!;
     const state1 = commitAll(state0, plan.commits);
@@ -265,7 +265,7 @@ describe('WO-63：取代這處與結果分組', () => {
   });
 
   it('WO-63：這一章最後一處取代後，焦點移到下一章第一處', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const nodes = fog(state0).nodes;
     const plan = planReplaceOne(nodes, { nodeId: 'ch-1', ordinal: 3 }, Q, R, 1)!;
     const after = commitAll(state0, plan.commits);
@@ -275,7 +275,7 @@ describe('WO-63：取代這處與結果分組', () => {
   });
 
   it('WO-63：結果依章分組並標處數；正文框還沒寫回的字也算進去', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     const hits = searchBody(fog(state0).nodes, Q, 'book', null);
     const groups = groupHits(hits);
     expect(groups.map((group) => [group.title, group.hits.length])).toEqual([
@@ -293,7 +293,7 @@ describe('WO-63：取代這處與結果分組', () => {
   });
 
   it('WO-63：確認視窗舉例的卡片是含這個字的範例卡片', () => {
-    const state0 = createState(NOON);
+    const state0 = demoFixtureState(NOON);
     expect(exampleCardTitle(getProjectCards(state0, 'fog'), Q)).toBe('【範例】核心主線：燈塔熄滅之夜');
     expect(exampleCardTitle(getProjectCards(state0, 'fog'), '不存在的字')).toBeNull();
   });

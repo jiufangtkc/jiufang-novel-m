@@ -18,6 +18,7 @@ import type { DeviceKind } from '../layout/inputMode';
 import type { LayoutMode, PointerMode } from '../layout/layoutMode';
 import { SampleProvider } from '../state/sampleStore';
 import { SettingsScreen } from './SettingsScreen';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 function renderSettings(
   pointer: PointerMode,
@@ -28,7 +29,7 @@ function renderSettings(
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         {

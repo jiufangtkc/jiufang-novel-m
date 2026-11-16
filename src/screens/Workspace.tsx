@@ -1,6 +1,6 @@
 import { useEffect, useRef } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Outlet, useLocation, useParams } from 'react-router-dom';
-import { MANUSCRIPT_NOT_FOUND } from '../copy/userFacing';
 import { AppNav, showsLandscapeRail } from '../components/AppNav';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
@@ -31,7 +31,7 @@ export function Workspace() {
   if (!project) {
     return (
       <div className="page">
-        <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>
+        <ManuscriptNotFound />
       </div>
     );
   }

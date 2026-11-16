@@ -6,6 +6,13 @@ import { formatLastExportLabel } from '../domain/saveClock';
 
 export const MANUSCRIPT_NOT_FOUND = '找不到這份稿子。請回首頁重新開啟。';
 
+/**
+ * WO-95：同一句拆成三段，只把「回首頁」做成連結；三段接起來必須與 MANUSCRIPT_NOT_FOUND 一字不差，不是新用字。
+ */
+export const MANUSCRIPT_NOT_FOUND_BEFORE_LINK = '找不到這份稿子。請';
+export const MANUSCRIPT_NOT_FOUND_LINK = '回首頁';
+export const MANUSCRIPT_NOT_FOUND_AFTER_LINK = '重新開啟。';
+
 export const CHAPTER_NOT_FOUND = '找不到這一章。請從目錄重新選。';
 
 export const OPEN_DB_FAIL =

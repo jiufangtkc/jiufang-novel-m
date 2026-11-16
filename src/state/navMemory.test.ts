@@ -38,7 +38,6 @@ import {
   type NavMemoryStore,
 } from './navMemory';
 import {
-  createState,
   getProjectCards,
   manuscriptSnapshotParts,
   reduce,
@@ -54,6 +53,7 @@ import {
   resetCardEditSession,
   startCardEdit,
 } from './writingCardEditSession';
+import { demoFixtureState } from './testing/sampleFixture';
 
 /** 測試用的本機儲存替身（可模擬寫入失敗）。 */
 function memoryStorage(initial: Record<string, string> = {}) {
@@ -96,7 +96,7 @@ function renderCards(projectId: string, mode: LayoutMode): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: mode },
@@ -118,7 +118,7 @@ function renderDrawer(projectId: string, resumeEditing = true): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
-      null,
+      { initialState: demoFixtureState() },
       createElement(
         LayoutProvider,
         { initialMode: 'wide' },
@@ -147,7 +147,7 @@ afterEach(() => {
 function reopenApp(): SampleState {
   resetNavMemoryCache();
   resetCardEditSession();
-  return createState(new Date('2026-11-15T12:00:00Z'));
+  return demoFixtureState(new Date('2026-11-15T12:00:00Z'));
 }
 
 describe('WO-65：記憶的鍵名、版本與每本書分開', () => {
@@ -222,7 +222,7 @@ describe('WO-65：資料集 → 寫作 → 資料集', () => {
 
 describe('WO-65：寫作 → 資料集 → 寫作', () => {
   it('WO-65：同一篇、同一個字與選取、同一捲動，離開前鍵盤狀態也記得；重開 App 仍在', () => {
-    let state = createState(new Date('2026-11-15T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-15T12:00:00Z'));
     saveWritePlace(FOG, {
       chapterId: 'ch-2',
       chapterOpen: true,
@@ -261,7 +261,7 @@ describe('WO-65：寫作 → 資料集 → 寫作', () => {
   it('WO-65：離開時鍵盤收著就記成收著；離開時停在目錄就回目錄', () => {
     saveWritePlace(FOG, { chapterId: 'ch-1', chapterOpen: true, selectionStart: 3, selectionEnd: 3, scrollTop: 0, keyboard: false });
     expect(readWritePlace(FOG)?.keyboard).toBe(false);
-    const nodes = createState(new Date()).projects.find((p) => p.id === FOG)!.nodes;
+    const nodes = demoFixtureState(new Date()).projects.find((p) => p.id === FOG)!.nodes;
     markWriteChapterOpen(FOG, false);
     expect(writeReturnPath(FOG, nodes)).toBe('/p/fog/write');
   });
@@ -364,7 +364,7 @@ describe('WO-65：三種例外', () => {
       is_collapsed: 0,
       sort_order: sort,
     });
-    let state = createState(new Date());
+    let state = demoFixtureState(new Date());
     state = reduce(state, { type: 'add-project', id: book, title: '【範例】刪卡測試稿', shape: 'novel' });
     state = reduce(state, {
       type: 'set-cards',
@@ -396,7 +396,7 @@ describe('WO-65：三種例外', () => {
   });
 
   it('WO-65：記住的那一章被刪了：回目錄並停在仍存在的附近項目', () => {
-    const state = createState(new Date());
+    const state = demoFixtureState(new Date());
     const nodes = state.projects.find((p) => p.id === FOG)!.nodes;
     saveWritePlace(FOG, {
       chapterId: 'ch-3',
@@ -419,7 +419,7 @@ describe('WO-65：三種例外', () => {
   it('WO-65：換書讀那本書自己的記憶，不沿用前一本', () => {
     patchCardsPlace(FOG, selectionPatch(null, 'world', '30000000-0000-4000-8000-000000000001'));
     saveWritePlace(FOG, { chapterId: 'ch-5', chapterOpen: true, selectionStart: 1, selectionEnd: 1, scrollTop: 0, keyboard: false });
-    const secondNodes = createState(new Date()).projects.find((p) => p.id === SECOND)!.nodes;
+    const secondNodes = demoFixtureState(new Date()).projects.find((p) => p.id === SECOND)!.nodes;
     expect(writeReturnPath(SECOND, secondNodes)).toBe('/p/second/write');
     const html = renderCards(SECOND, 'phone-portrait');
     expect(html).toContain('data-testid="category-list"');
@@ -435,7 +435,7 @@ describe('WO-65：編輯中切走只暫存，按完成才寫回', () => {
     const db = await openDesktopSampleMemoryDb();
     try {
       const parsed = readFileProject(db.sql);
-      let state = createState(new Date('2026-11-15T10:00:00Z'));
+      let state = demoFixtureState(new Date('2026-11-15T10:00:00Z'));
       const dispatch = (action: Action) => {
         state = reduce(state, action);
       };
