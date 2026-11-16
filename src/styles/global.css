@@ -1841,6 +1841,40 @@ html[data-layout="wide"] .editor-empty.wide-hint {
   display: flex !important;
 }
 
+/* WO-94：容量放不下時，使用者明確打開的側欄浮在正文上，正文欄寬不變（仍保住 36 字） */
+html[data-layout="wide"] .write-layout {
+  position: relative;
+}
+
+html[data-layout="wide"][data-panel-overlay="left"] .write-layout .tree-pane.is-open {
+  display: flex !important;
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  box-shadow: 4px 0 16px rgba(0, 0, 0, 0.35);
+}
+
+html[data-layout="wide"][data-panel-overlay="right"] .write-layout .write-aside.is-open {
+  display: flex !important;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 20;
+  box-shadow: -4px 0 16px rgba(0, 0, 0, 0.35);
+}
+
+/* 目錄浮出時，頁首的「展開目錄」鈕仍要看得到，才能再按一次收起 */
+html[data-layout="wide"][data-panel-overlay="left"] .write-layout .topbar-tree-button {
+  display: grid !important;
+}
+
+html[data-layout="wide"] .wide-hint-open-tree {
+  margin-top: 12px;
+}
+
 /* 右側欄（320） */
 html[data-layout="wide"] .write-aside {
   display: flex;

@@ -171,3 +171,10 @@ html[data-layout="wide"] .write-aside.is-card-editing {
 html[data-layout="phone-landscape"] .writing-card-editor-wrap .card-preview-footer {
   display: none;
 }
+
+/* WO-94：分類內的「新增卡片」 */
+.writing-cards-add-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 0 8px;
+}

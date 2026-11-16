@@ -167,7 +167,7 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
     expect(layer3).toContain('鐘錶修復師的養女');
   });
 
-  it('WO-64：各層不再有「只能看」；只有卡片內容層有「編輯」，仍無新增、刪除、排序或 disabled 變灰按鈕', () => {
+  it('WO-64／WO-94：各層不再有「只能看」；只有卡片內容層有「編輯」；分類清單無新增、分類內（卡片清單層）才有「新增卡片」；仍無刪除、排序或 disabled 變灰按鈕', () => {
     // 檢查各層
     const layers = [
       renderDrawer({ projectId: 'fog', initialCategoryId: null, onClose: () => {} }),
@@ -180,7 +180,9 @@ describe('寫作時看卡片畫面驗收測試（WO-50）', () => {
       // 分類清單與卡片清單沒有編輯入口；卡片內容層（第 3 層）才有「編輯」
       if (index < 2) expect(html).not.toContain('編輯');
       else expect(html).toContain('編輯');
-      expect(html).not.toContain('新增');
+      // WO-94：分類清單層（0）無新增；分類內卡片清單層（1）可新增；卡片內容層（2）沒有新增
+      if (index === 1) expect(html).toContain('新增卡片');
+      else expect(html).not.toContain('新增');
       expect(html).not.toContain('刪除');
       expect(html).not.toContain('排序');
       expect(html).not.toContain('改色');

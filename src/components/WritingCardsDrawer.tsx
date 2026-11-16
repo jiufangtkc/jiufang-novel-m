@@ -22,7 +22,8 @@ import {
   countCardsInCategory,
   flattenVisibleCards,
 } from '../domain/cards';
-import { savedCardToast } from '../copy/cardEditCopy';
+import { ADD_CARD_BUTTON, savedCardToast } from '../copy/cardEditCopy';
+import { addCard } from '../domain/cardOps';
 import {
   WRITING_CARD_MORE_CLOSE,
   WRITING_CARD_MORE_TITLE,
@@ -77,7 +78,9 @@ export interface WritingCardsDrawerProps {
 /**
  * 寫作時看卡片面板（WO-50）
  * - 標題寫「資料集」
- * - WO-64：卡片內容層可按「編輯」（重用 CardEditor 與 actions.updateCard）；不出現新增、刪除、排序等管理按鈕
+ * - WO-64：卡片內容層可按「編輯」（重用 CardEditor 與 actions.updateCard）；不出現刪除、排序等管理按鈕
+ * - WO-94：進入某個分類後（卡片清單層）可按「新增卡片」，沿用資料集的 addCard，
+ *   新卡屬於目前分類，建立後直接在面板內進入編輯；分類清單層不出現新增（與 WO-73 一致）
  * - AI 對話紀錄分類完全隱藏
  * - 讀目前這份稿子的分類與卡片（與資料集同一份資料）；沒有卡片就顯示說明，不塞範例卡片（WO-74）
  * - 範例卡片提示只在內建範例書出現（WO-75）
@@ -148,6 +151,38 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
     setCardDeletedNotice(false);
     dispatch({ type: 'BACK_TO_CATEGORIES' });
   };
+
+  // WO-94：在目前分類新增一張頂層卡片，選取後直接進入編輯（沿用資料集的 addCard 與 setCards）
+  const handleAddCard = () => {
+    if (!selectedCategoryId) return;
+    const nextCards = addCard(bookCards, { category: selectedCategoryId });
+    const newCard = nextCards[nextCards.length - 1];
+    if (!newCard || nextCards.length === bookCards.length) return;
+    actions.setCards(projectId, nextCards);
+    setSavedNotice(undefined);
+    setCardDeletedNotice(false);
+    dispatch({ type: 'SELECT_CARD', cardId: newCard.id });
+    if (!fromProps) {
+      // 與按「編輯」相同：一進編輯就記下暫存，沒改字就切走，回來也仍是編輯畫面
+      saveCardDraft(projectId, newCard.id, {
+        title: newCard.title,
+        content: newCard.content,
+        color: formatCardColorForSave(newCard.color || DEFAULT_CARD_COLOR),
+      });
+    }
+    startCardEdit();
+  };
+
+  const renderAddCardButton = (testId: string) => (
+    <button
+      type="button"
+      className="cards-header-action-btn writing-cards-add-btn"
+      onClick={handleAddCard}
+      data-testid={testId}
+    >
+      {ADD_CARD_BUTTON}
+    </button>
+  );
 
   const toggleCollapse = (cardId: string) => {
     dispatch({ type: 'TOGGLE_COLLAPSE', cardId });
@@ -508,6 +543,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
             key={`list-${currentCategory.id}`}
             {...placeMemory.bind('list')}
           >
+            <div className="writing-cards-add-bar">{renderAddCardButton('writing-add-card-btn')}</div>
             {rows.length === 0 && (
               <p className="empty-note" data-testid="category-cards-empty">
                 {CARDS_EMPTY_IN_CATEGORY_HINT}
