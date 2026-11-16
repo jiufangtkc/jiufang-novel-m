@@ -49,11 +49,55 @@ function cleanIdLists(value: unknown, events: Record<string, ImportEvent>): Reco
   return out;
 }
 
+/**
+ * WO-103：匯出全文（Word／TXT）事件的本機紀錄。結構與匯入紀錄完全相同、但放在另一個鍵，
+ * 兩種事件各自計次，不混在同一份；角色同 WO-100（新稿存檔前的暫存與 .db 寫不進去時的可靠保留）。
+ */
+export const EXPORT_EVENTS_KEY = 'jiufang-novel-m.export-events.v1';
+
+/** WO-103：匯入與匯出共用的事件紀錄型別（名稱沿用 WO-99 的 ImportEventRecord）。 */
+export type TransferEventRecord = ImportEventRecord;
+
 /** 讀回本機紀錄。沒有或壞掉時回傳空紀錄（次數從 0 起算，不捏造）。 */
 export function readImportEvents(store: KeyValueStore | null): ImportEventRecord {
+  return readEventRecord(store, IMPORT_EVENTS_KEY);
+}
+
+/** WO-103：讀回匯出事件的本機紀錄。 */
+export function readExportEvents(store: KeyValueStore | null): TransferEventRecord {
+  return readEventRecord(store, EXPORT_EVENTS_KEY);
+}
+
+/** WO-103：寫入匯出事件的本機紀錄。寫不進去時照樣丟出錯誤。 */
+export function writeExportEvents(store: KeyValueStore, record: TransferEventRecord): void {
+  store.setItem(EXPORT_EVENTS_KEY, JSON.stringify(record));
+}
+
+/**
+ * WO-103：兩份紀錄以事件代號取聯集（同代號以 primary 為準）。
+ * 用在「本機曾寫不進去、只留在記憶體」的事件：下次成功寫入時一起補寫，不會因為重讀本機而消失。
+ */
+export function mergeEventRecords(primary: TransferEventRecord, other: TransferEventRecord): TransferEventRecord {
+  const events = { ...other.events, ...primary.events };
+  const mergeLists = (a: Record<string, string[]>, b: Record<string, string[]>) => {
+    const out: Record<string, string[]> = {};
+    for (const key of new Set([...Object.keys(a), ...Object.keys(b)])) {
+      const ids = union(a[key], b[key] ?? []).filter((id) => id in events);
+      if (ids.length > 0) out[key] = ids;
+    }
+    return out;
+  };
+  return {
+    events,
+    byProject: mergeLists(primary.byProject, other.byProject),
+    byFile: mergeLists(primary.byFile, other.byFile),
+  };
+}
+
+function readEventRecord(store: KeyValueStore | null, key: string): ImportEventRecord {
   if (!store) return emptyImportEvents();
   try {
-    const raw = store.getItem(IMPORT_EVENTS_KEY);
+    const raw = store.getItem(key);
     if (!raw) return emptyImportEvents();
     const parsed = JSON.parse(raw) as unknown;
     if (!isObject(parsed) || !isObject(parsed.events)) return emptyImportEvents();
@@ -143,6 +187,17 @@ export function updateImportEvents(
   const current = readImportEvents(store);
   const next = change(current);
   if (next !== current) writeImportEvents(store, next);
+  return next;
+}
+
+/** WO-103：匯出事件版的 updateImportEvents。 */
+export function updateExportEvents(
+  store: KeyValueStore,
+  change: (record: TransferEventRecord) => TransferEventRecord,
+): TransferEventRecord {
+  const current = readExportEvents(store);
+  const next = change(current);
+  if (next !== current) writeExportEvents(store, next);
   return next;
 }
 

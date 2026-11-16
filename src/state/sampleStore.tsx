@@ -72,16 +72,30 @@ import {
   emptyImportEvents,
   importCountOf,
   importOnlyDays,
+  mergeEventRecords,
   projectImportEvents,
+  readExportEvents,
   readImportEvents,
+  updateExportEvents,
   updateImportEvents,
   withAdoptedFile,
   withFileLink,
   withImportEvent,
+  writeExportEvents,
   writeImportEvents,
   type ImportEventRecord,
   type ProjectImportEvents,
+  type TransferEventRecord,
 } from './importEvents';
+import type { docxBytes } from '../domain/docxExport';
+import {
+  fullTextExportFilename,
+  planExport,
+  txtBytes,
+  type ExportFormat,
+  type ExportScope,
+} from '../domain/fullTextExport';
+import { DOCX_MIME, TXT_MIME, deliverFile, makeExportFile, type DeliveryResult } from '../db/fileDelivery';
 import { countBookWords } from '../domain/wordCount';
 import { startedMsFromProjectId } from '../domain/staleSaveReminder';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
@@ -183,6 +197,11 @@ export interface SampleState {
    * 畫面次數一律用 projectImportEventsOf（兩者以事件代號取聯集）。
    */
   importEvents: ImportEventRecord;
+  /**
+   * WO-103：匯出全文（Word／TXT）事件的本機紀錄。角色與 importEvents 相同（新稿存檔前的暫存、.db 寫不進去時的保留）；
+   * 檔內事件在 fileExtras[...].transfer.exportEvents，畫面次數一律用 projectExportEventsOf（以事件代號取聯集）。
+   */
+  exportEvents: TransferEventRecord;
 }
 
 /** 開檔帶進來、存檔時原樣帶出的檔案額外資訊。 */
@@ -200,6 +219,7 @@ export type Action =
   | { type: 'note-started'; startedById: Record<string, number> }
   | { type: 'import-text'; project: DemoProject; dayKey: string; startedMs: number; importEvents: ImportEventRecord }
   | { type: 'set-import-events'; importEvents: ImportEventRecord }
+  | { type: 'set-export-events'; exportEvents: TransferEventRecord }
   | { type: 'remember-place'; projectId: string; nodeId: string; cursor: number }
   | { type: 'toggle'; projectId: string; nodeId: string }
   | { type: 'set-progress'; projectId: string; nodeId: string; progress: ProgressCode }
@@ -398,6 +418,7 @@ export function createState(now: Date): SampleState {
     saveMeta: record.saveMeta,
     startedById: record.startedById,
     importEvents: readImportEvents(store),
+    exportEvents: readExportEvents(store),
   };
 }
 
@@ -430,6 +451,28 @@ export async function linkImportEventsToBytes(
   const fingerprint = await fingerprintBytes(bytes);
   if (!fingerprint) return null;
   return updateImportEvents(store, (record) => withFileLink(record, projectId, fingerprint));
+}
+
+/** WO-103：存成 .db 成功後，把這份稿子的匯出事件也對應到那份檔的內容指紋（沒有匯出事件就不記）。 */
+export async function linkExportEventsToBytes(
+  store: KeyValueStore,
+  projectId: string,
+  bytes: Uint8Array,
+): Promise<TransferEventRecord | null> {
+  if (importCountOf(readExportEvents(store), projectId) === 0) return null;
+  const fingerprint = await fingerprintBytes(bytes);
+  if (!fingerprint) return null;
+  return updateExportEvents(store, (record) => withFileLink(record, projectId, fingerprint));
+}
+
+/** WO-103：開回 .db 時，原始位元組指紋對得上就把同一批匯出事件接到新開的稿子。 */
+export function adoptExportEventsByFingerprint(
+  store: KeyValueStore,
+  fingerprint: string | null,
+  projectId: string,
+): TransferEventRecord | null {
+  if (!fingerprint || !readExportEvents(store).byFile[fingerprint]) return null;
+  return updateExportEvents(store, (record) => withAdoptedFile(record, fingerprint, projectId));
 }
 
 /** WO-99：開回 .db 時，內容指紋對得上就把同一批匯入事件接到新開的稿子（同一事件不重複算）。 */
@@ -467,11 +510,25 @@ export function projectImportEventsOf(state: SampleState, projectId: string | nu
 }
 
 /**
+ * WO-103：這份稿子的匯出全文事件集合（統計頁全書、寫作過程紀錄卡、存檔快照共用同一份）。
+ * = 檔內附加表的 export 事件 ∪ 本機可靠對應的匯出事件，以事件代號去重；規則與匯入完全相同。
+ * 檔內 export_count 欄不加進來（NULL＝沒有歷史基數；非 NULL 無法證明是否已含這些事件，見交接）。
+ */
+export function projectExportEventsOf(state: SampleState, projectId: string | null | undefined): ProjectImportEvents {
+  if (!projectId) return {};
+  const project = state.projects.find((item) => item.id === projectId);
+  const key = project?.dbKey ?? projectId;
+  const transfer = state.fileExtras[key]?.transfer;
+  return projectImportEvents(state.exportEvents, projectId, transfer?.kind === 'ok' ? transfer.exportEvents : null);
+}
+
+/**
  * WO-100：寫作過程紀錄卡要顯示的列（新到舊）。有匯入事件、卻沒有紀錄列的寫作日補一張只供顯示的空白卡，
  * 事件不會因為檔案裡沒有那天的紀錄列就消失；補的卡不寫回檔案、不改既有紀錄列。
+ * WO-103：只有匯出事件的日子也補卡（不加字數、不加寫作時間）。
  */
 export function displayLogRows(state: SampleState, projectId: string): WritingLogRow[] {
-  const events = projectImportEventsOf(state, projectId);
+  const events = { ...projectImportEventsOf(state, projectId), ...prefixed(projectExportEventsOf(state, projectId)) };
   const extra = importOnlyDays(state.logs.map((log) => log.date), events).map((day, index) =>
     emptyWritingLog(-(index + 1), day),
   );
@@ -489,6 +546,11 @@ export function adoptImportEventsByFingerprint(
 ): ImportEventRecord | null {
   if (!fingerprint || !readImportEvents(store).byFile[fingerprint]) return null;
   return updateImportEvents(store, (record) => withAdoptedFile(record, fingerprint, projectId));
+}
+
+/** 只用來把匯入、匯出事件放進同一個集合找日子：加前綴避免兩邊代號剛好相同時互相蓋掉。 */
+function prefixed(events: ProjectImportEvents): ProjectImportEvents {
+  return Object.fromEntries(Object.entries(events).map(([id, event]) => [`export:${id}`, event]));
 }
 
 /** 開檔與重整共用：把讀好的檔案變成 attach-file 動作。 */
@@ -1068,6 +1130,8 @@ export function reduce(state: SampleState, action: Action): SampleState {
     }
     case 'set-import-events':
       return action.importEvents === state.importEvents ? state : { ...state, importEvents: action.importEvents };
+    case 'set-export-events':
+      return action.exportEvents === state.exportEvents ? state : { ...state, exportEvents: action.exportEvents };
     case 'set-filename':
       return {
         ...state,
@@ -1524,6 +1588,11 @@ interface SampleActions {
   importFile: (file: File, diskFile?: DiskFile | null) => Promise<{ id: string; chapterId: string | null }>;
   /** WO-99：匯入 TXT 開成新稿子。 */
   importTextFile: (file: File) => Promise<TextImportOutcome>;
+  /** WO-103：匯出全文（Word／TXT、全文／自選章節）。prepared 給手勢失效後再點「儲存檔案」用。 */
+  exportFullText: (
+    request: FullTextExportRequest,
+    options?: { prepared?: PreparedExport; isCancelled?: () => boolean },
+  ) => Promise<FullTextExportOutcome>;
   openWithPicker: () => Promise<{ id: string; chapterId: string | null } | null>;
   stashDraft: () => Promise<void>;
   renameBook: (projectId: string, rawTitle: string) => {
@@ -1581,7 +1650,14 @@ function browserSaveEnv(): SaveEnvironment {
 export function manuscriptSnapshotParts(
   state: SampleState,
   project: DemoProject,
-): { key: string; info: FileProjectInfo; cards: FileCard[]; logs: FileLog[]; importEvents: ProjectImportEvents } {
+): {
+  key: string;
+  info: FileProjectInfo;
+  cards: FileCard[];
+  logs: FileLog[];
+  importEvents: ProjectImportEvents;
+  exportEvents: ProjectImportEvents;
+} {
   const key = project.dbKey ?? project.id;
   const extra =
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
@@ -1590,7 +1666,9 @@ export function manuscriptSnapshotParts(
   const logs: FileLog[] = extra?.logs ?? toFileLogs(trackingOf(state, project, new Date()).logs);
   // WO-100：暫存、儲存、另存、分享預備都帶同一份事件集合寫進 .db。
   const importEvents = projectImportEventsOf(state, project.id);
-  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents };
+  // WO-103：匯出事件同一份快照、同一筆交易寫進 .db。
+  const exportEvents = projectExportEventsOf(state, project.id);
+  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents, exportEvents };
 }
 
 /** WO-100：在給定的底稿位元組上建出這份稿子的 .db（與 snapshotManuscript 同一套內容；測試也用）。 */
@@ -1599,8 +1677,8 @@ export async function manuscriptBytesOn(
   project: DemoProject,
   base: Uint8Array | null,
 ): Promise<Uint8Array> {
-  const { info, cards, logs, importEvents } = manuscriptSnapshotParts(state, project);
-  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents);
+  const { info, cards, logs, importEvents, exportEvents } = manuscriptSnapshotParts(state, project);
+  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents, exportEvents);
 }
 
 async function snapshotManuscript(
@@ -1608,7 +1686,7 @@ async function snapshotManuscript(
   project: DemoProject,
   persist = true,
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const { key, info, cards, logs, importEvents } = manuscriptSnapshotParts(state, project);
+  const { key, info, cards, logs, importEvents, exportEvents } = manuscriptSnapshotParts(state, project);
   const bytes = await saveBookBytes(
     key,
     projectSaveFilename(project.title, project.filename),
@@ -1620,6 +1698,7 @@ async function snapshotManuscript(
     bookkeepingOf(project),
     persist,
     importEvents,
+    exportEvents,
   );
   return { key, bytes };
 }
@@ -1850,6 +1929,244 @@ export async function persistImportedRecord(input: {
   }
 }
 
+/** WO-103：開檔時接回本機匯出事件；本機讀寫不了就當作沒有（檔內事件仍照常讀）。 */
+function adoptExportsQuietly(store: KeyValueStore, fingerprint: string | null, projectId: string): TransferEventRecord | null {
+  try {
+    return adoptExportEventsByFingerprint(store, fingerprint, projectId);
+  } catch {
+    return null;
+  }
+}
+
+/** WO-103：一次匯出全文的要求。selected 只在 scope = 'selected' 時使用。 */
+export interface FullTextExportRequest {
+  projectId: string;
+  format: ExportFormat;
+  scope: ExportScope;
+  selected?: ReadonlySet<string>;
+}
+
+/** WO-103：已產生好、等待交付的檔案（手勢失效時讓使用者再點一次「儲存檔案」用的也是這一份）。 */
+export interface PreparedExport {
+  projectId: string;
+  format: ExportFormat;
+  scope: ExportScope;
+  file: File;
+}
+
+/** WO-103：匯出結果。.db 附加表寫入狀態與檔案交付結果分開回報，不混在一起。 */
+export type FullTextExportOutcome =
+  | {
+      kind: 'delivered';
+      via: 'shared' | 'downloaded';
+      eventId: string;
+      /** 本機匯出紀錄有沒有寫進去。 */
+      local: 'saved' | 'not-saved';
+      /** 稿子 .db（App 內的那一份）有沒有寫進這次事件；新稿還沒存成 .db 時是 'not-stored'。 */
+      file: 'saved' | 'record-failed' | 'save-failed' | 'not-stored';
+    }
+  | { kind: 'cancelled' }
+  | { kind: 'needs-gesture'; prepared: PreparedExport }
+  | { kind: 'empty' }
+  | { kind: 'failed' }
+  | { kind: 'busy' };
+
+function defaultExportEventId(projectId: string): string {
+  const random =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  return `exp-${projectId}-${random}`;
+}
+
+/**
+ * WO-103：按下匯出那一刻的稿子完整快照（暫定第 14 條）：記憶體裡的最新正文，
+ * 編輯器若還有沒交給 store 的字也一起帶上；不回頭讀磁碟上的舊稿。
+ */
+export function exportSnapshotNodes(
+  state: SampleState,
+  projectId: string,
+  liveDraft: { projectId: string; chapterId: string; text: string } | null = readLiveDraftFromEditor(),
+): ChapterNode[] | null {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return null;
+  const nodes = structuredClone(project.nodes);
+  if (liveDraft && liveDraft.projectId === projectId && findNode(nodes, liveDraft.chapterId)) {
+    return updateNode(nodes, liveDraft.chapterId, (node) => ({ ...node, content: liveDraft.text }));
+  }
+  return nodes;
+}
+
+/**
+ * WO-103：產生要交付的檔案。沒有可輸出的章回 'empty'（不交付空檔、不計次）；產生失敗回 'failed'。
+ */
+export async function prepareFullTextExport(input: {
+  state: SampleState;
+  request: FullTextExportRequest;
+  now?: Date;
+  liveDraft?: { projectId: string; chapterId: string; text: string } | null;
+  buildDocx?: typeof docxBytes;
+}): Promise<PreparedExport | 'empty' | 'failed'> {
+  const { state, request } = input;
+  const project = state.projects.find((item) => item.id === request.projectId);
+  if (!project) return 'failed';
+  const nodes = exportSnapshotNodes(state, request.projectId, input.liveDraft === undefined ? readLiveDraftFromEditor() : input.liveDraft);
+  if (!nodes) return 'failed';
+  const plan = planExport(nodes, request.scope, request.selected ?? new Set());
+  if (plan.chapterCount === 0) return 'empty';
+  const filename = fullTextExportFilename(project.title, request.format, request.scope, input.now ?? new Date());
+  try {
+    // Word 產生器（docx 套件）只在真的要匯出 Word 時才載入，不拖慢 App 開啟；離線時由 PWA 預先快取的分塊提供。
+    const bytes =
+      request.format === 'docx'
+        ? await (input.buildDocx ?? (await import('../domain/docxExport')).docxBytes)(plan)
+        : txtBytes(plan);
+    const file = makeExportFile(bytes, filename, request.format === 'docx' ? DOCX_MIME : TXT_MIME);
+    return { projectId: request.projectId, format: request.format, scope: request.scope, file };
+  } catch {
+    return 'failed';
+  }
+}
+
+/**
+ * WO-103：成功交付後記一筆匯出事件（暫定第 8、13 條）。
+ * - 事件掛在「按下匯出時」的那份稿子代號上，不看現在開著哪一份。
+ * - 寫作日照現行規則（那份稿子的一天結束時刻）在事件發生當下記下。
+ * - 先寫本機紀錄；寫不進去時事件仍留在記憶體並回報 local: 'not-saved'（不假稱已保存），下次成功寫入時一起補寫。
+ * - 已存成 .db 的稿子立刻把事件寫進 App 內那份 .db；附加表寫不進去（TransferDataError）回 'record-failed'，
+ *   一律不跳提示（沿用九方 2026-11-16 22:18 對匯入的定案），也不假增檔內計數。
+ */
+export async function recordFullTextExport(input: {
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  store: KeyValueStore | null;
+  projectId: string;
+  at: Date;
+  eventId: string;
+  snapshot?: typeof snapshotManuscript;
+}): Promise<{ local: 'saved' | 'not-saved'; file: 'saved' | 'record-failed' | 'save-failed' | 'not-stored' }> {
+  const { store, projectId, at, eventId } = input;
+  const state = input.getState();
+  const project = state.projects.find((item) => item.id === projectId);
+  const dayEndHour = project ? trackingOf(state, project, at).schedule.dayEndHour : state.schedule.dayEndHour;
+  const event = { dayKey: writingDayKey(at, dayEndHour), atMs: at.getTime() };
+
+  let local: 'saved' | 'not-saved' = 'not-saved';
+  let base = state.exportEvents;
+  if (store) {
+    try {
+      base = mergeEventRecords(readExportEvents(store), state.exportEvents);
+    } catch {
+      base = state.exportEvents;
+    }
+  }
+  const next = withImportEvent(base, projectId, eventId, event);
+  if (store) {
+    try {
+      writeExportEvents(store, next);
+      local = 'saved';
+    } catch {
+      local = 'not-saved';
+    }
+  }
+  const action: Action = { type: 'set-export-events', exportEvents: next };
+  input.dispatch(action);
+  const afterState = reduce(state, action);
+
+  if (!project || project.origin !== 'file' || !project.dbKey) return { local, file: 'not-stored' };
+  try {
+    await (input.snapshot ?? snapshotManuscript)(afterState, project);
+    return { local, file: 'saved' };
+  } catch (error) {
+    return { local, file: error instanceof TransferDataError ? 'record-failed' : 'save-failed' };
+  }
+}
+
+/** WO-103：交付已備妥的檔案，成功才記一次。分享取消、手勢失效、交付拋錯都不計次。 */
+export async function deliverAndRecordExport(input: {
+  prepared: PreparedExport;
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  store: KeyValueStore | null;
+  deliver?: (file: File) => Promise<DeliveryResult>;
+  now?: () => Date;
+  newEventId?: (projectId: string) => string;
+  snapshot?: typeof snapshotManuscript;
+}): Promise<FullTextExportOutcome> {
+  const { prepared } = input;
+  let result: DeliveryResult;
+  try {
+    result = await (input.deliver ?? ((file: File) => deliverFile(file)))(prepared.file);
+  } catch {
+    return { kind: 'failed' };
+  }
+  if (result === 'cancelled') return { kind: 'cancelled' };
+  if (result === 'needs-gesture') return { kind: 'needs-gesture', prepared };
+  const eventId = (input.newEventId ?? defaultExportEventId)(prepared.projectId);
+  const recorded = await recordFullTextExport({
+    getState: input.getState,
+    dispatch: input.dispatch,
+    store: input.store,
+    projectId: prepared.projectId,
+    at: (input.now ?? (() => new Date()))(),
+    eventId,
+    snapshot: input.snapshot,
+  });
+  return { kind: 'delivered', via: result, eventId, ...recorded };
+}
+
+/**
+ * WO-103：匯出全文主流程。產生期間與交付期間鎖住，重複點擊回 'busy'，單次成功只記一筆。
+ * isCancelled：畫面已關閉或使用者按了取消時，不再交付（也不計次）。
+ */
+export async function runFullTextExport(input: {
+  request: FullTextExportRequest;
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  store: KeyValueStore | null;
+  busy: { current: boolean };
+  deliver?: (file: File) => Promise<DeliveryResult>;
+  now?: () => Date;
+  newEventId?: (projectId: string) => string;
+  liveDraft?: { projectId: string; chapterId: string; text: string } | null;
+  buildDocx?: typeof docxBytes;
+  isCancelled?: () => boolean;
+  snapshot?: typeof snapshotManuscript;
+  /** 已備妥（手勢失效後再點「儲存檔案」）時直接交付這一份，不重新產生。 */
+  prepared?: PreparedExport;
+}): Promise<FullTextExportOutcome> {
+  const { busy } = input;
+  if (busy.current) return { kind: 'busy' };
+  busy.current = true;
+  try {
+    const now = input.now ?? (() => new Date());
+    const prepared =
+      input.prepared ??
+      (await prepareFullTextExport({
+        state: input.getState(),
+        request: input.request,
+        now: now(),
+        liveDraft: input.liveDraft,
+        buildDocx: input.buildDocx,
+      }));
+    if (prepared === 'empty') return { kind: 'empty' };
+    if (prepared === 'failed') return { kind: 'failed' };
+    if (input.isCancelled?.()) return { kind: 'cancelled' };
+    return await deliverAndRecordExport({
+      prepared,
+      getState: input.getState,
+      dispatch: input.dispatch,
+      store: input.store,
+      deliver: input.deliver,
+      now,
+      newEventId: input.newEventId,
+      snapshot: input.snapshot,
+    });
+  } finally {
+    busy.current = false;
+  }
+}
+
 export function SampleProvider({
   children,
   initialState,
@@ -1862,6 +2179,7 @@ export function SampleProvider({
   const stateRef = useRef(state);
   stateRef.current = state;
   const importBusyRef = useRef(false);
+  const exportBusyRef = useRef(false);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
@@ -1951,6 +2269,7 @@ export function SampleProvider({
         bookkeepingOf(project),
         true,
         projectImportEventsOf(state, project.id),
+        projectExportEventsOf(state, project.id),
       ).then(() => {
         dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
       });
@@ -1959,7 +2278,7 @@ export function SampleProvider({
       window.clearTimeout(timer);
       void save();
     };
-  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents]);
+  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents, state.exportEvents]);
 
   useEffect(() => {
     const flush = () => {
@@ -2065,6 +2384,8 @@ export function SampleProvider({
           }
         })() : null;
         if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
+        const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
+        if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
         rememberOpenFile(book.key, diskFile ?? null);
         dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
@@ -2089,6 +2410,8 @@ export function SampleProvider({
           }
         })() : null;
         if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
+        const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
+        if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
         await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
         rememberOpenFile(book.key, picked.file);
         dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
@@ -2112,6 +2435,16 @@ export function SampleProvider({
         }
         return outcome;
       },
+      exportFullText: (request, options) =>
+        runFullTextExport({
+          request,
+          getState: () => stateRef.current,
+          dispatch,
+          store: deviceStore(),
+          busy: exportBusyRef,
+          prepared: options?.prepared,
+          isCancelled: options?.isCancelled,
+        }),
       stashDraft: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
         if (!project) return;
@@ -2219,6 +2552,8 @@ export function SampleProvider({
             // WO-99：寫出去的那份檔對上這份稿子的匯入事件，之後開回同一份檔次數不遺失、不重複。
             const linked = await linkImportEventsToBytes(store, project.id, builtBytes).catch(() => null);
             if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
+            const linkedExports = await linkExportEventsToBytes(store, project.id, builtBytes).catch(() => null);
+            if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
           }
           if (
             (outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title')
@@ -2251,6 +2586,8 @@ export function SampleProvider({
             await noteExportedBytes(store, bytes, Date.now()).catch(() => undefined);
             const linked = await linkImportEventsToBytes(store, project.id, bytes).catch(() => null);
             if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
+            const linkedExports = await linkExportEventsToBytes(store, project.id, bytes).catch(() => null);
+            if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
           }
           if (outcome.kind === 'saved-as') {
             const target = await createBrowserTargetStore().load(snap.key);
@@ -2277,6 +2614,7 @@ export function SampleProvider({
     state.logs,
     achievementCount,
     countImportEvents(projectImportEventsOf(state, state.activeProjectId)),
+    countImportEvents(projectExportEventsOf(state, state.activeProjectId)),
   );
   const bookWords = useCallback(
     (projectId: string) => {
