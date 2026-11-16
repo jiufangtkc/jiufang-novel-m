@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
 import { HALF_WIDTH_SETTING_TITLE, halfWidthSettingAria } from '../copy/halfWidthCopy';
@@ -125,6 +125,11 @@ export function SettingsScreen() {
           <span>
             <strong>芫荽字型授權</strong>
             <small>SIL Open Font License 1.1，作者 But Ko／Fontworks</small>
+          </span>
+        </Link>
+        <Link className="setting-row" to={`/p/${project.id}/privacy`} data-testid="privacy-link">
+          <span>
+            <strong>{PRIVACY_TITLE}</strong>
           </span>
         </Link>
       </div>

@@ -1,0 +1,10 @@
+.privacy-page {
+  padding-top: 8px;
+}
+
+.privacy-paragraph {
+  margin: 0 0 1em;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  color: var(--text, #d4d4d4);
+}
