@@ -7,6 +7,7 @@ import { LayoutProvider } from '../layout';
 import { SampleProvider } from '../state/sampleStore';
 import { Workspace } from '../screens/Workspace';
 import { showsLandscapeRail } from './AppNav';
+import { demoFixtureState } from '../state/testing/sampleFixture';
 
 describe('WO-68 手機橫拿直排分頁何時顯示', () => {
   it('目錄頁（尚未進章）顯示', () => {
@@ -33,7 +34,7 @@ function renderWorkspace(mode: 'phone-landscape' | 'phone-portrait' | 'medium' |
       { initialMode: mode },
       createElement(
         SampleProvider,
-        null,
+        { initialState: demoFixtureState() },
         createElement(
           MemoryRouter,
           { initialEntries: [path] },
