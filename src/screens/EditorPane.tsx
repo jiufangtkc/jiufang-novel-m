@@ -7,6 +7,7 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { useLocation, useNavigate } from 'react-router-dom';
 import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
+import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
 import { StatusBadge } from '../components/StatusBadge';
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import type { BookSearchController } from '../components/BookSearchPanelState';
@@ -37,6 +38,7 @@ import { canPickLocalFiles } from '../db/browserDisk';
 import { neighborChapterId } from '../domain/chapterOps';
 import { sessionVersions, VERSION_INTERVAL_MS, withVersion } from '../domain/chapterVersions';
 import { latestSaveTimestamp } from '../domain/saveClock';
+import { hasBodyText, staleSaveDays } from '../domain/staleSaveReminder';
 import { countWords } from '../domain/wordCount';
 import {
   captureCaretSnapshot,
@@ -125,6 +127,18 @@ export function EditorPane({
     lastExportMs: meta.lastExportMs,
     now: new Date(),
   });
+  // WO-98：空稿子（全書沒有任何正文）沒有東西可存，不提醒；範例書沒有起算時間，也不提醒。
+  useStaleSaveTick();
+  const staleDays =
+    project && hasBodyText(project.nodes)
+      ? staleSaveDays({
+          lastProjectSaveMs: meta.lastProjectSaveMs,
+          lastExportMs: meta.lastExportMs,
+          startedMs: state.startedById[projectId],
+          nowMs: Date.now(),
+        })
+      : null;
+  const saveFromReminder = () => void runReminderSave(canPickLocalFiles(), actions);
   const titleRef = useRef(chapter.title);
   titleRef.current = chapter.title;
   const rememberRef = useRef(actions.rememberPlace);
@@ -656,7 +670,7 @@ export function EditorPane({
       >
         {FOCUS_MODE_EXIT_BUTTON}
       </button>
-      <header className="topbar">
+      <header className={staleDays != null ? 'topbar has-save-reminder' : 'topbar'}>
         <button
           type="button"
           className="icon-button back-button"
@@ -725,6 +739,7 @@ export function EditorPane({
           <CardsIcon size={20} />
           <span className="view-cards-label">{VIEW_CARDS_BUTTON}</span>
         </button>
+        {staleDays != null ? <StaleSaveReminder days={staleDays} onSave={saveFromReminder} /> : null}
       </header>
       <button
         type="button"
