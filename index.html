@@ -6,7 +6,25 @@
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
     />
-    <meta name="theme-color" content="#1E1E1E" />
+    <meta name="theme-color" content="#121A16" />
+    <!--
+      WO-102：首次繪製前同步套主題與網址列色，避免先閃森林綠。
+      只讀本機鍵、不寫回；無鍵、值不認得、讀取丟錯都回森林綠。
+      鍵名、三個值、色碼須與 src/layout/deviceTheme.ts 一致（有測試比對）。
+    -->
+    <script>
+      (function () {
+        var theme = 'forest';
+        try {
+          var saved = window.localStorage.getItem('jiufang-novel-m.theme.v1');
+          if (saved === 'forest' || saved === 'celadon' || saved === 'classic') theme = saved;
+        } catch (e) {}
+        var colors = { forest: '#121A16', celadon: '#101D23', classic: '#252526' };
+        document.documentElement.setAttribute('data-theme', theme);
+        var meta = document.querySelector('meta[name="theme-color"]');
+        if (meta) meta.setAttribute('content', colors[theme]);
+      })();
+    </script>
     <meta name="description" content="九方小說編輯器M：可加到 iPhone 主畫面、可離線寫作。" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

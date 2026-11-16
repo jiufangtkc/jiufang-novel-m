@@ -568,7 +568,10 @@ describe('WO-57：版面用字定案畫面輸出與原始碼驗證', () => {
     expect(editorHtml).toContain('<span class="floating-button-label">展開目錄</span>');
 
     // 頁首統計字數與專注模式底列字數：包含每日目標「今天 300／1,000 字」
-    expect(editorHtml).toContain('<span class="topbar-words" data-testid="topbar-words">今天 300／1,000 字</span>');
+    // WO-102：有目標時畫面字包在 aria-hidden 內，另有獨立朗讀句（不念「／」）
+    expect(editorHtml).toContain(
+      '<span class="topbar-words" data-testid="topbar-words"><span aria-hidden="true">今天 300／1,000 字</span><span class="sr-only">今天寫了 300 字，每日目標 1,000 字</span></span>',
+    );
     expect(editorHtml).toContain('<div class="focus-bottom-status" data-testid="focus-bottom-status"><span>今天 300／1,000 字</span>');
 
     // 不再包含舊用字

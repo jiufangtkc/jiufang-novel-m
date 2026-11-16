@@ -27,6 +27,7 @@ import {
   BACK_TO_CHAPTER_TREE_ARIA,
   OPEN_CHAPTER_TREE_ARIA,
   todayWordsLabel,
+  topbarTodayWords,
   TREE_DRAWER_BUTTON,
   TREE_NEXT_CHAPTER,
   TREE_PREV_CHAPTER,
@@ -115,6 +116,7 @@ export function EditorPane({
   });
   const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const todayWords = state.schedule.open?.wordCount ?? 0;
+  const topbarWords = topbarTodayWords(todayWords, goal, isGlowing);
   const meta = state.saveMeta[projectId] ?? {
     lastAutoSaveMs: null,
     lastManualSaveMs: null,
@@ -695,9 +697,16 @@ export function EditorPane({
           <HalfWidthBadge controller={halfWidth} expandable={layoutMode === 'medium'} />
         )}
         <div className="topbar-stats" data-testid="topbar-stats">
-          <span className="topbar-words" data-testid="topbar-words">
-            {todayWordsLabel(todayWords, goal)}
-          </span>
+          {topbarWords.aria === null ? (
+            <span className="topbar-words" data-testid="topbar-words">
+              {topbarWords.display}
+            </span>
+          ) : (
+            <span className="topbar-words" data-testid="topbar-words">
+              <span aria-hidden="true">{topbarWords.display}</span>
+              <span className="sr-only">{topbarWords.aria}</span>
+            </span>
+          )}
           {showHalfWidthBadge && layoutMode === 'wide' && (
             <HalfWidthBadge controller={halfWidth} expandable />
           )}

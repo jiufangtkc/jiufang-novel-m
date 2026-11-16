@@ -406,6 +406,25 @@ export function dailyProgressAriaLabel(words: number, goal: number, met: boolean
   return met ? `${base}，${DAILY_PROGRESS_MET_ARIA}` : base;
 }
 
+/**
+ * 寬版頁首右側今天字數（WO-102）。與進度條同一個目標、同一個達標判斷，用字沿用定稿函式。
+ * 有有效目標：畫面字同進度條（達標後接「　達標了」），另給獨立朗讀句（不念「／」）。
+ * 沒有有效目標：沿用原本「今天 N 字」，aria 為 null（不判達標）。
+ */
+export function topbarTodayWords(
+  words: number,
+  goal: number | string | null | undefined,
+  met: boolean,
+): { display: string; aria: string | null } {
+  if (typeof goal === 'number' && Number.isFinite(goal) && goal > 0) {
+    return {
+      display: dailyProgressDisplayLabel(words, goal, met),
+      aria: dailyProgressAriaLabel(words, goal, met),
+    };
+  }
+  return { display: todayWordsLabel(words, goal), aria: null };
+}
+
 /** 紀錄頁與寬版統計右欄的小標（九方定案：記錄）。 */
 export const VISUAL_WRITING_RECORD = '視覺化的寫作記錄';
 
