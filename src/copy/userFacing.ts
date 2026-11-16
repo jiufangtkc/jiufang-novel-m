@@ -454,7 +454,44 @@ export const IMPORT_TEXT_WORKING = '正在匯入文字檔，請稍候。';
 /** WO-99：這台裝置存不下新稿子時（不建立稿子、不計次）。 */
 export const IMPORT_TEXT_STORAGE_FAIL = '這台裝置存不下這份稿子，這次沒有匯入。';
 export const EXPORT_FULL_TEXT_BUTTON = '匯出全文';
-export const EXPORT_FULL_TEXT_HINT = '把整份稿子匯出成一個 TXT 或 Markdown 檔';
+/** WO-103（暫定，交九方審，暫定第 9 條）：不做 Markdown，只承諾已開放的格式與範圍。 */
+export const EXPORT_FULL_TEXT_HINT = '把全文或自選章節匯出成一個 Word 或 TXT 檔';
+
+/*
+ * WO-103 匯出選單與自選章節清單用字。「Word」「TXT」「全文」「自選章節」為九方指定；
+ * 其餘標題、欄位、按鈕、提示與朗讀文字全部「暫定，交九方審」（逐字列在交接）。
+ */
+export const EXPORT_DIALOG_TITLE = '匯出稿子';
+export const EXPORT_FORMAT_LEGEND = '檔案格式';
+export const EXPORT_FORMAT_DOCX = 'Word（.docx）';
+export const EXPORT_FORMAT_TXT = 'TXT（.txt）';
+export const EXPORT_SCOPE_LEGEND = '匯出範圍';
+export const EXPORT_SCOPE_ALL = '全文';
+export const EXPORT_SCOPE_SELECTED = '自選章節';
+export const EXPORT_CONFIRM = '匯出';
+export const EXPORT_CANCEL = '取消';
+export const EXPORT_WORKING = '正在準備檔案，請稍候。';
+export const EXPORT_DEVICE_FAIL = '這個裝置目前無法匯出，請稍後再試。';
+export const EXPORT_NO_CHAPTERS = '這份稿子還沒有章，先新增一章再匯出。';
+export const EXPORT_EMPTY_SELECTION = '請先選要匯出的章。';
+/** 自選章節：已選了幾章／幾幕的摘要（暫定）。 */
+export function exportSelectionSummary(chapters: number, scenes: number): string {
+  if (chapters === 0 && scenes === 0) return EXPORT_EMPTY_SELECTION;
+  return scenes > 0 ? `已選 ${chapters} 章、${scenes} 幕` : `已選 ${chapters} 章`;
+}
+export const EXPORT_PICK_CHAPTERS = '選擇章節';
+/** 手勢失效（iPhone 等瀏覽器在檔案備妥後拒絕直接分享）時，請使用者再點一次。 */
+export const EXPORT_READY_HINT = '檔案已備妥，請按「儲存檔案」。';
+export const EXPORT_SAVE_FILE = '儲存檔案';
+export const EXPORT_PICKER_TITLE = '自選章節';
+export const EXPORT_SELECT_ALL = '全選';
+export const EXPORT_SELECT_NONE = '取消全選';
+export const EXPORT_PICKER_DONE = '確定';
+export const EXPORT_PICKER_CANCEL = '取消';
+export const EXPORT_EXPAND = '展開';
+export const EXPORT_COLLAPSE = '收合';
+/** 部分選取時給朗讀用的補充（畫面另有半勾符號，不只靠顏色）。 */
+export const EXPORT_PARTIAL_LABEL = '部分選取';
 
 export const STATS_IMPORT_EXPORT_HEADING = '匯入與匯出';
 export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔、匯出全文的次數';

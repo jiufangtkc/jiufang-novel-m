@@ -242,7 +242,9 @@ describe('章節目錄文案', () => {
     expect(copy.IMPORT_TEXT_FILE_HINT).toBe('把文字檔的內容開成新稿子');
     expect(copy.IMPORT_TEXT_FILE_HINT).not.toContain('加進這份稿子');
     expect(copy.EXPORT_FULL_TEXT_BUTTON).toBe('匯出全文');
-    expect(copy.EXPORT_FULL_TEXT_HINT).toBe('把整份稿子匯出成一個 TXT 或 Markdown 檔');
+    // WO-103（暫定，交九方審）：不做 Markdown，說明只承諾已開放的 Word／TXT 與全文／自選章節。
+    expect(copy.EXPORT_FULL_TEXT_HINT).toBe('把全文或自選章節匯出成一個 Word 或 TXT 檔');
+    expect(copy.EXPORT_FULL_TEXT_HINT).not.toContain('Markdown');
 
     // 4. 統計頁區塊與說明小字
     expect(copy.STATS_IMPORT_EXPORT_HEADING).toBe('匯入與匯出');
