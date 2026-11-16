@@ -53,6 +53,7 @@ import {
   BOOK_RENAMED_TOAST,
   IMPORT_DEFAULT_CHAPTER_TITLE,
   IMPORT_PREFACE_TITLE,
+  IMPORT_RECORD_NOT_SAVED_NOTICE,
   SAVE_FATAL_FAIL,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
@@ -93,7 +94,7 @@ import {
   writeBookBytes,
   type ImportedBook,
 } from '../db/library';
-import { assertTransferDataWritable, type TransferRead } from '../db/transferMeta';
+import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
 import {
   bindLeaveFlush,
   clearLiveDraft,
@@ -1681,7 +1682,7 @@ export async function runSaveProjectAs(input: {
 }
 
 export type TextImportOutcome =
-  | { kind: 'imported'; id: string; chapterId: string }
+  | { kind: 'imported'; id: string; chapterId: string; afterState: SampleState }
   | { kind: 'unreadable' }
   | { kind: 'storage-failed' }
   | { kind: 'busy' };
@@ -1805,10 +1806,48 @@ export async function runTextImport(input: {
       return { kind: 'storage-failed' };
     }
 
-    input.dispatch({ type: 'import-text', project, dayKey, startedMs: ms, importEvents: record });
-    return { kind: 'imported', id, chapterId: project.nodes[0]!.id };
+    const importAction: Action = { type: 'import-text', project, dayKey, startedMs: ms, importEvents: record };
+    input.dispatch(importAction);
+    // WO-102：afterState 給匯入後立刻寫 .db 用（畫面 state 這一刻還沒更新）。
+    return { kind: 'imported', id, chapterId: project.nodes[0]!.id, afterState: reduce(state, importAction) };
   } finally {
     busy.current = false;
+  }
+}
+
+/**
+ * WO-102：匯入成功後，立刻把新稿子連同匯入紀錄寫進 .db。
+ * - 成功：升格為檔案稿子（與暫存相同），不出提示。
+ * - 只有「匯入紀錄寫入或核對失敗」（TransferDataError，交易已整筆回復）才出提示：
+ *   稿子仍在本機，只是次數沒記下；提示顯示在新稿子的寫作頁。
+ * - 其他儲存失敗是一般存檔問題，沿用既有存檔流程的處理，這裡不誤報成「次數沒記下」。
+ * 不吞錯誤硬回成功；回傳實際結果給呼叫端與測試。
+ */
+export async function persistImportedRecord(input: {
+  state: SampleState;
+  projectId: string;
+  dispatch: (action: Action) => void;
+  snapshot?: typeof snapshotManuscript;
+}): Promise<'saved' | 'record-failed' | 'save-failed'> {
+  const { state, projectId, dispatch } = input;
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return 'save-failed';
+  const snapshot = input.snapshot ?? snapshotManuscript;
+  try {
+    const { key } = await snapshot(state, project);
+    dispatch({
+      type: 'promote-stored',
+      projectId: project.id,
+      key,
+      filename: projectSaveFilename(project.title, project.filename),
+    });
+    return 'saved';
+  } catch (error) {
+    if (error instanceof TransferDataError) {
+      dispatch({ type: 'toast', message: IMPORT_RECORD_NOT_SAVED_NOTICE });
+      return 'record-failed';
+    }
+    return 'save-failed';
   }
 }
 
@@ -2060,15 +2099,20 @@ export function SampleProvider({
           chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null,
         };
       },
-      importTextFile: (file) =>
-        runTextImport({
+      importTextFile: async (file) => {
+        const outcome = await runTextImport({
           filename: file.name,
           readBytes: async () => new Uint8Array(await file.arrayBuffer()),
           getState: () => stateRef.current,
           dispatch,
           store: deviceStore(),
           busy: importBusyRef,
-        }),
+        });
+        if (outcome.kind === 'imported') {
+          await persistImportedRecord({ state: outcome.afterState, projectId: outcome.id, dispatch });
+        }
+        return outcome;
+      },
       stashDraft: async () => {
         const project = state.projects.find((item) => item.id === state.activeProjectId);
         if (!project) return;
