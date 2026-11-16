@@ -25,6 +25,32 @@ export const THEME_DEFAULT: ThemeId = 'forest';
 
 export const THEME_ROOT_ATTRIBUTE = 'data-theme';
 
+/**
+ * 網址列／PWA 外框色（WO-102）。與各主題寫作頁四周色一致：
+ * 森林綠、青瓷取各自的 --bg，經典深藍取 --panel（C 案四周色）。
+ * index.html 的同步小 script 與 vite.config.ts 的 manifest 預設要和這裡同一組（測試會比對）。
+ */
+export const THEME_COLORS: Record<ThemeId, string> = {
+  forest: '#121A16',
+  celadon: '#101D23',
+  classic: '#252526',
+};
+
+/**
+ * 各主題的 manifest 網址（WO-102 補強）。森林綠就是建置產生的預設 manifest；
+ * 青瓷、經典深藍是同內容、只換 theme_color／background_color 的兩份（vite.config.ts 一併輸出）。
+ * 執行中換主題時，把 <link rel="manifest"> 指到對應那份，之後安裝或重讀 manifest 的流程就拿到所選色。
+ */
+export const THEME_MANIFEST_HREFS: Record<ThemeId, string> = {
+  forest: '/manifest.webmanifest',
+  celadon: '/manifest-celadon.webmanifest',
+  classic: '/manifest-classic.webmanifest',
+};
+
+export const THEME_MANIFEST_LINK_SELECTOR = 'link[rel="manifest"]';
+
+export const THEME_COLOR_META_SELECTOR = 'meta[name="theme-color"]';
+
 export interface ThemeReadStore {
   getItem(key: string): string | null;
 }
@@ -72,6 +98,24 @@ export function applyTheme(
   root.setAttribute(THEME_ROOT_ATTRIBUTE, isThemeId(theme) ? theme : THEME_DEFAULT);
 }
 
+/** 更新這一頁的 <meta name="theme-color">。找不到 meta（或不在瀏覽器）就略過，不丟錯。 */
+export function applyThemeColor(
+  theme: ThemeId,
+  meta: { setAttribute(name: string, value: string): void } | null | undefined = defaultThemeColorMeta(),
+): void {
+  if (!meta) return;
+  meta.setAttribute('content', THEME_COLORS[isThemeId(theme) ? theme : THEME_DEFAULT]);
+}
+
+/** 更新 <link rel="manifest"> 指向所選主題那一份。找不到 link（或不在瀏覽器）就略過，不丟錯。 */
+export function applyThemeManifest(
+  theme: ThemeId,
+  link: { setAttribute(name: string, value: string): void } | null | undefined = defaultManifestLink(),
+): void {
+  if (!link) return;
+  link.setAttribute('href', THEME_MANIFEST_HREFS[isThemeId(theme) ? theme : THEME_DEFAULT]);
+}
+
 /** 方向鍵在三套之間移動，頭尾相接；其他鍵不動。 */
 export function themeAfterArrow(current: ThemeId, key: string): ThemeId | null {
   if (key !== 'ArrowLeft' && key !== 'ArrowRight' && key !== 'ArrowUp' && key !== 'ArrowDown') {
@@ -86,6 +130,16 @@ export function themeAfterArrow(current: ThemeId, key: string): ThemeId | null {
 function defaultRoot(): HTMLElement | null {
   if (typeof document === 'undefined') return null;
   return document.documentElement ?? null;
+}
+
+function defaultThemeColorMeta(): Element | null {
+  if (typeof document === 'undefined') return null;
+  return document.querySelector(THEME_COLOR_META_SELECTOR);
+}
+
+function defaultManifestLink(): Element | null {
+  if (typeof document === 'undefined') return null;
+  return document.querySelector(THEME_MANIFEST_LINK_SELECTOR);
 }
 
 function defaultStore(): (ThemeReadStore & ThemeWriteStore) | null {
@@ -110,9 +164,13 @@ function notify(): void {
 export function initDeviceTheme(
   store: ThemeReadStore | null | undefined = defaultStore(),
   root?: { setAttribute(name: string, value: string): void } | null,
+  meta?: { setAttribute(name: string, value: string): void } | null,
+  manifestLink?: { setAttribute(name: string, value: string): void } | null,
 ): ThemeId {
   current = readTheme(store);
   applyTheme(current, root === undefined ? defaultRoot() : root);
+  applyThemeColor(current, meta === undefined ? defaultThemeColorMeta() : meta);
+  applyThemeManifest(current, manifestLink === undefined ? defaultManifestLink() : manifestLink);
   notify();
   return current;
 }
@@ -129,10 +187,14 @@ export function setDeviceTheme(
   theme: ThemeId,
   store: ThemeWriteStore | null | undefined = defaultStore(),
   root?: { setAttribute(name: string, value: string): void } | null,
+  meta?: { setAttribute(name: string, value: string): void } | null,
+  manifestLink?: { setAttribute(name: string, value: string): void } | null,
 ): boolean {
   if (!isThemeId(theme)) return false;
   current = theme;
   applyTheme(theme, root === undefined ? defaultRoot() : root);
+  applyThemeColor(theme, meta === undefined ? defaultThemeColorMeta() : meta);
+  applyThemeManifest(theme, manifestLink === undefined ? defaultManifestLink() : manifestLink);
   const saved = commitTheme(store, theme);
   notify();
   return saved;
