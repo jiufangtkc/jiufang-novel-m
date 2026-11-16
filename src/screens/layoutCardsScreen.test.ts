@@ -281,7 +281,8 @@ describe('WO-56：寫作時看卡片依版面調整與讓位驗證', () => {
     expect(css).toMatch(/html\[data-layout="phone-landscape"\]\s+\.writing-cards-overlay[\s\S]*?display:\s*none\s*!important/);
     expect(css).toMatch(/html\[data-layout="phone-landscape"\][\s\S]*?\.editor-pane\.yield-right[\s\S]*?margin-right:\s*290px/);
     expect(css).toMatch(/html\[data-layout="medium"\]\s+\.writing-cards-overlay[\s\S]*?display:\s*none\s*!important/);
-    expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor-pane\.yield-right[\s\S]*?margin-right:\s*380px/);
+    expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor-pane\.yield-right[\s\S]*?margin-right:\s*var\(--medium-cards-width\)/);
+    expect(css).toMatch(/--medium-cards-width:\s*min\(380px,\s*45vw\)/);
   });
 
   it('WO-56：寬版看卡片置於右側欄（write-aside），與正文並排不蓋字', () => {
