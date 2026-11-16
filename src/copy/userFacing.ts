@@ -364,32 +364,46 @@ export function cardsCountLabel(count: number): string {
   return `${count} 張`;
 }
 
+/** 達標字樣（WO-101 定稿）：接在「今天 N／M 字」後面，中間是全形空白 U+3000，不加驚嘆號。 */
+export const DAILY_PROGRESS_MET_TEXT = '達標了';
+/** 達標朗讀尾句（WO-101 定稿）。 */
+export const DAILY_PROGRESS_MET_ARIA = '已經達標';
+
 /**
- * 每日進度條底列字數標籤（九方 2026-11-11 定案）。
- * 未達標：「今天寫了 N 字」；達標時：「✦ 今天寫了 N 字，已達標」。四位數以上加千分位。
+ * 進度條朗讀第一段（WO-101 定稿）：「今天寫了 N 字」。四位數以上加千分位。
+ * 達標與否不在這一段說，達標尾句由 dailyProgressAriaLabel 接在最後。
  */
-export function dailyProgressWordsLabel(words: number | string, met: boolean): string {
+export function dailyProgressWordsLabel(words: number | string): string {
   const formatted = typeof words === 'number' ? formatInteger(words) : words;
-  return met ? `✦ 今天寫了 ${formatted} 字，已達標` : `今天寫了 ${formatted} 字`;
+  return `今天寫了 ${formatted} 字`;
 }
 
 /**
- * 每日進度條底列目標標籤（九方 2026-11-11 定案）。
- * 顯示「每日目標 N 字」。四位數以上加千分位。
+ * 進度條朗讀第二段（九方 2026-11-11 定案，WO-101 沿用）。
+ * 「每日目標 N 字」。四位數以上加千分位。
  */
 export function dailyProgressGoalLabel(goal: number | string): string {
   const formatted = typeof goal === 'number' ? formatInteger(goal) : goal;
   return `每日目標 ${formatted} 字`;
 }
 
-/** 進度條朗讀，與畫面上兩句一致，數字帶千分位。 */
-export function dailyProgressAriaLabel(words: number, goal: number, met: boolean): string {
-  return `${dailyProgressWordsLabel(words, met)}，${dailyProgressGoalLabel(goal)}`;
+/**
+ * 進度條畫面字（WO-101 定稿），完整與鍵盤開啟的精簡模式共用：
+ * 未達標「今天 320／1,000 字」；達標「今天 1,020／1,000 字　達標了」。
+ */
+export function dailyProgressDisplayLabel(words: number, goal: number, met: boolean): string {
+  const base = todayWordsLabel(words, goal);
+  return met ? `${base}\u3000${DAILY_PROGRESS_MET_TEXT}` : base;
 }
 
-/** 打字時底列精簡數字：千分位，並帶「字」。 */
-export function dailyProgressCompactLabel(words: number, goal: number): string {
-  return `${formatInteger(words)}／${formatInteger(goal)} 字`;
+/**
+ * 進度條朗讀（WO-101 定稿），完整與精簡模式共用，不拿畫面字串來念：
+ * 未達標「今天寫了 320 字，每日目標 1,000 字」；
+ * 達標「今天寫了 1,020 字，每日目標 1,000 字，已經達標」。不用「／」或裝飾符號。
+ */
+export function dailyProgressAriaLabel(words: number, goal: number, met: boolean): string {
+  const base = `${dailyProgressWordsLabel(words)}，${dailyProgressGoalLabel(goal)}`;
+  return met ? `${base}，${DAILY_PROGRESS_MET_ARIA}` : base;
 }
 
 /** 紀錄頁與寬版統計右欄的小標（九方定案：記錄）。 */

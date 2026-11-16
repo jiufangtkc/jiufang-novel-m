@@ -4,3 +4,4 @@ export * from './sidePanels';
 export * from './compositionAction';
 export * from './layoutContext';
 export * from './focusModeState';
+export * from './deviceTheme';
