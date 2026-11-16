@@ -32,7 +32,6 @@ import {
 } from '../domain/writingCards';
 import {
   buildFileProjectInfo,
-  createState,
   deleteProjectCardWithArchive,
   getProjectCards,
   getProjectCategorySettings,
@@ -50,6 +49,7 @@ import {
   SAMPLE_DESKTOP_CARDS,
   SAMPLE_NON_DEFAULT_COLOR,
 } from '../db/testing/desktopSampleDb';
+import { demoFixtureState } from './testing/sampleFixture';
 
 function createMemoryStore(initial: Record<string, string> = {}): KeyValueStore & { data: Record<string, string> } {
   return {
@@ -77,7 +77,7 @@ function createMemoryArchive() {
 
 describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復（sampleStore）', () => {
   it('WO-53：卡片狀態與範例書／新開稿子讀寫、localStorage 存取、以及升格成檔案（promote-stored）', () => {
-    let state = createState(new Date('2026-11-11T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
 
     // 1. 範例書初始具有 18 張範例卡片與 5 個可見分類設定
     const fogCards = getProjectCards(state, 'fog');
@@ -190,7 +190,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
     const db = await openDesktopSampleMemoryDb();
     try {
       const parsed = readFileProject(db.sql);
-      let state = createState(new Date('2026-11-11T12:00:00Z'));
+      let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
 
       state = reduce(state, {
         type: 'attach-file',
@@ -293,7 +293,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
   });
 
   it('WO-53：隱藏分類 ai_chat 卡片保護：即使透過 set-cards、update-card、delete-card 操作，ai_chat 卡片亦原封不動', () => {
-    let state = createState(new Date('2026-11-11T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
     const aiCard: FileCard = {
       id: '90000000-0000-4000-8000-000000000099',
       category: 'ai_chat',
@@ -347,7 +347,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
   });
 
   it('WO-53：切換書不殘留：書 A 與書 B 的卡片清單、寫作時看卡片記憶位置、最近刪除紀錄完全隔離', async () => {
-    let state = createState(new Date('2026-11-11T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
     const archive = createMemoryArchive();
     const storage = {
       data: {} as Record<string, string>,
@@ -411,7 +411,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
   });
 
   it('WO-53：最近刪除可找回：在 sampleStore 中刪除含 2 層子卡片的母卡 → 期間修改其他卡片 → 復原後子孫完整補回且不覆蓋期間修改', async () => {
-    let state = createState(new Date('2026-11-11T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
     const archive = createMemoryArchive();
     const dispatch = (action: Action) => {
       state = reduce(state, action);
@@ -470,7 +470,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
   });
 
   it('WO-53：當自訂分類被刪除後復原該分類的已刪卡片，自動歸入第一個可見分類（不含 ai_chat）的頂層末尾', async () => {
-    let state = createState(new Date('2026-11-11T12:00:00Z'));
+    let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
     const archive = createMemoryArchive();
     const dispatch = (action: Action) => {
       state = reduce(state, action);
@@ -576,7 +576,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
       const parsed = readFileProject(sql);
       expect(parsed.tree[0]?.expanded).toBe(true);
 
-      let state = createState(new Date('2026-11-11T12:00:00Z'));
+      let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
       state = reduce(state, {
         type: 'attach-file',
         project: {
@@ -665,7 +665,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
       );
 
       const parsed = readFileProject(sql);
-      let state = createState(new Date('2026-11-11T12:00:00Z'));
+      let state = demoFixtureState(new Date('2026-11-11T12:00:00Z'));
       state = reduce(state, {
         type: 'attach-file',
         project: {
@@ -740,7 +740,7 @@ describe('WO-53 卡片狀態管理、最近刪除、跨書隔離與追加修復�
     const db = await openDesktopSampleMemoryDb();
     try {
       const parsed = readFileProject(db.sql);
-      let state = createState(new Date('2026-11-13T10:00:00Z'));
+      let state = demoFixtureState(new Date('2026-11-13T10:00:00Z'));
       const archive = createMemoryArchive();
       const dispatch = (action: Action) => {
         state = reduce(state, action);
