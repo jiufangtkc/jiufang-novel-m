@@ -8,6 +8,7 @@ import {
   detectLegacyVersion,
 } from './migrations';
 import { columnNames, tableNames, type Sql, type SqlValue } from './sql';
+import { readTransferData, writeTransferEvents, type TransferEvent, type TransferRead } from './transferMeta';
 
 const PROGRESS = new Set<string>(['Draft', '1st Edit', '2nd Edit', 'Final', 'Discarded']);
 
@@ -121,6 +122,8 @@ export interface LoadedFile {
   cards: FileCard[];
   logs: FileLog[];
   wordCount: number;
+  /** WO-100：稿子內附加表的匯入事件（只讀，不建表）。 */
+  transfer: TransferRead;
 }
 
 type ChapterNodeWithRaw = ChapterNode & {
@@ -405,7 +408,7 @@ export function readFileProject(sql: Sql): LoadedFile {
       delete_large_count: num(row.delete_large_count),
     }));
 
-  return { info, tree, cards, logs, wordCount: treeWordCount(tree) };
+  return { info, tree, cards, logs, wordCount: treeWordCount(tree), transfer: readTransferData(sql) };
 }
 
 function extractChapterSpecialRawColumns(
@@ -928,6 +931,8 @@ export function writeFileProject(
   tree: readonly ChapterNode[],
   cards: readonly FileCard[],
   logs: readonly FileLog[],
+  /** WO-100：這份稿子的匯入事件；不給就完全不碰附加表（舊呼叫端行為不變）。 */
+  importEvents?: Readonly<Record<string, TransferEvent>>,
 ): void {
   const fkRow = sql.select('PRAGMA foreign_keys')[0];
   const prevForeignKeys = fkRow && Number(fkRow.foreign_keys) ? 1 : 0;
@@ -940,6 +945,8 @@ export function writeFileProject(
     writeChaptersDiff(sql, tree);
     writeCardsDiff(sql, cards);
     writeLogsDiff(sql, logs);
+    // WO-100：附加事件與正文同一筆交易；任何一步失敗整筆回復，不會只存到正文。
+    if (importEvents) writeTransferEvents(sql, importEvents);
     sql.exec('COMMIT');
   } catch (error) {
     try {
