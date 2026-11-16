@@ -14,7 +14,8 @@ import {
 import { getTotalImportExportStats } from '../domain/importExportStats';
 import { formatInteger } from '../domain/formatNumber';
 import { useLayout } from '../layout';
-import { useProject, useSample } from '../state/sampleStore';
+import { countImportEvents, countImportEventsOn } from '../state/importEvents';
+import { displayLogRows, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
 import { LogCardItem } from './LogsScreen';
 import './importExport.css';
 
@@ -26,8 +27,14 @@ export function StatsScreen() {
   if (!project) return <ManuscriptNotFound />;
   const total = bookWords(project.id);
   const bookRatio = project.bookGoal > 0 ? Math.min(100, (total / project.bookGoal) * 100) : 0;
-  const totalImportExport = stats.importExport ?? getTotalImportExportStats(state.logs);
-  const sortedLogs = [...state.logs].sort((a, b) => b.date.localeCompare(a.date));
+  // WO-99：匯入次數是這份稿子（目前開著的這份）的全書合計，不是整台裝置合計。
+  // WO-100：全書與每日都取同一份事件集合（檔內事件 ∪ 本機可靠對應）。
+  const importEvents = projectImportEventsOf(state, project.id);
+  const totalImportExport =
+    state.activeProjectId === project.id && stats.importExport
+      ? stats.importExport
+      : getTotalImportExportStats(countImportEvents(importEvents));
+  const sortedLogs = displayLogRows(state, project.id);
 
   return (
     <div className="page" data-testid="stats-screen">
@@ -124,19 +131,12 @@ export function StatsScreen() {
             </p>
           </article>
 
-          {/* WO-60 匯入與匯出（全書合計）預留區塊 */}
-          <article
-            className="panel stat-import-export-panel is-preparing"
-            data-testid="stats-import-export"
-            onClick={() => actions.toast(FEATURE_IN_PREPARATION)}
-          >
+          {/* WO-60 匯入與匯出（全書合計）。WO-99：匯入已開放；準備中只標在匯出那一列。 */}
+          <article className="panel stat-import-export-panel" data-testid="stats-import-export">
             <div className="panel-head">
               <h2>{STATS_IMPORT_EXPORT_HEADING}</h2>
-              <span className="badge-preparing" data-testid="stats-preparing-badge">
-                {PREPARING_BADGE}
-              </span>
             </div>
-            <div className="stat-import-export-row">
+            <div className="stat-import-export-row" data-testid="stats-import-row">
               <span className="stat-import-export-label">
                 <span className="stat-import-export-icon" aria-hidden="true">
                   <svg
@@ -155,9 +155,15 @@ export function StatsScreen() {
                 </span>
                 <span>{STATS_IMPORT_COUNT_LABEL}</span>
               </span>
-              <span className="stat-import-export-value">{totalImportExport.importDisplay}</span>
+              <span className="stat-import-export-value is-open" data-testid="stats-import-count">
+                {totalImportExport.importDisplay}
+              </span>
             </div>
-            <div className="stat-import-export-row">
+            <div
+              className="stat-import-export-row is-preparing"
+              data-testid="stats-export-row"
+              onClick={() => actions.toast(FEATURE_IN_PREPARATION)}
+            >
               <span className="stat-import-export-label">
                 <span className="stat-import-export-icon" aria-hidden="true">
                   <svg
@@ -175,8 +181,13 @@ export function StatsScreen() {
                   </svg>
                 </span>
                 <span>{STATS_EXPORT_COUNT_LABEL}</span>
+                <span className="badge-preparing" data-testid="stats-preparing-badge">
+                  {PREPARING_BADGE}
+                </span>
               </span>
-              <span className="stat-import-export-value">{totalImportExport.exportDisplay}</span>
+              <span className="stat-import-export-value" data-testid="stats-export-count">
+                {totalImportExport.exportDisplay}
+              </span>
             </div>
             <p className="hint stat-import-export-hint">{STATS_IMPORT_EXPORT_SCOPE_HINT}</p>
           </article>
@@ -195,6 +206,7 @@ export function StatsScreen() {
                 <LogCardItem
                   key={row.id}
                   row={row}
+                  importCount={countImportEventsOn(importEvents, row.date)}
                   onPreparingClick={() => actions.toast(FEATURE_IN_PREPARATION)}
                 />
               ))}
