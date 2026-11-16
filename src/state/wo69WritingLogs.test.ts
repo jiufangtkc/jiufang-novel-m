@@ -6,6 +6,7 @@ import { readFileProject, writeFileProject, type FileLog } from '../db/projectFi
 import { createVersion14Shell } from '../db/schemaFixture';
 import { scheduleFromLogs } from '../db/library';
 import { createState, manuscriptSnapshotParts, reduce, type SampleState } from './sampleStore';
+import { demoFixtureState } from './testing/sampleFixture';
 
 /** 範例書自己的範例紀錄日期（10/18～10/28 共 6 天）。 */
 const SAMPLE_DATES = ['2026-10-18', '2026-10-19', '2026-10-20', '2026-10-21', '2026-10-27', '2026-10-28'];
@@ -130,7 +131,8 @@ describe('WO-69 每份稿子各自的寫作紀錄', () => {
   });
 
   it('WO-69：內建範例書紀錄仍在，新稿寫字後也不受影響', () => {
-    const initial = createState(NOON);
+    // WO-95：App 不再預設範例書與範例紀錄；這裡明確放入範例書與舊版固定範例紀錄當測試資料，驗證各稿隔離。
+    const initial = demoFixtureState(NOON, { withDemoStats: true });
     const sampleToday = statsOf(reduce(initial, { type: 'focus-project', id: 'fog' }));
     let state = addAndOpen(initial, 'p-new', '【範例】新稿');
     state = write(state, 'p-new', '新稿的字。\n');
@@ -150,7 +152,8 @@ describe('WO-69 每份稿子各自的寫作紀錄', () => {
   });
 
   it('WO-69：兩份稿子的今天寫了互不干擾，也不加到範例書', () => {
-    const initial = createState(NOON);
+    // WO-95：明確放入範例書與舊版固定範例紀錄當測試資料。
+    const initial = demoFixtureState(NOON, { withDemoStats: true });
     const sampleBefore = statsOf(reduce(initial, { type: 'focus-project', id: 'fog' })).todayWords;
 
     let state = addAndOpen(initial, 'p-a', '【範例】甲稿');
