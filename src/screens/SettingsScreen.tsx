@@ -14,6 +14,7 @@ import {
   settingsVersionText,
   versionAria,
 } from '../copy/aboutCopy';
+import { ERROR_BOOK, ERROR_DAILY } from '../copy/welcomeCopy';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
 import { HALF_WIDTH_SETTING_TITLE, halfWidthSettingAria } from '../copy/halfWidthCopy';
@@ -35,6 +36,23 @@ export function goalApplyPlan(
     daily: nextDaily !== currentDaily,
     book: nextBook !== currentBook,
   };
+}
+
+export type GoalSubmit =
+  | { ok: false; error: string }
+  | { ok: true; nextDaily: number; nextBook: number };
+
+/** 「修改目標」送出檢查。每日先驗；任一欄不合格就不通過，呼叫端不可存任何一項。 */
+export function checkGoalSubmit(dailyText: string, bookText: string): GoalSubmit {
+  const nextDaily = Number(dailyText);
+  const nextBook = Number(bookText);
+  if (!Number.isInteger(nextDaily) || nextDaily < MIN_DAILY_GOAL) {
+    return { ok: false, error: ERROR_DAILY };
+  }
+  if (!Number.isInteger(nextBook) || nextBook < 1) {
+    return { ok: false, error: ERROR_BOOK };
+  }
+  return { ok: true, nextDaily, nextBook };
 }
 
 export function SettingsScreen() {
@@ -183,16 +201,12 @@ export function SettingsScreen() {
             onClick={(event) => event.stopPropagation()}
             onSubmit={(event) => {
               event.preventDefault();
-              const nextDaily = Number(daily);
-              const nextBook = Number(book);
-              if (!Number.isInteger(nextDaily) || nextDaily < MIN_DAILY_GOAL) {
-                setError(`每日目標至少 ${MIN_DAILY_GOAL} 字，沒有上限，而且要是整數。`);
+              const checked = checkGoalSubmit(daily, book);
+              if (!checked.ok) {
+                setError(checked.error);
                 return;
               }
-              if (!Number.isInteger(nextBook) || nextBook < 1) {
-                setError('全書目標要是 1 以上的整數。');
-                return;
-              }
+              const { nextDaily, nextBook } = checked;
               const plan = goalApplyPlan(goalNow, nextDaily, project.bookGoal, nextBook);
               if (plan.daily) actions.setGoal(nextDaily);
               if (plan.book) actions.setBookGoal(project.id, nextBook);
