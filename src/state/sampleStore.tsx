@@ -6,6 +6,7 @@ import {
   useMemo,
   useReducer,
   useRef,
+  useState,
   type ReactNode,
 } from 'react';
 import {
@@ -15,6 +16,7 @@ import {
   countAchievements,
   createSchedule,
   glowing,
+  MIN_DAILY_GOAL,
   withClock,
   writingDayKey,
   type GoalSchedule,
@@ -164,7 +166,11 @@ import {
   recallExportedFile,
   rememberExportedFile,
   saveDeviceSaveRecord,
+  saveHomeDailyGoal,
+  saveTourFileGoal,
+  recallTourFileGoal,
 } from './deviceSaveRecord';
+import { isValidBookGoal, NEW_BOOK_GOAL_DEFAULT, readNewBookGoal } from './newBookGoal';
 
 export interface SampleState {
   projects: DemoProject[];
@@ -215,7 +221,15 @@ export interface FileExtras {
 
 export type Action =
   | { type: 'dismiss-recent'; id: string }
-  | { type: 'add-project'; id: string; title: string; shape: 'novel' | 'single'; startedMs?: number }
+  | {
+      type: 'add-project';
+      id: string;
+      title: string;
+      shape: 'novel' | 'single';
+      startedMs?: number;
+      /** WO-109：新稿子的全書目標（由本機設定 new-book-goal 帶入）；沒給或不合法用 100,000。 */
+      bookGoal?: number;
+    }
   | { type: 'note-started'; startedById: Record<string, number> }
   | { type: 'import-text'; project: DemoProject; dayKey: string; startedMs: number; importEvents: ImportEventRecord }
   | { type: 'set-import-events'; importEvents: ImportEventRecord }
@@ -227,6 +241,8 @@ export type Action =
   | { type: 'note-large'; delta: TextDelta }
   | { type: 'add-duration'; seconds: number }
   | { type: 'set-goal'; goal: number }
+  /** WO-111：歡迎導覽第 1 關寫每日目標。和 set-goal 同一個目標與規則，但不改檔案欄位、不跳提示；值沒變不動。 */
+  | { type: 'set-tour-goal'; goal: number }
   | { type: 'set-hour'; hour: number }
   | { type: 'set-book-goal'; projectId: string; bookGoal: number }
   | { type: 'add-scene'; projectId: string; chapterId: string; sceneId: string }
@@ -343,9 +359,12 @@ export function cloneDemoProject(project: DemoProject): DemoProject {
   return structuredClone(project);
 }
 
-/** WO-95：沒有任何稿子時的寫作狀態。每日目標與一天結束時刻沿用原本的預設值，字數、結算、紀錄都從 0 開始。 */
-function blankSchedule(now: Date): GoalSchedule {
-  return withClock(createSchedule({ dayEndHour: 0, defaultGoal: 1000 }), now);
+/**
+ * WO-95：沒有任何稿子時的寫作狀態。每日目標與一天結束時刻沿用原本的預設值，字數、結算、紀錄都從 0 開始。
+ * WO-111：沒有稿子時在歡迎導覽選過每日目標（裝置紀錄的 homeGoal），重開後用它；沒有就照舊 1,000。
+ */
+function blankSchedule(now: Date, homeGoal?: number): GoalSchedule {
+  return withClock(createSchedule({ dayEndHour: 0, defaultGoal: homeGoal ?? 1000 }), now);
 }
 
 /** WO-95：讀位置記憶裡這份稿子有沒有尚未完成的卡片草稿；讀不到時當作有（保守留稿）。 */
@@ -391,10 +410,10 @@ function cleanUpSamples(
 }
 
 export function createState(now: Date): SampleState {
-  const schedule = blankSchedule(now);
   const store = deviceStore();
   // WO-77：讀回這台裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
   const record = loadDeviceSaveRecord(store, now);
+  const schedule = blankSchedule(now, record.homeGoal);
   // WO-95：沒有存過稿子就是空的，不再放範例書。
   const loaded = (savedProjects(store) ?? []).map((project) =>
     normalizeLoadedProject({
@@ -1198,7 +1217,7 @@ export function reduce(state: SampleState, action: Action): SampleState {
         id: action.id,
         title,
         updatedLabel: '剛剛',
-        bookGoal: 100000,
+        bookGoal: isValidBookGoal(action.bookGoal) ? action.bookGoal : NEW_BOOK_GOAL_DEFAULT,
         shape: action.shape,
         lastOpenedNodeId: chapterId,
         lastCursor: 0,
@@ -1332,6 +1351,14 @@ export function reduce(state: SampleState, action: Action): SampleState {
             : nextState.fileExtras,
         toast: '已更新今日目標',
       };
+    }
+    case 'set-tour-goal': {
+      // WO-111：和設定頁同一個每日目標（changeGoal：更新預設並追加當天一筆，當天以最後一次為準）。
+      // 不像 set-goal 那樣去改開著檔案的 fileExtras（不會因此觸發寫回檔案），也不跳「已更新今日目標」。
+      const current = withClock(state.schedule, now);
+      const goalNow = current.open?.goals.at(-1)?.goal ?? current.defaultGoal;
+      if (goalNow === action.goal) return state;
+      return keepSchedule(state, changeGoal(state.schedule, action.goal, now));
     }
     case 'set-hour':
       return {
@@ -1547,6 +1574,12 @@ interface SampleActions {
   noteLarge: (delta: TextDelta) => void;
   addDuration: (seconds: number) => void;
   setGoal: (goal: number) => void;
+  /**
+   * WO-111：歡迎導覽第 1 關按「下一關」時寫每日目標（和設定頁同一個值）。
+   * 不合法（不是 300 以上的整數）不寫、回 false。沒有開著的稿子時另外記在這台裝置的紀錄裡，重開後還在；
+   * 記不進本機儲存時這次使用照樣有效。不改檔案欄位、不寫 .db。
+   */
+  setTourDailyGoal: (goal: number) => boolean;
   setHour: (hour: number) => void;
   setBookGoal: (projectId: string, bookGoal: number) => void;
   addScene: (projectId: string, chapterId: string) => void;
@@ -1616,6 +1649,11 @@ interface SampleContextValue {
   isGlowing: boolean;
   stats: StatsSummary;
   bookWords: (projectId: string) => number;
+  /**
+   * WO-110：這台裝置的資料（含非同步回復的手機暫存稿）是否已經載入完成。
+   * 首次歡迎導覽要等它為 true 才判斷是不是全新裝置，不可趁還沒載完就當作全新。
+   */
+  deviceLoaded: boolean;
 }
 
 const SampleContext = createContext<SampleContextValue | null>(null);
@@ -1776,8 +1814,16 @@ function nextImportProjectId(state: SampleState, nowMs: number): { id: string; m
   return { id: `p-${ms}`, ms };
 }
 
-/** WO-99：用分好的章建立完整新稿子（長篇形式，章都在最上層，跟開新稿子的第一章同一種節點）。 */
-export function buildImportedProject(id: string, title: string, chapters: readonly SplitChapter[]): DemoProject {
+/**
+ * WO-99：用分好的章建立完整新稿子（長篇形式，章都在最上層，跟開新稿子的第一章同一種節點）。
+ * WO-109：全書目標用新稿子的全書目標預設；沒給或不合法用 100,000。
+ */
+export function buildImportedProject(
+  id: string,
+  title: string,
+  chapters: readonly SplitChapter[],
+  bookGoal: number = NEW_BOOK_GOAL_DEFAULT,
+): DemoProject {
   const firstId = newChapterId(id);
   const nodes: ChapterNode[] = chapters.map((chapter, index) => ({
     id: index === 0 ? firstId : `${firstId}-${index + 1}`,
@@ -1790,7 +1836,7 @@ export function buildImportedProject(id: string, title: string, chapters: readon
     id,
     title,
     updatedLabel: '剛剛',
-    bookGoal: 100000,
+    bookGoal: isValidBookGoal(bookGoal) ? bookGoal : NEW_BOOK_GOAL_DEFAULT,
     shape: 'novel',
     lastOpenedNodeId: firstId,
     lastCursor: 0,
@@ -1800,6 +1846,76 @@ export function buildImportedProject(id: string, title: string, chapters: readon
     categoriesMetaRaw: '{}',
     nodes,
   };
+}
+
+/**
+ * WO-109：一般開新稿子（長篇／單篇）的建立事件。
+ * 全書目標帶入這台裝置的新稿子全書目標預設（沒設過、不合法、讀不到＝100,000）。
+ */
+/**
+ * WO-111：歡迎導覽第 1 關按「下一關」寫每日目標。和設定頁同一個每日目標（set-tour-goal → changeGoal）。
+ * - 不是 300 以上的整數：不寫，回 false。
+ * - 值沒變：不寫，回 true。
+ * - 沒有開著的稿子：另外記在這台裝置既有紀錄（save-record.v1）的 homeGoal，重開後預選；不新增每日目標的鍵。
+ *   本機儲存不能用或寫丟錯時照樣回 true，這次使用的值已在記憶體裡。
+ * - WO-111 返工1：開著 .db 檔案稿：當下記在同一把裝置紀錄的 tourGoalById（以稿子代號對應），
+ *   重新載入時由 applyTourFileGoal 套回；不寫 .db、不改檔案欄位。寫丟錯時同上，照樣回 true。
+ * - 不改開著檔案的欄位、不寫 .db、不改其他稿子。
+ */
+export function commitTourDailyGoal(input: {
+  state: SampleState;
+  goal: number;
+  now: Date;
+  store: KeyValueStore | null;
+  dispatch: (action: Action) => void;
+}): boolean {
+  const { state, goal, now, store, dispatch } = input;
+  if (!Number.isSafeInteger(goal) || goal < MIN_DAILY_GOAL) return false;
+  const current = withClock(state.schedule, now);
+  if ((current.open?.goals.at(-1)?.goal ?? current.defaultGoal) === goal) return true;
+  dispatch({ type: 'set-tour-goal', goal });
+  if (state.activeProjectId === null && store) {
+    try {
+      saveHomeDailyGoal(store, goal);
+    } catch {
+      // 私人瀏覽可能不准寫入；這次使用的每日目標已經改好。
+    }
+  }
+  const active = state.projects.find((project) => project.id === state.activeProjectId);
+  if (active?.origin === 'file' && store) {
+    try {
+      saveTourFileGoal(store, active.id, goal);
+    } catch {
+      // 同上：寫不進去時這次使用的值仍在記憶體裡。
+    }
+  }
+  return true;
+}
+
+/**
+ * WO-111 返工1：從手機暫存回復檔案稿時，套回導覽記下的每日目標（和設定頁同一個 changeGoal：
+ * 更新預設並追加當天一筆，當天以最後一次為準）。沒有記、讀不到或已和檔案相同時原樣回傳。
+ */
+export function applyTourFileGoal(book: ImportedBook, store: KeyValueStore | null, now: Date): ImportedBook {
+  const goal = recallTourFileGoal(store, book.key);
+  if (goal === null) return book;
+  const current = withClock(book.schedule, now);
+  if ((current.open?.goals.at(-1)?.goal ?? current.defaultGoal) === goal) return book;
+  try {
+    return { ...book, schedule: changeGoal(book.schedule, goal, now) };
+  } catch {
+    return book;
+  }
+}
+
+export function addProjectAction(
+  id: string,
+  title: string,
+  shape: 'novel' | 'single',
+  startedMs?: number,
+  store?: KeyValueStore | null,
+): Extract<Action, { type: 'add-project' }> {
+  return { type: 'add-project', id, title, shape, startedMs, bookGoal: readNewBookGoal(store) };
 }
 
 function defaultYieldToUi(): Promise<void> {
@@ -1832,6 +1948,8 @@ export async function runTextImport(input: {
   yieldToUi?: () => Promise<void>;
   decoder?: StrictDecoderFactory;
   newEventId?: (projectId: string) => string;
+  /** WO-109：新稿子的全書目標；沒給就讀這台裝置的本機設定 new-book-goal（沒設過＝100,000）。 */
+  newBookGoal?: number;
 }): Promise<TextImportOutcome> {
   const { busy, store } = input;
   if (busy.current) return { kind: 'busy' };
@@ -1860,7 +1978,12 @@ export async function runTextImport(input: {
     const state = input.getState();
     const at = (input.now ?? (() => new Date()))();
     const { id, ms } = nextImportProjectId(state, at.getTime());
-    const project = buildImportedProject(id, importTitleFromFilename(input.filename), chapters);
+    const project = buildImportedProject(
+      id,
+      importTitleFromFilename(input.filename),
+      chapters,
+      input.newBookGoal ?? readNewBookGoal(store),
+    );
     const dayKey = freshSchedule(state, at).open?.dayKey ?? writingDayKey(at, state.schedule.dayEndHour);
     const eventId = (input.newEventId ?? defaultImportEventId)(id);
 
@@ -2190,6 +2313,8 @@ export function SampleProvider({
   stateRef.current = state;
   const importBusyRef = useRef(false);
   const exportBusyRef = useRef(false);
+  // WO-110：手機暫存稿（loadStoredBooks）回復完成或確定讀不到後才是 true。
+  const [deviceLoaded, setDeviceLoaded] = useState(false);
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
@@ -2242,9 +2367,12 @@ export function SampleProvider({
             tree = updateNode(book.tree, draft.chapterId, (node) => ({ ...node, content: draft.text }));
             appliedDraft = true;
           }
-          dispatch(attachActionForBook(book, { updatedLabel: STORED_ON_PHONE_LABEL, nodes: tree, quiet: true }));
+          // WO-111 返工1：導覽在這份檔案稿選過每日目標，就用裝置記下的值。
+          const restored = applyTourFileGoal(book, deviceStore(), new Date());
+          dispatch(attachActionForBook(restored, { updatedLabel: STORED_ON_PHONE_LABEL, nodes: tree, quiet: true }));
         }
         if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
+        setDeviceLoaded(true);
         for (const book of books) {
           void createBrowserTargetStore()
             .load(book.key)
@@ -2256,6 +2384,7 @@ export function SampleProvider({
       })
       .catch(() => {
         // 沒有手機儲存空間時，其他稿子仍可寫。
+        if (!cancelled) setDeviceLoaded(true);
       });
     return () => {
       cancelled = true;
@@ -2349,7 +2478,7 @@ export function SampleProvider({
       addProject: (title, shape = 'novel') => {
         const startedMs = Date.now();
         const id = `p-${startedMs}`;
-        dispatch({ type: 'add-project', id, title, shape, startedMs });
+        dispatch(addProjectAction(id, title, shape, startedMs));
         return id;
       },
       rememberPlace: (projectId, nodeId, cursor) =>
@@ -2362,6 +2491,8 @@ export function SampleProvider({
       noteLarge: (delta) => dispatch({ type: 'note-large', delta }),
       addDuration: (seconds) => dispatch({ type: 'add-duration', seconds }),
       setGoal: (goal) => dispatch({ type: 'set-goal', goal }),
+      setTourDailyGoal: (goal) =>
+        commitTourDailyGoal({ state: stateRef.current, goal, now: new Date(), store: deviceStore(), dispatch }),
       setHour: (hour) => dispatch({ type: 'set-hour', hour }),
       setBookGoal: (projectId, bookGoal) => dispatch({ type: 'set-book-goal', projectId, bookGoal }),
       addScene: (projectId, chapterId) =>
@@ -2636,8 +2767,8 @@ export function SampleProvider({
   );
 
   const value = useMemo(
-    () => ({ state, actions, achievementCount, isGlowing, stats, bookWords }),
-    [state, actions, achievementCount, isGlowing, stats, bookWords],
+    () => ({ state, actions, achievementCount, isGlowing, stats, bookWords, deviceLoaded }),
+    [state, actions, achievementCount, isGlowing, stats, bookWords, deviceLoaded],
   );
 
   return <SampleContext.Provider value={value}>{children}</SampleContext.Provider>;

@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon } from '../components/Icons';
 import {
   lastEditDisplay,
@@ -7,33 +7,49 @@ import {
   NEW_BOOK_NOVEL,
   NEW_BOOK_SHAPE,
   NEW_BOOK_SINGLE,
-  OPEN_DB_FAIL,
 } from '../copy/userFacing';
 import { latestEditTimestamp } from '../domain/saveClock';
 import { useLayout } from '../layout';
 import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
-import { canPickLocalFiles } from '../db/browserDisk';
 import { recentDisplayProjects } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
+import { useFirstRunWelcome } from './useFirstRunWelcome';
+import { useOpenManuscriptFile } from './useOpenManuscriptFile';
+import { isWelcomeStartNew } from './welcomeStart';
+import { useWelcomeSteps } from './WelcomeSteps';
+import { WelcomeTour } from './WelcomeTour';
 
 export function HomeScreen() {
-  const { state, actions, bookWords } = useSample();
+  const { state, actions, bookWords, isGlowing } = useSample();
+  // WO-110：全新裝置第一次打開首頁時自動出現歡迎導覽。
+  const welcome = useFirstRunWelcome();
   const { isAtLeastMedium } = useLayout();
   const navigate = useNavigate();
+  const location = useLocation();
   const [creating, setCreating] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const openInputRef = useRef<HTMLInputElement>(null);
+  // 「開啟稿子」：picker 或隱藏 file input（WO-111 抽成共用，歡迎導覽收尾也用）。
+  const openFile = useOpenManuscriptFile();
+  // WO-111：歡迎導覽三關內容（第一次使用，沒有開著的稿子）。
+  const steps = useWelcomeSteps({ entry: 'first', project: null });
   const [title, setTitle] = useState(NEW_BOOK_DEFAULT_TITLE);
   const [shape, setShape] = useState<'novel' | 'single'>('novel');
   // WO-84：同名稿子只列最近一次成功存下來的那份。
   const recent = recentDisplayProjects(state.projects, state.recentIds, state.saveMeta);
 
+  // WO-111：從「設定 › 關於」再看一次、第 3 關選「開新稿子」後回到首頁：打開現有的開新稿子對話框（不直接建稿）。
+  // 用過就清掉，重新載入或上一頁不會再打開。
+  useEffect(() => {
+    if (!isWelcomeStartNew(location.state)) return;
+    setCreating(true);
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
+
   return (
     <div className="home" data-testid="home-screen">
-      <header className="topbar">
+      <header className="topbar" inert={welcome.show}>
         <h1>九方小說編輯器M</h1>
       </header>
-      <main className="home-main">
+      <main className="home-main" inert={welcome.show}>
         <h2>最近開啟的稿子</h2>
         {recent.length === 0 ? (
           <p className="empty-note">還沒有稿子。開一本新的，或開啟已經存在的 .db 稿件檔。</p>
@@ -69,7 +85,7 @@ export function HomeScreen() {
           </ul>
         )}
       </main>
-      <footer className="home-actions">
+      <footer className="home-actions" inert={welcome.show}>
         <button type="button" className="button primary" onClick={() => setCreating(true)}>
           <PlusIcon size={18} />
           開新稿子
@@ -77,44 +93,31 @@ export function HomeScreen() {
         <button
           type="button"
           className="button secondary"
-          disabled={busy}
-          onClick={() => {
-            if (canPickLocalFiles()) {
-              setBusy(true);
-              void actions
-                .openWithPicker()
-                .then((opened) => {
-                  if (opened) navigate(writePath(opened.id, opened.chapterId));
-                })
-                .catch(() => actions.toast(OPEN_DB_FAIL))
-                .finally(() => setBusy(false));
-              return;
-            }
-            openInputRef.current?.click();
-          }}
+          disabled={openFile.busy}
+          onClick={() => openFile.open()}
         >
           <FolderIcon size={18} />
           開啟稿子
         </button>
-        <input
-          ref={openInputRef}
-          type="file"
-          accept=".db,application/octet-stream,application/x-sqlite3"
-          hidden
-          data-testid="open-db"
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (!file) return;
-            setBusy(true);
-            void actions
-              .importFile(file)
-              .then((opened) => navigate(writePath(opened.id, opened.chapterId)))
-              .catch(() => actions.toast(OPEN_DB_FAIL))
-              .finally(() => setBusy(false));
+      </footer>
+      {/* 放在 inert 區塊外：導覽收尾「開始寫」選檔時，首頁後面還是 inert。 */}
+      {openFile.input}
+      {welcome.show && (
+        <WelcomeTour
+          entry="first"
+          todayWords={state.schedule.open?.wordCount ?? 0}
+          dailyGoal={state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal}
+          met={isGlowing}
+          {...steps}
+          // 整趟跳過、收尾「回首頁」都是關掉導覽留在首頁；紀錄已由導覽寫好。
+          // WO-111：收尾「開始寫」：開新稿子＝打開現有對話框（全書目標由 WO-109 帶入）；開啟稿子＝系統選檔。
+          onExit={(exit) => {
+            welcome.dismiss();
+            if (exit === 'finish-new') setCreating(true);
+            else if (exit === 'finish-open') openFile.open();
           }}
         />
-      </footer>
+      )}
       {creating && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setCreating(false)}>
           <form

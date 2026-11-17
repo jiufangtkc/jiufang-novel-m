@@ -1,6 +1,10 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import { readFileSync } from 'node:fs';
 import { VitePWA } from 'vite-plugin-pwa';
+
+/** App 版本號碼的唯一來源是 package.json，建置時帶入（WO-108）。 */
+const APP_VERSION: string = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
 
 /** COEP 需要子資源帶 CORP，否則 sqlite wasm 在 WebKit 會被擋。 */
 function crossOriginResourcePolicyForWasm() {
@@ -73,6 +77,9 @@ function themeManifests() {
 }
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(APP_VERSION),
+  },
   plugins: [
     crossOriginResourcePolicyForWasm(),
     react(),
