@@ -22,6 +22,9 @@ import {
 } from '../domain/cardColors';
 import { cardVisualStyles } from '../domain/cards';
 import type { LayoutMode } from '../layout/layoutMode';
+import { DictButton, DictOfflineNotice } from './DictButton';
+import { useDictNotice } from '../dictionary/useDictNotice';
+import { useDictSelection } from '../dictionary/useDictSelection';
 import { CardColorPicker } from './CardColorPicker';
 import { CardMarkdownView } from './CardMarkdownView';
 import './cardEditor.css';
@@ -139,6 +142,15 @@ export function CardEditor({
     emitDraft({ color: value });
   };
   const [isPickingColor, setIsPickingColor] = useState(initialPickingColor);
+
+  // WO-106：查字典只觀察「內容」textarea 的選取；標題不判斷。textarea 只在編輯模式存在
+  const contentRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const dict = useDictSelection('card', contentRef, undefined, currentMode);
+  const dictNotice = useDictNotice();
+  const hideDictNotice = dictNotice.hide;
+  React.useEffect(() => {
+    hideDictNotice();
+  }, [dict.word, dict.visible, hideDictNotice]);
 
   if (draftRef) {
     draftRef.current = () => ({ title, content, color: formatCardColorForSave(color) });
@@ -335,11 +347,25 @@ export function CardEditor({
         <>
           <header className="card-editor-header">
             <h2 className="card-editor-title">{EDIT_CARD_HEADING}</h2>
-            {savedNotice && (
-              <span className="card-editor-saved-hint" data-testid="card-editor-saved-hint">
-                {savedNotice}
-              </span>
-            )}
+            <div className="card-editor-header-end">
+              {savedNotice && (
+                <span className="card-editor-saved-hint" data-testid="card-editor-saved-hint">
+                  {savedNotice}
+                </span>
+              )}
+              {dict.visible && (
+                <DictButton
+                  word={dict.word}
+                  placement="card"
+                  onPointerDown={dict.onPointerDown}
+                  onPress={dict.onPress}
+                  onBlur={dict.onButtonBlur}
+                  onOffline={dictNotice.show}
+                  testId="card-dict-button"
+                />
+              )}
+            </div>
+            <DictOfflineNotice visible={dictNotice.visible} placement="card" testId="card-dict-offline-notice" />
           </header>
 
           <div className="card-editor-body">
@@ -419,6 +445,7 @@ export function CardEditor({
                 {CARD_CONTENT_LABEL}
               </label>
               <textarea
+                ref={contentRef}
                 id="card-editor-content-textarea"
                 className="card-editor-textarea"
                 value={content}

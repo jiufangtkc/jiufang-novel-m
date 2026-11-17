@@ -13,6 +13,10 @@ import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import type { BookSearchController } from '../components/BookSearchPanelState';
 import { SearchIcon, SearchThumbNav, useEditorSearch } from '../components/BookSearchPanelParts';
 import '../components/BookSearchPanel.css';
+import { DictButton, DictOfflineNotice } from '../components/DictButton';
+import { dictPlacement } from '../dictionary/dictPlacement';
+import { useDictNotice } from '../dictionary/useDictNotice';
+import { useDictSelection } from '../dictionary/useDictSelection';
 import { BOOK_SEARCH_OPEN_ARIA } from '../copy/bookSearchCopy';
 import {
   FOCUS_MODE_LANDSCAPE_ENTER_ARIA,
@@ -203,6 +207,21 @@ export function EditorPane({
     pointer,
   } = useLayout();
   const [halfWidthOn] = useHalfWidthSetting();
+  // WO-105：查字典（只觀察選取；位置只看現有版面判斷）
+  const dict = useDictSelection('body', ref);
+  const dictNotice = useDictNotice();
+  const dictWhere = dictPlacement({
+    layoutMode,
+    focusMode,
+    landscapeTyping: keyboard.landscape,
+  });
+  const dictVisible = dict.visible;
+  const dictTopbarClass = dictVisible && dictWhere === 'topbar' ? ' has-dict-button' : '';
+  const hideDictNotice = dictNotice.hide;
+  useEffect(() => {
+    // 選取改變（或不再可查）時，沒網路提示可以消失
+    hideDictNotice();
+  }, [dict.word, dictVisible, hideDictNotice]);
   const halfWidth = useHalfWidthReminder({
     textareaRef: ref,
     bookId: projectId,
@@ -672,7 +691,8 @@ export function EditorPane({
       >
         {FOCUS_MODE_EXIT_BUTTON}
       </button>
-      <header className={staleDays != null ? 'topbar has-save-reminder' : 'topbar'}>
+      <header className={staleDays != null ? `topbar has-save-reminder${dictTopbarClass}` : `topbar${dictTopbarClass}`}
+      >
         <button
           type="button"
           className="icon-button back-button"
@@ -714,6 +734,17 @@ export function EditorPane({
             {saveStatus.label}
           </span>
         </div>
+        {dictVisible && dictWhere === 'topbar' ? (
+          <DictButton
+            word={dict.word}
+            placement="topbar"
+            onPointerDown={dict.onPointerDown}
+            onPress={dict.onPress}
+            onBlur={dict.onButtonBlur}
+            onOffline={dictNotice.show}
+            testId="dict-button"
+          />
+        ) : null}
         {search ? (
           <button
             type="button"
@@ -750,6 +781,18 @@ export function EditorPane({
         </button>
         {staleDays != null ? <StaleSaveReminder days={staleDays} onSave={saveFromReminder} /> : null}
       </header>
+      {dictVisible && dictWhere === 'floating' ? (
+        <DictButton
+          word={dict.word}
+          placement="floating"
+          onPointerDown={dict.onPointerDown}
+          onPress={dict.onPress}
+          onBlur={dict.onButtonBlur}
+          onOffline={dictNotice.show}
+          testId="dict-button"
+        />
+      ) : null}
+      <DictOfflineNotice visible={dictNotice.visible} placement={dictWhere} />
       <button
         type="button"
         className="floating-tree-trigger"
