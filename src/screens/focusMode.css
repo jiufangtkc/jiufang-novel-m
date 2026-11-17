@@ -469,3 +469,105 @@ html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button.i
   border-color: rgba(255, 255, 255, 0.4);
   color: var(--text);
 }
+
+/* ==========================================================================
+   WO-105 查字典按鈕與沒網路提示（視覺暫定，交視覺設計）
+   高 44、寬 ≥44；顏色照示意圖：--accent 外框 55%、底色 16%。
+   ========================================================================== */
+
+.dict-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.dict-button svg { color: var(--accent); flex-shrink: 0; }
+.dict-button-label { font-weight: 600; }
+.dict-button-hint { font-size: 12px; color: var(--muted); white-space: pre; }
+.dict-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 頁首：放在「全書搜尋」左邊（中等、寬版、橫拿沒打字）；右邊空間不夠時不讓它被擠掉 */
+.topbar .dict-button { margin-left: auto; }
+html[data-layout="wide"] .topbar .dict-button { margin-left: 0; }
+/* 寬版：頁首統計靠右（margin-left:auto）；查字典在統計與搜尋之間 */
+
+/* 手機直拿：占章名那一格（左 64 起，右緣 ≤191），全書搜尋位置不動 */
+html[data-layout="phone-portrait"] .topbar .dict-button {
+  margin-left: 8px;
+  margin-right: auto;
+  max-width: 127px;
+  overflow: hidden;
+}
+/* 出現期間暫時藏章名與半形提醒小標，取消選取就回來 */
+html[data-layout="phone-portrait"] .topbar.has-dict-button h1,
+html[data-layout="phone-portrait"] .topbar.has-dict-button .half-width-badge-wrap {
+  display: none;
+}
+
+/* 寬版資訊避讓：先藏「已暫存時間」，再藏「今天字數」；不重疊、不換行 */
+html[data-layout="wide"] .topbar.has-dict-button {
+  container-name: editor-topbar;
+  container-type: inline-size;
+}
+html[data-layout="wide"] .topbar.has-dict-button .topbar-stats { min-width: 0; overflow: hidden; flex-shrink: 1; }
+@container editor-topbar (max-width: 1100px) {
+  .topbar.has-dict-button .topbar-save { display: none; }
+}
+@container editor-topbar (max-width: 900px) {
+  .topbar.has-dict-button .topbar-words { display: none; }
+}
+
+/* 浮動：頁首被收起（橫拿打字、專注模式）時浮在左上角 */
+.dict-button.is-floating {
+  position: fixed;
+  top: calc(8px + var(--safe-top, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  margin: 0;
+  z-index: 90;
+  background-color: var(--panel);
+  background-image: linear-gradient(color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+}
+/* 專注模式：和右上「離開專注模式」同高，左邊距等於離開鈕的右邊距 */
+html[data-focus-mode="true"] .dict-button.is-floating { top: calc(16px + var(--safe-top, 0px)); left: 24px; }
+html[data-focus-mode="true"][data-layout="phone-portrait"] .dict-button.is-floating { top: calc(12px + var(--safe-top, 0px)); left: 16px; }
+html[data-focus-mode="true"][data-layout="phone-landscape"] .dict-button.is-floating { top: calc(12px + var(--safe-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); }
+
+/* 沒網路提示：按鈕所在那一塊頂端正下方，左右留 12，蓋在正文上方，不推動版面 */
+.dict-offline-notice { display: none; }
+.dict-offline-notice[data-visible="true"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: calc(56px + var(--safe-top, 0px));
+  z-index: 95;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  pointer-events: none;
+}
+/* 寬版左邊有 72 寬導覽欄，提示從導覽欄右邊起算 */
+html[data-layout="wide"] .dict-offline-notice[data-placement="topbar"][data-visible="true"] { left: 84px; }
+.dict-offline-notice svg { color: var(--accent); flex-shrink: 0; }
+.dict-offline-notice[data-placement="floating"][data-visible="true"] {
+  top: calc(8px + 44px + 8px + var(--safe-top, 0px));
+}
+html[data-focus-mode="true"] .dict-offline-notice[data-placement="floating"][data-visible="true"] {
+  top: calc(16px + 44px + 8px + var(--safe-top, 0px));
+}
