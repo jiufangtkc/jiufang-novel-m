@@ -3190,3 +3190,8 @@ html[data-pointer="mouse"] .cards-subcard-button {
   overflow-wrap: anywhere;
   cursor: pointer;
 }
+
+/* WO-108：設定頁「關於」組 */
+.about-version-row { justify-content: space-between; cursor: default; }
+.about-version-value { color: var(--muted); font-size: 14px; }
+.about-welcome-row { min-height: 56px; }
