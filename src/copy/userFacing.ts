@@ -6,11 +6,12 @@ import { formatLastExportLabel } from '../domain/saveClock';
 
 export const MANUSCRIPT_NOT_FOUND = '找不到這份稿子。請回首頁重新開啟。';
 
-// WO-97：設定頁「隱私說明」標題（入口列與子頁共用）與九方定稿六句，一句一段
+// WO-97：設定頁「隱私說明」標題（入口列與子頁共用）與九方定稿六句加 WO-107 查字典補句（第二句後），共七句，一句一段
 export const PRIVACY_TITLE = '隱私說明';
 export const PRIVACY_PARAGRAPHS: readonly string[] = [
   'JiufangM 不用註冊，也不用登入。',
   '您的稿子、卡片和寫作紀錄只存在您自己的裝置裡，不會傳到我們這邊或任何伺服器。',
+  '只有按「查字典」時例外：您選取的詞會送到教育部辭典網站查詢，稿子其他內容不會送出。',
   '您用「儲存」存成 .db 檔時，檔案會存到您自己選的地方，像是「檔案」App 或 iCloud 雲碟。',
   '我們不收集您的姓名、聯絡方式或稿子內容，也不放廣告。',
   '網站放在 Cloudflare 上，Cloudflare 只會留一般網站都有的連線紀錄，裡面沒有稿子內容。',

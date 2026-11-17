@@ -25,6 +25,10 @@ const FINAL_SIX = [
   '清除瀏覽器資料或刪掉 App 時，沒有另外存成 .db 檔的稿子可能會不見，記得定期存檔。',
 ];
 
+// WO-107（F-4）：原六句逐字不變，只在第二句（文案第 4 行）正下方插入查字典補句，獨立寫死
+const DICT_SENTENCE = '只有按「查字典」時例外：您選取的詞會送到教育部辭典網站查詢，稿子其他內容不會送出。';
+const FINAL_SEVEN = [FINAL_SIX[0], FINAL_SIX[1], DICT_SENTENCE, ...FINAL_SIX.slice(2)];
+
 function renderWorkspaceAt(path: string, mode: LayoutMode): string {
   return renderToStaticMarkup(
     createElement(
@@ -55,12 +59,17 @@ function renderWorkspaceAt(path: string, mode: LayoutMode): string {
 }
 
 describe('WO-97 隱私說明', () => {
-  it('a. 常數與定稿六句逐字相同、順序一致，標題為「隱私說明」', () => {
+  it('a. 常數為原六句加查字典補句共七句，補句緊接在第二句之後，標題為「隱私說明」', () => {
     expect(PRIVACY_TITLE).toBe('隱私說明');
-    expect([...PRIVACY_PARAGRAPHS]).toEqual(FINAL_SIX);
+    expect(FINAL_SEVEN.length).toBe(7);
+    expect([...PRIVACY_PARAGRAPHS]).toEqual(FINAL_SEVEN);
+    expect(PRIVACY_PARAGRAPHS[2]).toBe(DICT_SENTENCE);
+    expect(PRIVACY_PARAGRAPHS.indexOf(DICT_SENTENCE)).toBe(PRIVACY_PARAGRAPHS.indexOf(FINAL_SIX[1]) + 1);
+    // 原六句逐字保留（移除補句後等於原六句）
+    expect(PRIVACY_PARAGRAPHS.filter((p) => p !== DICT_SENTENCE)).toEqual(FINAL_SIX);
   });
 
-  it('a2. 若定稿來源檔存在，正文（去掉標題列與空行）與常數相同', () => {
+  it('a2. 若定稿來源檔存在，其六句（去掉標題列與空行）加上補句後與常數相同', () => {
     let source: string;
     try {
       source = readFileSync('/workspace/delivery/novel-editor-mobile/隱私說明-文案初稿-2026-11-16.md', 'utf8');
@@ -68,7 +77,8 @@ describe('WO-97 隱私說明', () => {
       return;
     }
     const lines = source.split('\n').filter((line) => line.trim() !== '' && !line.startsWith('#'));
-    expect(lines).toEqual([...PRIVACY_PARAGRAPHS]);
+    expect([lines[0], lines[1], DICT_SENTENCE, ...lines.slice(2)]).toEqual([...PRIVACY_PARAGRAPHS]);
+    expect(lines.length).toBe(6);
   });
 
   it('b. 設定頁最後一個入口是「隱私說明」，在字型授權之後、無副標、連到新路由', () => {
@@ -82,7 +92,7 @@ describe('WO-97 隱私說明', () => {
     expect(html.indexOf('data-testid="font-license-link"')).toBeLessThan(html.indexOf('data-testid="privacy-link"'));
   });
 
-  it('c. 隱私頁有「返回設定」按鈕，返回同一稿子的設定頁，六句各一段', () => {
+  it('c. 隱私頁有「返回設定」按鈕，返回同一稿子的設定頁，七句各一段', () => {
     for (const mode of LAYOUT_MODES) {
       const html = renderWorkspaceAt(`/p/${PROJECT_ID}/privacy`, mode);
       expect(html).toContain('data-testid="privacy-screen"');
@@ -91,12 +101,13 @@ describe('WO-97 隱私說明', () => {
       expect(html).toContain('<h1>隱私說明</h1>');
       expect(html).not.toContain('<pre');
       const paragraphs = [...html.matchAll(/<p class="privacy-paragraph">([^<]*)<\/p>/g)].map((m) => m[1]);
-      expect(paragraphs.length).toBe(6);
+      expect(paragraphs.length).toBe(7);
+      expect(paragraphs[2]).toBe(DICT_SENTENCE);
     }
     const html = renderWorkspaceAt(`/p/${PROJECT_ID}/privacy`, 'wide');
     const text = [...html.matchAll(/<p class="privacy-paragraph">([^<]*)<\/p>/g)].map((m) => m[1]);
     // 「」與 . 不會被 HTML 轉義，逐句比對
-    expect(text).toEqual(FINAL_SIX);
+    expect(text).toEqual(FINAL_SEVEN);
 
     const source = readFileSync(new URL('./PrivacyScreen.tsx', import.meta.url), 'utf8');
     expect(source).toContain("navigate(`/p/${project.id}/settings`)");
