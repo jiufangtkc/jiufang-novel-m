@@ -10,6 +10,7 @@ import { LogsScreen } from './screens/LogsScreen';
 import { PrivacyScreen } from './screens/PrivacyScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
+import { WelcomeRevisitScreen } from './screens/WelcomeRevisitScreen';
 import { Workspace } from './screens/Workspace';
 import { WriteScreen } from './screens/WriteScreen';
 import { SampleProvider } from './state/sampleStore';
@@ -49,6 +50,7 @@ export function App() {
                 <Route path="settings" element={<SettingsScreen />} />
                 <Route path="font-license" element={<FontLicenseScreen />} />
                 <Route path="privacy" element={<PrivacyScreen />} />
+                <Route path="welcome" element={<WelcomeRevisitScreen />} />
                 <Route path="logs" element={<LogsScreen />} />
               </Route>
             </Routes>
