@@ -95,7 +95,7 @@ import {
   type ExportFormat,
   type ExportScope,
 } from '../domain/fullTextExport';
-import { DOCX_MIME, TXT_MIME, deliverFile, makeExportFile, type DeliveryResult } from '../db/fileDelivery';
+import { DOCX_MIME, TXT_MIME, deliverFile, makeExportFile, type DeliveryMode, type DeliveryResult } from '../db/fileDelivery';
 import { countBookWords } from '../domain/wordCount';
 import { startedMsFromProjectId } from '../domain/staleSaveReminder';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
@@ -2082,26 +2082,35 @@ export async function recordFullTextExport(input: {
   }
 }
 
+/** 已成功交付並計次的 prepared；同一份檔案不重複處理。 */
+const deliveredPrepared = new WeakSet<PreparedExport>();
+
 /** WO-103：交付已備妥的檔案，成功才記一次。分享取消、手勢失效、交付拋錯都不計次。 */
 export async function deliverAndRecordExport(input: {
   prepared: PreparedExport;
   getState: () => SampleState;
   dispatch: (action: Action) => void;
   store: KeyValueStore | null;
-  deliver?: (file: File) => Promise<DeliveryResult>;
+  deliver?: (file: File, mode?: DeliveryMode) => Promise<DeliveryResult>;
+  /** download：已備妥重試，一律下載。預設 auto。 */
+  mode?: DeliveryMode;
   now?: () => Date;
   newEventId?: (projectId: string) => string;
   snapshot?: typeof snapshotManuscript;
 }): Promise<FullTextExportOutcome> {
   const { prepared } = input;
+  const mode = input.mode ?? 'auto';
+  if (deliveredPrepared.has(prepared)) return { kind: 'busy' };
   let result: DeliveryResult;
   try {
-    result = await (input.deliver ?? ((file: File) => deliverFile(file)))(prepared.file);
+    result = await (input.deliver ?? ((file: File, m?: DeliveryMode) => deliverFile(file, undefined, m)))(prepared.file, mode);
   } catch {
     return { kind: 'failed' };
   }
   if (result === 'cancelled') return { kind: 'cancelled' };
   if (result === 'needs-gesture') return { kind: 'needs-gesture', prepared };
+  if (deliveredPrepared.has(prepared)) return { kind: 'busy' };
+  deliveredPrepared.add(prepared);
   const eventId = (input.newEventId ?? defaultExportEventId)(prepared.projectId);
   const recorded = await recordFullTextExport({
     getState: input.getState,
@@ -2125,7 +2134,7 @@ export async function runFullTextExport(input: {
   dispatch: (action: Action) => void;
   store: KeyValueStore | null;
   busy: { current: boolean };
-  deliver?: (file: File) => Promise<DeliveryResult>;
+  deliver?: (file: File, mode?: DeliveryMode) => Promise<DeliveryResult>;
   now?: () => Date;
   newEventId?: (projectId: string) => string;
   liveDraft?: { projectId: string; chapterId: string; text: string } | null;
@@ -2158,6 +2167,7 @@ export async function runFullTextExport(input: {
       dispatch: input.dispatch,
       store: input.store,
       deliver: input.deliver,
+      mode: input.prepared ? 'download' : 'auto',
       now,
       newEventId: input.newEventId,
       snapshot: input.snapshot,

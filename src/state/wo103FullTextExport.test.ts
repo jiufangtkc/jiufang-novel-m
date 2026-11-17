@@ -7,7 +7,8 @@ import { writingDayKey } from '../domain/dailyGoal';
 import { buildTxt, planExport, toggleSelection } from '../domain/fullTextExport';
 import type { KeyValueStore } from '../domain/outline';
 import { summarizeStats } from '../domain/stats';
-import { DOCX_MIME, TXT_MIME, type DeliveryResult } from '../db/fileDelivery';
+import { DOCX_MIME, TXT_MIME, deliverFile, type DeliveryEnv, type DeliveryMode, type DeliveryResult } from '../db/fileDelivery';
+import { docxBytes } from '../domain/docxExport';
 import { readBookBytes, writeBookBytes } from '../db/library';
 import { readFileProject, writeFileProject, type FileProjectInfo } from '../db/projectFile';
 import {
@@ -87,12 +88,13 @@ function draftState(): SampleState {
 
 interface Delivered {
   file: File;
+  mode?: DeliveryMode;
 }
 
 function deliverer(result: DeliveryResult | Error = 'shared') {
   const calls: Delivered[] = [];
-  const deliver = async (file: File): Promise<DeliveryResult> => {
-    calls.push({ file });
+  const deliver = async (file: File, mode?: DeliveryMode): Promise<DeliveryResult> => {
+    calls.push({ file, mode });
     if (result instanceof Error) throw result;
     return result;
   };
@@ -268,11 +270,163 @@ describe('WO-103 不計次：取消、失敗、空選取、無章', () => {
     expect(total(first.state)).toBe(0);
     if (first.outcome.kind !== 'needs-gesture') return;
     const prepared = first.outcome.prepared;
-    const again = deliverer('shared');
+    const again = deliverer('downloaded');
     const second = await exportOnce(first.state, {}, { deliver: again.deliver, prepared, buildDocx: async () => { throw new Error('不該重新產生'); } });
     expect(second.outcome.kind).toBe('delivered');
     expect(again.calls[0]!.file).toBe(prepared.file);
+    // 重交付一律以 download 模式（不再分享）
+    expect(again.calls[0]!.mode).toBe('download');
+    expect(gesture.calls[0]!.mode).toBe('auto');
     expect(total(second.state)).toBe(1);
+    // 同一份 prepared 已成功處理過：再來一次不重複交付、不重複計次
+    const repeat = await exportOnce(second.state, {}, { deliver: again.deliver, prepared });
+    expect(repeat.outcome.kind).toBe('busy');
+    expect(again.calls).toHaveLength(1);
+    expect(total(repeat.state)).toBe(1);
+  });
+});
+
+function pathEnv(options: { fine: boolean; coarse: boolean; touch: number; share?: () => Promise<void>; clickThrows?: boolean }) {
+  const log: string[] = [];
+  const env: DeliveryEnv = {
+    share: async () => {
+      log.push('share');
+      await options.share?.();
+    },
+    canShare: () => true,
+    createObjectURL: () => (log.push('create-url'), 'blob:fake'),
+    revokeObjectURL: (url) => log.push(`revoke:${url}`),
+    createLink: () => {
+      const anchor = {
+        href: '',
+        download: '',
+        click: () => {
+          log.push('click');
+          if (options.clickThrows) throw new Error('模擬無法下載');
+        },
+      } as unknown as HTMLAnchorElement;
+      return { anchor, remove: () => log.push('remove-link') };
+    },
+    schedule: () => log.push('schedule'),
+    pointerFine: () => options.fine,
+    pointerCoarse: () => options.coarse,
+    maxTouchPoints: () => options.touch,
+  };
+  return { env, log };
+}
+
+const realDeliver = (env: DeliveryEnv) => (file: File, mode?: DeliveryMode) => deliverFile(file, env, mode);
+const domErr = (name: string) => Object.assign(new Error(name), { name });
+
+describe('WO-103 返工1：交付路徑（實際 deliverFile）串到 store', () => {
+  it('iPhone（粗指標、觸控）分享一直 NotAllowedError：首次備妥不計次；按儲存檔案用同一 File 下載、不再分享，只 +1；重複處理不重複計次', async () => {
+    const rec = pathEnv({ fine: false, coarse: true, touch: 5, share: async () => { throw domErr('NotAllowedError'); } });
+    let builds = 0;
+    const buildDocx = async (...args: Parameters<typeof docxBytes>) => {
+      builds += 1;
+      return docxBytes(...args);
+    };
+    const first = await exportOnce(draftState(), { format: 'docx' }, { deliver: realDeliver(rec.env), buildDocx });
+    expect(first.outcome.kind).toBe('needs-gesture');
+    expect(rec.log).toEqual(['share']);
+    expect(total(first.state)).toBe(0);
+    if (first.outcome.kind !== 'needs-gesture') return;
+    const prepared = first.outcome.prepared;
+    const second = await exportOnce(first.state, {}, {
+      deliver: realDeliver(rec.env),
+      prepared,
+      buildDocx: async () => { throw new Error('不該重新產生'); },
+    });
+    expect(second.outcome.kind).toBe('delivered');
+    expect(builds).toBe(1);
+    expect(rec.log.filter((item) => item === 'share')).toHaveLength(1);
+    expect(rec.log).toEqual(['share', 'create-url', 'click', 'remove-link', 'schedule']);
+    expect(total(second.state)).toBe(1);
+    const third = await exportOnce(second.state, {}, { deliver: realDeliver(rec.env), prepared });
+    expect(third.outcome.kind).toBe('busy');
+    expect(total(third.state)).toBe(1);
+    expect(rec.log.filter((item) => item === 'click')).toHaveLength(1);
+  });
+
+  it('同一份 prepared 同時重複點擊：忙碌鎖讓第二次回 busy，只下載一次、只 +1', async () => {
+    const rec = pathEnv({ fine: false, coarse: true, touch: 5, share: async () => { throw domErr('NotAllowedError'); } });
+    const first = await exportOnce(draftState(), {}, { deliver: realDeliver(rec.env) });
+    if (first.outcome.kind !== 'needs-gesture') throw new Error('應為備妥');
+    let current = first.state;
+    const busy = { current: false };
+    const common = {
+      request: { projectId: DRAFT_ID, format: 'docx' as const, scope: 'all' as const },
+      getState: () => current,
+      dispatch: (action: Parameters<typeof reduce>[1]) => {
+        current = reduce(current, action);
+      },
+      store,
+      busy,
+      deliver: realDeliver(rec.env),
+      prepared: first.outcome.prepared,
+    };
+    const [a, b] = await Promise.all([runFullTextExport(common), runFullTextExport(common)]);
+    expect([a.kind, b.kind].sort()).toEqual(['busy', 'delivered']);
+    expect(rec.log.filter((item) => item === 'click')).toHaveLength(1);
+    expect(total(current)).toBe(1);
+  });
+
+  it('精細指標（Windows Edge）：首次就下載、不呼叫 share、成功 +1；有觸控的精細指標與無觸控亦同', async () => {
+    for (const cap of [
+      { fine: true, coarse: false, touch: 0 },
+      { fine: true, coarse: false, touch: 10 },
+      { fine: false, coarse: false, touch: 0 },
+    ]) {
+      store.data.clear();
+      const rec = pathEnv(cap);
+      const run = await exportOnce(draftState(), {}, { deliver: realDeliver(rec.env) });
+      expect(run.outcome).toMatchObject({ kind: 'delivered', via: 'downloaded' });
+      expect(rec.log).toEqual(['create-url', 'click', 'remove-link', 'schedule']);
+      expect(total(run.state)).toBe(1);
+    }
+  });
+
+  it('iPhone 正常先分享成功 +1；與 App「操作方式」無關（只讀當下裝置能力）', async () => {
+    const rec = pathEnv({ fine: false, coarse: true, touch: 5 });
+    const run = await exportOnce(draftState(), {}, { deliver: realDeliver(rec.env) });
+    expect(run.outcome).toMatchObject({ kind: 'delivered', via: 'shared' });
+    expect(rec.log).toEqual(['share']);
+    expect(total(run.state)).toBe(1);
+  });
+
+  it('分享拋其他錯誤後下載成功：delivered、只計一次、不是失敗', async () => {
+    for (const name of ['DataError', 'NotSupportedError']) {
+      store.data.clear();
+      const rec = pathEnv({ fine: false, coarse: true, touch: 5, share: async () => { throw domErr(name); } });
+      const run = await exportOnce(draftState(), {}, { deliver: realDeliver(rec.env) });
+      expect(run.outcome).toMatchObject({ kind: 'delivered', via: 'downloaded' });
+      expect(total(run.state)).toBe(1);
+    }
+  });
+
+  it('分享取消 AbortError：不下載、不計次、回 cancelled', async () => {
+    const rec = pathEnv({ fine: false, coarse: true, touch: 5, share: async () => { throw domErr('AbortError'); } });
+    const run = await exportOnce(draftState(), {}, { deliver: realDeliver(rec.env) });
+    expect(run.outcome.kind).toBe('cancelled');
+    expect(rec.log).toEqual(['share']);
+    expect(total(run.state)).toBe(0);
+  });
+
+  it('下載本身失敗：回 failed、不計次、清理連結與網址；重交付下載失敗同樣 failed 而非備妥循環', async () => {
+    const rec = pathEnv({ fine: true, coarse: false, touch: 0, clickThrows: true });
+    const run = await exportOnce(draftState(), {}, { deliver: realDeliver(rec.env) });
+    expect(run.outcome).toEqual({ kind: 'failed' });
+    expect(rec.log).toEqual(['create-url', 'click', 'remove-link', 'revoke:blob:fake']);
+    expect(total(run.state)).toBe(0);
+
+    const gesture = pathEnv({ fine: false, coarse: true, touch: 5, share: async () => { throw domErr('NotAllowedError'); } });
+    const first = await exportOnce(draftState(), {}, { deliver: realDeliver(gesture.env) });
+    if (first.outcome.kind !== 'needs-gesture') throw new Error('應為備妥');
+    const broken = pathEnv({ fine: false, coarse: true, touch: 5, clickThrows: true });
+    const retry = await exportOnce(first.state, {}, { deliver: realDeliver(broken.env), prepared: first.outcome.prepared });
+    expect(retry.outcome).toEqual({ kind: 'failed' });
+    expect(broken.log).toEqual(['create-url', 'click', 'remove-link', 'revoke:blob:fake']);
+    expect(total(retry.state)).toBe(0);
   });
 });
 
