@@ -1,4 +1,4 @@
-import { withClock, type GoalSchedule } from '../domain/dailyGoal';
+import { MIN_DAILY_GOAL, withClock, type GoalSchedule } from '../domain/dailyGoal';
 import type { WritingLogRow } from '../domain/writingLog';
 import type { KeyValueStore } from '../domain/outline';
 
@@ -8,6 +8,12 @@ import type { KeyValueStore } from '../domain/outline';
  * - 每份稿子（以稿子代號對應）的暫存、另存、儲存時間。
  * - 還沒升格成檔案的新稿子，自己的寫作紀錄與每日目標結算狀態。
  * - 這台裝置另存出去的檔案指紋與另存時間，開回同一份檔時用來對上「上次另存」。
+ * - WO-111：還沒開任何稿子時（例如第一次用、在歡迎導覽第 1 關選的）的每日目標 homeGoal。
+ *   和設定頁是同一個每日目標的規則（最少 300 的整數、當天以最後一次為準），只是補上「沒有稿子時」
+ *   重開後還記得；放在這把既有的鍵裡，不另開每日目標的鍵。
+ * - WO-111 返工1：開著 .db 檔案稿時在歡迎導覽第 1 關選的每日目標 tourGoalById（以稿子代號對應）。
+ *   導覽不寫 .db，所以按「下一關」當下先記在這裡；重新載入時這份稿子從手機暫存回復，就用它蓋過檔案裡的舊值。
+ *   之後這份稿子的每日目標又被改成別的值（例如設定頁），下一次寫這把鍵時就把這一格拿掉，以後照稿子自己的值。
  *
  * 這些都不寫進 .db，不會跟著檔案傳到電腦版。
  */
@@ -30,6 +36,15 @@ export interface DeviceSaveRecord {
   exportedFiles: Record<string, number>;
   /** WO-98：每份稿子（以代號對應）在這台裝置的建立或第一次遇到的時間，用來算「沒存檔幾天」。 */
   startedById: Record<string, number>;
+  /** WO-111：沒有開著的稿子時的每日目標；沒設過或不合法時不帶這一格。 */
+  homeGoal?: number;
+  /** WO-111 返工1：檔案稿在歡迎導覽選的每日目標（稿子代號 → 目標）；沒有時不帶這一格。 */
+  tourGoalById?: Record<string, number>;
+}
+
+/** WO-111：合法的每日目標（和 dailyGoal.assertDailyGoal 同規則：300 以上的整數）。 */
+function isDailyGoal(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= MIN_DAILY_GOAL;
 }
 
 function emptyRecord(): DeviceSaveRecord {
@@ -49,6 +64,20 @@ function cleanStarted(value: unknown): Record<string, number> {
   return out;
 }
 
+function cleanTourGoals(value: unknown): Record<string, number> {
+  if (!isObject(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [id, goal] of Object.entries(value)) {
+    if (isDailyGoal(goal)) out[id] = goal;
+  }
+  return out;
+}
+
+/** 沒有內容就不帶這一格，舊紀錄的樣子不變。 */
+function tourGoalField(tourGoalById: Record<string, number>): Pick<DeviceSaveRecord, 'tourGoalById'> {
+  return Object.keys(tourGoalById).length > 0 ? { tourGoalById } : {};
+}
+
 function readRaw(store: KeyValueStore): DeviceSaveRecord {
   try {
     const raw = store.getItem(DEVICE_SAVE_RECORD_KEY);
@@ -63,6 +92,8 @@ function readRaw(store: KeyValueStore): DeviceSaveRecord {
         ? (parsed.exportedFiles as DeviceSaveRecord['exportedFiles'])
         : {},
       startedById: cleanStarted(parsed.startedById),
+      ...(isDailyGoal(parsed.homeGoal) ? { homeGoal: parsed.homeGoal } : {}),
+      ...tourGoalField(cleanTourGoals(parsed.tourGoalById)),
     };
   } catch {
     return emptyRecord();
@@ -118,8 +149,63 @@ export function saveDeviceSaveRecord(
     goalById,
     exportedFiles: previous.exportedFiles,
     startedById: input.startedById ?? previous.startedById,
+    // WO-111：沒有稿子時的每日目標由 saveHomeDailyGoal 寫，這裡照舊留著。
+    ...(previous.homeGoal !== undefined ? { homeGoal: previous.homeGoal } : {}),
+    ...tourGoalField(keptTourGoals(previous.tourGoalById ?? {}, input.goalById)),
   };
   store.setItem(DEVICE_SAVE_RECORD_KEY, JSON.stringify(record));
+}
+
+/** 某份稿子目前（最後一次）的每日目標。 */
+function currentGoalOf(schedule: GoalSchedule): number {
+  return schedule.open?.goals.at(-1)?.goal ?? schedule.defaultGoal;
+}
+
+/**
+ * WO-111 返工1：導覽記下的檔案稿每日目標，只留還跟畫面上那份稿子一致的。
+ * 那份稿子還沒載入（goalById 裡沒有）就照舊留著；已經改成別的值就拿掉，之後照稿子自己的值。
+ */
+function keptTourGoals(
+  tourGoalById: Record<string, number>,
+  goalById: Record<string, GoalSchedule>,
+): Record<string, number> {
+  const kept: Record<string, number> = {};
+  for (const [id, goal] of Object.entries(tourGoalById)) {
+    const schedule = goalById[id];
+    if (!schedule || currentGoalOf(schedule) === goal) kept[id] = goal;
+  }
+  return kept;
+}
+
+/**
+ * WO-111 返工1：開著 .db 檔案稿時，歡迎導覽第 1 關按「下一關」當下記下這份稿子的每日目標。
+ * 只改這把既有鍵裡 tourGoalById 的一格，其他內容照舊；不寫 .db。不合法不寫、回 false；寫不進去會丟錯，由呼叫端接住。
+ */
+export function saveTourFileGoal(store: KeyValueStore, projectId: string, goal: number): boolean {
+  if (!projectId || !isDailyGoal(goal)) return false;
+  const record = readRaw(store);
+  store.setItem(
+    DEVICE_SAVE_RECORD_KEY,
+    JSON.stringify({ ...record, tourGoalById: { ...(record.tourGoalById ?? {}), [projectId]: goal } }),
+  );
+  return true;
+}
+
+/** WO-111 返工1：讀這份檔案稿在導覽記下的每日目標；沒有、讀不到或不合法回 null。 */
+export function recallTourFileGoal(store: KeyValueStore | null, projectId: string): number | null {
+  if (!store) return null;
+  return readRaw(store).tourGoalById?.[projectId] ?? null;
+}
+
+/**
+ * WO-111：記下沒有開著的稿子時的每日目標（歡迎導覽第 1 關在首頁按「下一關」時用）。
+ * 只改這把既有鍵裡的 homeGoal 一格，其他內容照舊。不合法不寫、回 false；寫不進去會丟錯，由呼叫端接住。
+ */
+export function saveHomeDailyGoal(store: KeyValueStore, goal: number): boolean {
+  if (!isDailyGoal(goal)) return false;
+  const record = readRaw(store);
+  store.setItem(DEVICE_SAVE_RECORD_KEY, JSON.stringify({ ...record, homeGoal: goal }));
+  return true;
 }
 
 /** 記下這台裝置另存出去的那份檔案（以內容指紋對應）與另存時間。 */
