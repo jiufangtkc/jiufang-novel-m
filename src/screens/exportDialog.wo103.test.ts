@@ -77,7 +77,17 @@ describe('WO-103 匯出選單狀態', () => {
     expect(exportDisabled(selected, nodes)).toBe(true);
     expect(standingMessage(selected, nodes)).toBe('empty-selection');
     const html = renderDialog({ scope: 'selected' });
-    expect(html).toContain(EXPORT_EMPTY_SELECTION);
+    // 提示只留一次，位置在「選擇章節」列的小字
+    expect(html.split(EXPORT_EMPTY_SELECTION)).toHaveLength(2);
+    expect(html).toContain(`<small data-testid="export-selection-summary">${EXPORT_EMPTY_SELECTION}</small>`);
+    expect(html).not.toContain('data-testid="export-message"');
+    // 事件結果設定的同類訊息也不重複渲染
+    const viaEvent = renderDialog({ scope: 'selected', message: 'empty-selection' });
+    expect(viaEvent.split(EXPORT_EMPTY_SELECTION)).toHaveLength(2);
+    expect(viaEvent).not.toContain('data-testid="export-message"');
+    // 其他提示照常
+    expect(renderDialog({ scope: 'selected', message: 'device-fail' })).toContain(EXPORT_DEVICE_FAIL);
+    expect(renderDialog({ scope: 'selected', prepared: {} as PreparedExport })).toContain(EXPORT_READY_HINT);
     expect(html).toMatch(/data-testid="export-confirm" disabled=""/);
     const chosen = run([{ type: 'open-picker' }, { type: 'toggle-node', node: node('c2') }, { type: 'picker-done' }], selected);
     expect(exportDisabled(chosen, nodes)).toBe(false);

@@ -6,7 +6,6 @@ import {
   EXPORT_CONFIRM,
   EXPORT_DEVICE_FAIL,
   EXPORT_DIALOG_TITLE,
-  EXPORT_EMPTY_SELECTION,
   EXPORT_EXPAND,
   EXPORT_FORMAT_DOCX,
   EXPORT_FORMAT_LEGEND,
@@ -43,7 +42,6 @@ import './importExport.css';
 
 const MESSAGE_TEXT = {
   'no-chapters': EXPORT_NO_CHAPTERS,
-  'empty-selection': EXPORT_EMPTY_SELECTION,
   'device-fail': EXPORT_DEVICE_FAIL,
 } as const;
 
@@ -270,7 +268,7 @@ function ExportMenu({
       <p className="export-status" aria-live="polite" data-testid="export-status">
         {state.busy ? EXPORT_WORKING : state.prepared ? EXPORT_READY_HINT : ''}
       </p>
-      {message ? (
+      {message && message !== 'empty-selection' ? (
         <p
           className={`export-message${message === 'device-fail' ? ' is-error' : ''}`}
           role={message === 'device-fail' ? 'alert' : 'status'}
