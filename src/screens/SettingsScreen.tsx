@@ -3,6 +3,17 @@ import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
 import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import {
+  ABOUT_SECTION,
+  ABOUT_VERSION_TITLE,
+  ABOUT_WELCOME_ARIA,
+  ABOUT_WELCOME_HINT,
+  ABOUT_WELCOME_TITLE,
+  APP_VERSION,
+  currentChannel,
+  settingsVersionText,
+  versionAria,
+} from '../copy/aboutCopy';
 import { formatDayEndHour, MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { formatInteger } from '../domain/formatNumber';
 import { HALF_WIDTH_SETTING_TITLE, halfWidthSettingAria } from '../copy/halfWidthCopy';
@@ -39,6 +50,7 @@ export function SettingsScreen() {
   const [book, setBook] = useState(String(project?.bookGoal ?? 100000));
   const [error, setError] = useState('');
   const [halfWidthOn, setHalfWidthOn] = useHalfWidthReminder();
+  const channel = currentChannel();
   if (!project) return <ManuscriptNotFound />;
 
   return (
@@ -131,6 +143,36 @@ export function SettingsScreen() {
             <strong>{PRIVACY_TITLE}</strong>
           </span>
         </Link>
+        {/* WO-108：關於組。版本只顯示；再看一次先接到過渡空頁，WO-110 取代。 */}
+        <section aria-labelledby="about-heading" data-testid="about-section">
+          <h2 id="about-heading" className="settings-kicker">
+            {ABOUT_SECTION}
+          </h2>
+          <div
+            className="setting-row about-version-row"
+            data-testid="about-version"
+            role="group"
+            aria-label={versionAria(APP_VERSION, channel)}
+          >
+            <span aria-hidden="true">
+              <strong>{ABOUT_VERSION_TITLE}</strong>
+            </span>
+            <span className="about-version-value" aria-hidden="true">
+              {settingsVersionText(APP_VERSION, channel)}
+            </span>
+          </div>
+          <Link
+            className="setting-row about-welcome-row"
+            to={`/p/${project.id}/welcome`}
+            data-testid="about-welcome-link"
+            aria-label={ABOUT_WELCOME_ARIA}
+          >
+            <span>
+              <strong>{ABOUT_WELCOME_TITLE}</strong>
+              <small>{ABOUT_WELCOME_HINT}</small>
+            </span>
+          </Link>
+        </section>
       </div>
       {editing && (
         <div className="sheet-backdrop" role="presentation" onClick={() => setEditing(false)}>
