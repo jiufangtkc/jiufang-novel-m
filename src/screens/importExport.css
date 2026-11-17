@@ -214,3 +214,238 @@
 .log-metric-preparing .badge-preparing {
   flex-shrink: 0;
 }
+
+/*
+ * WO-103：匯出選單與自選章節清單（暫定，交九方審）。
+ * 版面：蓋滿畫面的背景＋置中的框；框內「可捲動內容」與「固定在底部的操作列」分開，
+ * 操作列不浮在內容上，所以不會遮住最後一列。390×844、844×390、768×1024、1280×800 都靠 max-height 與內部捲動。
+ * 所有可點的按鈕、選項、清單列至少 44×44 CSS 像素。
+ */
+.export-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(12px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right))
+    max(12px, env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left));
+  background: rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.export-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.export-dialog-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px 16px 8px;
+}
+
+.export-dialog-body h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  outline: none;
+}
+
+.export-dialog-actions {
+  flex: 0 0 auto;
+  display: flex;
+  gap: 10px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.export-dialog-actions .button {
+  flex: 1;
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.export-fieldset {
+  margin: 0 0 12px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.export-fieldset legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.export-choice {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 4px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
+.export-choice input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.export-pick-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.export-pick-row small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.export-status {
+  min-height: 1.4em;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.export-status:empty {
+  min-height: 0;
+}
+
+.export-message {
+  margin: 4px 0 8px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.export-message.is-error {
+  color: var(--danger);
+}
+
+.export-picker-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.export-picker-tools .button {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.export-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+
+.export-tree-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.export-check {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.export-check-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 2px solid var(--muted);
+  border-radius: 4px;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.export-check.is-checked .export-check-box,
+.export-check.is-partial .export-check-box {
+  border-color: var(--accent);
+}
+
+.export-type-tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.export-node-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.export-expand {
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  cursor: pointer;
+}

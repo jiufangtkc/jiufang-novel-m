@@ -51,7 +51,7 @@ function renderWithLayout(
 }
 
 describe('WO-60 畫面驗收測試', () => {
-  it('WO-60／WO-99：紀錄頁 HTML 不含「大量貼上」，仍含「大量刪除」，匯入顯示次數、「匯出　—」與「準備中」', () => {
+  it('WO-60／WO-99／WO-103：紀錄頁 HTML 不含「大量貼上」，仍含「大量刪除」，匯入、匯出都顯示實際次數，沒有「準備中」', () => {
     const html = renderWithLayout(
       createElement(LogsScreen),
       '/p/:projectId/logs',
@@ -65,22 +65,27 @@ describe('WO-60 畫面驗收測試', () => {
     // 2. 仍保留「大量刪除」
     expect(html).toContain('大量刪除');
 
-    // 3. WO-99：匯入已開放，沒匯入過的稿子是「匯入　0 次」；匯出仍是全形空白加「—」
+    // 3. WO-99：匯入已開放，沒匯入過的稿子是「匯入　0 次」；WO-103：匯出也開放，沒匯出過是「匯出　0 次」
     expect(html).toContain('匯入\u30000 次');
     expect(html).not.toContain('匯入\u3000—');
-    expect(html).toContain('匯出\u3000—');
+    expect(html).toContain('匯出\u30000 次');
+    expect(html).not.toContain('匯出\u3000—');
 
-    // 4. 旁標「準備中」（只剩匯出列）
-    expect(html).toContain('準備中');
+    // 4. WO-103：匯出列不再有「準備中」徽章、淡色或點擊提示，和匯入列同一種一般樣式
+    expect(html).not.toContain('準備中');
+    expect(html).not.toContain('is-preparing');
+    expect(html).not.toContain('log-metric-preparing');
     const importRows = html.match(/data-testid="log-import-row"><span>[^<]*<\/span><\/span>/g) ?? [];
     expect(importRows.length).toBeGreaterThan(0);
-    for (const row of importRows) expect(row).not.toContain('準備中');
+    const exportRows = html.match(/<span class="log-metric" data-testid="log-export-row"><span>[^<]*<\/span><\/span>/g) ?? [];
+    expect(exportRows.length).toBe(importRows.length);
+    for (const row of exportRows) expect(row).toContain('匯出\u30000 次');
 
     // 5. 不含簡體字
     expect(html).not.toMatch(/[导汇备录档开关写]/);
   });
 
-  it('WO-60：統計頁含「匯入與匯出」「只算匯入文字檔、匯出全文的次數」「—」「準備中」', () => {
+  it('WO-60／WO-103：統計頁含「匯入與匯出」「只算匯入文字檔、匯出全文的次數」，匯出為 0，沒有「準備中」', () => {
     const html = renderWithLayout(
       createElement(StatsScreen),
       '/p/:projectId/stats',
@@ -96,12 +101,17 @@ describe('WO-60 畫面驗收測試', () => {
     expect(html).toContain('只算匯入文字檔、匯出全文的次數');
     expect(html).toContain(STATS_IMPORT_EXPORT_SCOPE_HINT);
 
-    // 3. 預留未開放數值為破折號
-    expect(html).toContain('—');
+    // 3. WO-103：匯出已開放，沒有紀錄是 0（不是破折號）
+    expect(html).toMatch(/data-testid="stats-export-count">0</);
+    expect(html).toMatch(/data-testid="stats-import-count">0</);
+    expect(html).not.toMatch(/data-testid="stats-export-count">—</);
 
-    // 4. 旁標「準備中」徽章
-    expect(html).toContain('準備中');
-    expect(html).toContain(PREPARING_BADGE);
+    // 4. WO-103：匯出列不再有「準備中」徽章、淡色或點擊提示
+    expect(html).not.toContain(PREPARING_BADGE);
+    expect(html).not.toContain('stats-preparing-badge');
+    expect(html).not.toContain('is-preparing');
+    const exportRow = html.match(/<div[^>]*data-testid="stats-export-row"[^>]*>/)?.[0] ?? '';
+    expect(exportRow).toBe('<div class="stat-import-export-row" data-testid="stats-export-row">');
 
     // 5. 達成目標次數與寫作統計仍正常存在
     expect(html).toContain('達成目標次數');
@@ -121,7 +131,10 @@ describe('WO-60 畫面驗收測試', () => {
     expect(htmlWide).toContain('stats-wide-logs');
     expect(htmlWide).toContain('視覺化的寫作記錄');
     expect(htmlWide).toContain('匯入\u30000 次');
-    expect(htmlWide).toContain('匯出\u3000—');
+    // WO-103：統計頁內共用的紀錄卡也接真實匯出數
+    expect(htmlWide).toContain('匯出\u30000 次');
+    expect(htmlWide).not.toContain('匯出\u3000—');
+    expect(htmlWide).not.toContain(PREPARING_BADGE);
     expect(htmlWide).not.toContain('大量貼上');
   });
 
@@ -168,7 +181,7 @@ describe('WO-60 畫面驗收測試', () => {
     expect(html).toContain('關閉稿子並回首頁');
   });
 
-  it('WO-60／WO-99：檔案頁匯入已開放（無 aria-disabled、無準備中）、匯出仍帶 aria-disabled 與淡色，說明小字正確', () => {
+  it('WO-60／WO-99／WO-103：檔案頁匯入、匯出都開放（無 aria-disabled、無淡色、無準備中），說明小字正確、沒有 Markdown', () => {
     const html = renderWithLayout(
       createElement(FilesScreen),
       '/p/:projectId/files',
@@ -185,23 +198,26 @@ describe('WO-60 畫面驗收測試', () => {
     // 2. 匯出全文按鈕與說明
     expect(html).toContain(EXPORT_FULL_TEXT_BUTTON);
     expect(html).toContain(EXPORT_FULL_TEXT_HINT);
-    expect(html).toContain('把整份稿子匯出成一個 TXT 或 Markdown 檔');
+    // WO-103（暫定，交九方審）：說明改為已開放的格式與範圍，不提 Markdown
+    expect(html).toContain('把全文或自選章節匯出成一個 Word 或 TXT 檔');
+    expect(html).not.toContain('Markdown');
 
-    // 3. 匯出仍是 aria-disabled 與淡色樣式；匯入按鈕本身沒有
-    expect(html).toContain('aria-disabled="true"');
-    expect(html).toContain('is-preparing');
-    expect(html).toContain(PREPARING_BADGE);
+    // 3. WO-103：匯入、匯出按鈕都沒有 aria-disabled、淡色與準備中徽章
+    expect(html).not.toContain('aria-disabled="true"');
+    expect(html).not.toContain('is-preparing');
+    expect(html).not.toContain(PREPARING_BADGE);
     const importTag = html.match(/<button[^>]*data-testid="import-text-file"[^>]*>/)?.[0] ?? '';
     expect(importTag).not.toBe('');
     expect(importTag).not.toContain('aria-disabled');
     expect(importTag).not.toContain('is-preparing');
     const exportTag = html.match(/<button[^>]*data-testid="export-full-text"[^>]*>/)?.[0] ?? '';
-    expect(exportTag).toContain('aria-disabled="true"');
-    expect(exportTag).toContain('is-preparing');
-    // 準備中徽章只出現一次（匯出全文那一列），群組標題旁不再放
-    expect(html.split(PREPARING_BADGE).length - 1).toBe(1);
-    const importButtonHtml = html.slice(html.indexOf('data-testid="import-text-file"'), html.indexOf('data-testid="export-full-text"'));
-    expect(importButtonHtml).not.toContain(PREPARING_BADGE);
+    expect(exportTag).not.toBe('');
+    expect(exportTag).not.toContain('aria-disabled');
+    expect(exportTag).not.toContain('is-preparing');
+    // 按下去會打開匯出選單（對話框）
+    expect(exportTag).toContain('aria-haspopup="dialog"');
+    // 選單只在按下後才出現
+    expect(html).not.toContain('data-testid="export-dialog"');
     // 選檔欄位只收文字檔
     expect(html).toMatch(/<input[^>]*type="file"[^>]*accept="\.txt,text\/plain"[^>]*data-testid="import-text-input"/);
 
@@ -232,7 +248,7 @@ describe('WO-60 畫面驗收測試', () => {
     }
   });
 
-  it('WO-60／WO-99：匯入按鈕點擊不再叫出「功能還在準備中。」，匯出按鈕仍只叫出這句', () => {
+  it('WO-60／WO-99／WO-103：匯入、匯出按鈕點擊都不再叫出「功能還在準備中。」', () => {
     let importBtnProps: any = null;
     let exportBtnProps: any = null;
     let toastMessage: string | null = null;
@@ -288,15 +304,16 @@ describe('WO-60 畫面驗收測試', () => {
     expect(importBtnProps).not.toBeNull();
     expect(exportBtnProps).not.toBeNull();
     expect(importBtnProps['aria-disabled']).toBeUndefined();
-    expect(exportBtnProps['aria-disabled']).toBe('true');
+    expect(exportBtnProps['aria-disabled']).toBeUndefined();
 
     // 觸發匯入按鈕點擊：只會去開選檔（測試環境沒有真的 input），不叫出準備中
     importBtnProps.onClick();
     expect(toastMessage).toBeNull();
 
-    // 重設並觸發匯出按鈕點擊
+    // 重設並觸發匯出按鈕點擊：改成打開匯出選單，不叫出準備中提示
     toastMessage = null;
     exportBtnProps.onClick();
-    expect(toastMessage).toBe(FEATURE_IN_PREPARATION);
+    expect(toastMessage).toBeNull();
+    expect(toastMessage).not.toBe(FEATURE_IN_PREPARATION);
   });
 });

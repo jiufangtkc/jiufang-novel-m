@@ -150,10 +150,11 @@ export async function writeBookBytes(
   cards: FileCard[],
   logs: FileLog[],
   importEvents?: Readonly<Record<string, TransferEvent>>,
+  exportEvents?: Readonly<Record<string, TransferEvent>>,
 ): Promise<Uint8Array> {
   const db = await openMemoryDb(base ?? new Uint8Array());
   try {
-    writeFileProject(db.sql, info, tree, cards, logs, importEvents);
+    writeFileProject(db.sql, info, tree, cards, logs, importEvents, exportEvents);
     return db.exportBytes();
   } finally {
     db.close();
@@ -171,9 +172,10 @@ export async function saveBookBytes(
   bookkeeping?: BookFileMark,
   persist = true,
   importEvents?: Readonly<Record<string, TransferEvent>>,
+  exportEvents?: Readonly<Record<string, TransferEvent>>,
 ): Promise<Uint8Array> {
   const existing = await getBook(key);
-  const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents);
+  const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents, exportEvents);
   if (!persist) return exported;
   const mark = bookkeeping ?? {
     titleInFile: existing?.titleInFile ?? null,

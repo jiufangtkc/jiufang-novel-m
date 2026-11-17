@@ -40,6 +40,7 @@ import {
   linkImportEventsToBytes,
   manuscriptBytesOn,
   manuscriptSnapshotParts,
+  projectExportEventsOf,
   projectImportEventsOf,
   reduce,
   runSaveProjectAs,
@@ -135,7 +136,9 @@ function countOn(state: SampleState, id: string, day: string): number {
 }
 
 function statsDisplay(state: SampleState) {
-  return summarizeStats(state.schedule, state.logs, 0, countOf(state, state.activeProjectId ?? '')).importExport;
+  // WO-103：匯出次數也用真實的匯出事件集合（與 App 的 SampleProvider 相同算法）。
+  const id = state.activeProjectId ?? '';
+  return summarizeStats(state.schedule, state.logs, 0, countOf(state, id), countImportEvents(projectExportEventsOf(state, id))).importExport;
 }
 
 function render(state: SampleState, screen: 'stats' | 'logs', id: string, mode: 'phone-portrait' | 'wide' = 'phone-portrait'): string {
@@ -270,7 +273,7 @@ afterEach(() => {
 });
 
 describe('WO-100 核心驗收：清掉瀏覽器本機資料後只靠 .db 重開，次數仍在', () => {
-  it('WO-100：新匯入稿為 1，存成 .db；清掉本機（含匯入事件紀錄）後只開同一份位元組，全書 1、原寫作日 1，其他稿子不受影響，匯出仍「—」', async () => {
+  it('WO-100：新匯入稿為 1，存成 .db；清掉本機（含匯入事件紀錄）後只開同一份位元組，全書 1、原寫作日 1，其他稿子不受影響，匯出為 0（WO-103 起開放，不再是「—」）', async () => {
     const first = await importText(createState(NOW), '假稿甲.txt', '第一章　起\n假正文一\n第二章　承\n假正文二');
     const other = await importText(first.state, '假稿乙.txt', '第一章\n另一份假正文');
     let state = reduce(other.state, { type: 'focus-project', id: first.id });
@@ -298,7 +301,8 @@ describe('WO-100 核心驗收：清掉瀏覽器本機資料後只靠 .db 重開�
     expect(countOf(clean, 'file-new-device')).toBe(1);
     expect(countOn(clean, 'file-new-device', TODAY)).toBe(1);
     expect(Object.keys(projectImportEventsOf(clean, 'file-new-device'))).toEqual([eventId]);
-    expect(statsDisplay(clean)).toMatchObject({ importCount: 1, importDisplay: '1', exportCount: null, exportDisplay: '—' });
+    // WO-103：匯出已開放；這份檔沒有匯出事件，所以是 0（不是「—」，也不因匯入或存檔而增加）。
+    expect(statsDisplay(clean)).toMatchObject({ importCount: 1, importDisplay: '1', exportCount: 0, exportDisplay: '0' });
     // 開檔不在本機捏造紀錄
     expect(store.getItem(IMPORT_EVENTS_KEY)).toBeNull();
     // 另一份稿子不在、也不串入
@@ -309,13 +313,15 @@ describe('WO-100 核心驗收：清掉瀏覽器本機資料後只靠 .db 重開�
       ['第二章　承', '假正文二'],
     ]);
 
-    // 畫面：統計頁全書 1、匯出「—」；寫作過程紀錄卡原寫作日 1（手機與寬版）
+    // 畫面：統計頁全書 1、匯出 0；寫作過程紀錄卡原寫作日 1（手機與寬版）
     const stats = render(clean, 'stats', 'file-new-device');
     expect(stats).toMatch(/data-testid="stats-import-count">1</);
-    expect(stats).toMatch(/data-testid="stats-export-count">—</);
+    expect(stats).toMatch(/data-testid="stats-export-count">0</);
+    expect(stats).not.toContain('準備中');
     const logs = render(clean, 'logs', 'file-new-device');
     expect(dayCard(logs, TODAY)).toContain('匯入　1 次');
-    expect(dayCard(logs, TODAY)).toContain('匯出　— 次');
+    expect(dayCard(logs, TODAY)).toContain('匯出　0 次');
+    expect(dayCard(logs, TODAY)).not.toContain('匯出　— 次');
     const wide = render(clean, 'stats', 'file-new-device', 'wide');
     expect(dayCard(wide, TODAY)).toContain('匯入　1 次');
 
@@ -324,7 +330,7 @@ describe('WO-100 核心驗收：清掉瀏覽器本機資料後只靠 .db 重開�
     expect(countOf(clean, 'file-plain')).toBe(0);
     expect(countOf(clean, 'file-new-device')).toBe(1);
     state = clean;
-    expect(statsDisplay(state).exportDisplay).toBe('—');
+    expect(statsDisplay(state).exportDisplay).toBe('0');
   });
 });
 
@@ -642,7 +648,7 @@ describe('WO-100 格式錯誤與匯出預留（稿子狀態層）', () => {
     expect(shareCalled).toBe(false);
   });
 
-  it('WO-100：export_count 預設 NULL、重存保留；儲存／另存不計全文匯出、不產生匯出事件；統計與卡片仍「—」', async () => {
+  it('WO-100／WO-103：export_count 預設 NULL、重存保留；儲存／另存不計全文匯出、不產生匯出事件；統計與卡片為 0（不是「—」）', async () => {
     const imported = await importText(createState(NOW), '匯出預留.txt', '第一章\n假正文');
     let state = reduce(imported.state, { type: 'focus-project', id: imported.id });
     const first = await saveToDb(state, imported.id);
@@ -655,8 +661,10 @@ describe('WO-100 格式錯誤與匯出預留（稿子狀態層）', () => {
     } finally {
       db.close();
     }
-    expect(statsDisplay(state)).toMatchObject({ exportCount: null, exportDisplay: '—' });
+    expect(statsDisplay(state)).toMatchObject({ exportCount: 0, exportDisplay: '0' });
+    expect(countImportEvents(projectExportEventsOf(state, imported.id))).toBe(0);
     const html = render(state, 'logs', imported.id);
-    expect(dayCard(html, TODAY)).toContain('匯出　— 次');
+    expect(dayCard(html, TODAY)).toContain('匯出　0 次');
+    expect(dayCard(html, TODAY)).not.toContain('匯出　— 次');
   });
 });

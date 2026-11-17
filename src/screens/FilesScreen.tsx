@@ -5,7 +5,6 @@ import { CloudUploadIcon, DownloadIcon, FolderIcon, HomeIcon, SaveIcon } from '.
 import {
   EXPORT_FULL_TEXT_BUTTON,
   EXPORT_FULL_TEXT_HINT,
-  FEATURE_IN_PREPARATION,
   FILES_GROUP_IMPORT_EXPORT,
   FILES_GROUP_OPEN_CLOSE,
   FILES_GROUP_SAVE,
@@ -17,7 +16,6 @@ import {
   lastEditDisplay,
   OPEN_DB_FAIL,
   OPEN_DB_HINT,
-  PREPARING_BADGE,
   stashDraftHint,
   currentFileLine,
   titlePendingNotice,
@@ -29,6 +27,7 @@ import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
 import { appSpaceStatusLine } from './filesStatus';
 import { filesPageLayout } from './filesPageLayout';
+import { ExportDialog } from './ExportDialog';
 import './importExport.css';
 
 function useComputerLayout(): boolean {
@@ -45,6 +44,8 @@ export function FilesScreen() {
   const textInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportButtonRef = useRef<HTMLButtonElement>(null);
   const computer = useComputerLayout();
   if (!project) return <ManuscriptNotFound />;
 
@@ -75,8 +76,11 @@ export function FilesScreen() {
     openInputRef.current?.click();
   };
 
-  const handlePreparingAction = () => {
-    actions.toast(FEATURE_IN_PREPARATION);
+  // WO-103：匯出全文已開放（Word／TXT、全文／自選章節），開啟匯出選單。
+  const openExport = () => setExportOpen(true);
+  const closeExport = () => {
+    setExportOpen(false);
+    exportButtonRef.current?.focus();
   };
 
   // WO-99：匯入文字檔。處理中再按不會重複匯入；取消選檔（沒有選到檔）什麼都不做、不顯示錯誤。
@@ -264,7 +268,7 @@ export function FilesScreen() {
             <h2 className="files-group-title">{FILES_GROUP_IMPORT_EXPORT}</h2>
           </div>
 
-          {/* WO-99：匯入文字檔已開放；準備中徽章只留在後面的「匯出全文」。 */}
+          {/* WO-99：匯入文字檔已開放。WO-103：匯出全文也開放，這一組不再有準備中。 */}
           <button
             type="button"
             className="setting-row"
@@ -313,11 +317,12 @@ export function FilesScreen() {
           ) : null}
 
           <button
+            ref={exportButtonRef}
             type="button"
-            className="setting-row is-preparing"
+            className="setting-row"
             data-testid="export-full-text"
-            aria-disabled="true"
-            onClick={handlePreparingAction}
+            aria-haspopup="dialog"
+            onClick={openExport}
           >
             <span className="setting-icon" aria-hidden="true">
               <svg
@@ -335,14 +340,19 @@ export function FilesScreen() {
               </svg>
             </span>
             <span>
-              <strong className="setting-title-with-badge">
-                {EXPORT_FULL_TEXT_BUTTON}
-                <span className="badge-preparing">{PREPARING_BADGE}</span>
-              </strong>
+              <strong>{EXPORT_FULL_TEXT_BUTTON}</strong>
               <small>{EXPORT_FULL_TEXT_HINT}</small>
             </span>
           </button>
         </section>
+        {exportOpen ? (
+          <ExportDialog
+            projectId={project.id}
+            nodes={project.nodes}
+            onClose={closeExport}
+            onExport={(request, options) => actions.exportFullText(request, options)}
+          />
+        ) : null}
       </div>
     </div>
   );

@@ -10,10 +10,11 @@ import { columnNames, tableNames, type Sql } from './sql';
  *
  * jiufangm_transfer_meta：單列（id = 1）
  *   format_revision  附加格式修訂值（目前 1）
- *   export_count     匯出全文次數預留欄，預設 NULL（尚無可靠紀錄；本單不產生、不改寫）
+ *   export_count     匯出全文次數預留欄，預設 NULL。WO-103 起仍不寫、不改：NULL＝沒有未分配寫作日的歷史基數；
+ *                    既有非 NULL 值無法證明是否已含檔內 export 事件，原樣保留、不加進畫面次數（見交接）。
  * jiufangm_transfer_events：每筆事件一列
  *   event_id  事件代號（唯一主鍵，沿用 WO-99 本機事件代號）
- *   kind      'import'（TXT 匯入）／'export'（預留，本單不產生）
+ *   kind      'import'（TXT 匯入）／'export'（WO-103 起：成功交付一次 Word 或 TXT 全文匯出）
  *   day_key   寫作日 YYYY-MM-DD（照事件發生當時記下，不重算）
  *   at_ms     發生時間（毫秒）
  */
@@ -37,12 +38,14 @@ export type TransferEventKind = 'import' | 'export';
 export type TransferRead =
   /** 沒有附加表：這份檔沒有檔內歷史（舊檔），交給本機遷移規則處理。 */
   | { kind: 'absent' }
-  /** 合法附加資料；importEvents 為空代表已保存的 0。 */
+  /** 合法附加資料；importEvents／exportEvents 為空代表已保存的 0。 */
   | {
       kind: 'ok';
       revision: number;
       exportCount: number | null;
       importEvents: Record<string, TransferEvent>;
+      /** WO-103：成功匯出全文的事件。 */
+      exportEvents: Record<string, TransferEvent>;
     }
   /** 附加資料損壞、結構不完整、同代號衝突或不支援的修訂值：不可當作 0，也不可覆寫。 */
   | { kind: 'invalid'; reason: string };
@@ -113,26 +116,41 @@ export function readTransferData(sql: Sql): TransferRead {
   const result = inspect(sql);
   if (result.kind !== 'ok') return result;
   const importEvents: Record<string, TransferEvent> = {};
+  const exportEvents: Record<string, TransferEvent> = {};
   for (const [id, row] of result.rows) {
     if (row.kind === 'import') importEvents[id] = { dayKey: row.dayKey, atMs: row.atMs };
+    if (row.kind === 'export') exportEvents[id] = { dayKey: row.dayKey, atMs: row.atMs };
   }
-  return { kind: 'ok', revision: result.revision, exportCount: result.exportCount, importEvents };
+  return { kind: 'ok', revision: result.revision, exportCount: result.exportCount, importEvents, exportEvents };
 }
 
 /**
- * 把這份稿子的匯入事件寫進附加表（必須在呼叫端的交易內執行）。
+ * 把這份稿子的匯入（與 WO-103 起的匯出）事件寫進附加表（必須在呼叫端的交易內執行）。
  *
  * - 沒有附加表又沒有事件：什麼都不做，電腦版原檔結構原樣不動。
- * - 只新增檔內還沒有的事件；同代號同內容略過；同代號不同內容丟出 TransferDataError（不覆寫）。
- * - 既有列一律不刪、不改；export_count 不碰（新建時為 NULL）。
+ * - 只新增檔內還沒有的事件；同代號同種類同內容略過；同代號但種類或內容不同丟出 TransferDataError（不覆寫）。
+ * - 既有列一律不刪、不改；export_count 不碰（新建時為 NULL，既有值原樣保留）。
  * - 附加資料已損壞或修訂值不支援：不動附加表（不讀成 0 覆寫），回傳 'invalid'，由外部存檔驗證擋下。
  * - 寫完再讀回核對，缺任何一筆就丟出錯誤，讓交易回復。
  */
-export function writeTransferEvents(sql: Sql, events: Readonly<Record<string, TransferEvent>>): 'written' | 'skipped' | 'invalid' {
+export function writeTransferEvents(
+  sql: Sql,
+  events: Readonly<Record<string, TransferEvent>>,
+  exportEvents: Readonly<Record<string, TransferEvent>> = {},
+): 'written' | 'skipped' | 'invalid' {
   const current = inspect(sql);
   if (current.kind === 'invalid') return 'invalid';
-  const ids = Object.keys(events);
-  if (current.kind === 'absent' && ids.length === 0) return 'skipped';
+  const wanted: Array<{ id: string; kind: TransferEventKind; event: TransferEvent }> = [
+    ...Object.entries(events).map(([id, event]) => ({ id, kind: 'import' as const, event })),
+    ...Object.entries(exportEvents).map(([id, event]) => ({ id, kind: 'export' as const, event })),
+  ];
+  if (current.kind === 'absent' && wanted.length === 0) return 'skipped';
+
+  const seen = new Map<string, TransferEventKind>();
+  for (const { id, kind } of wanted) {
+    if (seen.has(id)) throw new TransferDataError('同一個事件代號同時是匯入與匯出');
+    seen.set(id, kind);
+  }
 
   if (current.kind === 'absent') {
     sql.exec(`CREATE TABLE IF NOT EXISTS ${TRANSFER_META_TABLE} (
@@ -152,20 +170,20 @@ export function writeTransferEvents(sql: Sql, events: Readonly<Record<string, Tr
   }
   const existing = current.kind === 'ok' ? current.rows : new Map<string, StoredRow>();
 
-  for (const id of ids) {
-    const event = events[id]!;
+  for (const { id, kind, event } of wanted) {
     if (typeof id !== 'string' || id === '' || !DAY_KEY.test(event.dayKey) || !isInteger(event.atMs)) {
       throw new TransferDataError('要寫入的事件格式不對');
     }
     const found = existing.get(id);
     if (found) {
-      if (found.kind !== 'import' || found.dayKey !== event.dayKey || found.atMs !== event.atMs) {
+      if (found.kind !== kind || found.dayKey !== event.dayKey || found.atMs !== event.atMs) {
         throw new TransferDataError('事件代號相同但內容不同');
       }
       continue;
     }
-    sql.run(`INSERT INTO ${TRANSFER_EVENTS_TABLE} (event_id, kind, day_key, at_ms) VALUES (?, 'import', ?, ?)`, [
+    sql.run(`INSERT INTO ${TRANSFER_EVENTS_TABLE} (event_id, kind, day_key, at_ms) VALUES (?, ?, ?, ?)`, [
       id,
+      kind,
       event.dayKey,
       event.atMs,
     ]);
@@ -173,9 +191,9 @@ export function writeTransferEvents(sql: Sql, events: Readonly<Record<string, Tr
 
   const after = readTransferData(sql);
   if (after.kind !== 'ok') throw new TransferDataError('附加資料寫入後讀不回來');
-  for (const id of ids) {
-    const back = after.importEvents[id];
-    if (!back || back.dayKey !== events[id]!.dayKey || back.atMs !== events[id]!.atMs) {
+  for (const { id, kind, event } of wanted) {
+    const back = kind === 'import' ? after.importEvents[id] : after.exportEvents[id];
+    if (!back || back.dayKey !== event.dayKey || back.atMs !== event.atMs) {
       throw new TransferDataError('附加事件寫入後核對不符');
     }
   }

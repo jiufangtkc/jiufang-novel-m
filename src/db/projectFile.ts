@@ -933,6 +933,8 @@ export function writeFileProject(
   logs: readonly FileLog[],
   /** WO-100：這份稿子的匯入事件；不給就完全不碰附加表（舊呼叫端行為不變）。 */
   importEvents?: Readonly<Record<string, TransferEvent>>,
+  /** WO-103：這份稿子的匯出全文事件；與匯入事件同一筆交易寫入。 */
+  exportEvents?: Readonly<Record<string, TransferEvent>>,
 ): void {
   const fkRow = sql.select('PRAGMA foreign_keys')[0];
   const prevForeignKeys = fkRow && Number(fkRow.foreign_keys) ? 1 : 0;
@@ -946,7 +948,8 @@ export function writeFileProject(
     writeCardsDiff(sql, cards);
     writeLogsDiff(sql, logs);
     // WO-100：附加事件與正文同一筆交易；任何一步失敗整筆回復，不會只存到正文。
-    if (importEvents) writeTransferEvents(sql, importEvents);
+    // WO-103：匯出事件也在同一筆交易；兩者都沒給時完全不碰附加表。
+    if (importEvents || exportEvents) writeTransferEvents(sql, importEvents ?? {}, exportEvents ?? {});
     sql.exec('COMMIT');
   } catch (error) {
     try {

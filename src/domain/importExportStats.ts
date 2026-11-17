@@ -3,9 +3,10 @@ import { formatInteger } from './formatNumber';
 /**
  * WO-60 匯入／匯出預留端口與型別定義。
  * WO-99：「匯入文字檔」已開放，匯入次數取自每份稿子的本機匯入事件（見 state/importEvents.ts）；
- * 「匯出全文」仍在準備中，匯出次數照舊顯示「—」。兩者的可用狀態分開判斷，不共用一個開關。
+ * （WO-99 當時「匯出全文」仍在準備中。）兩者的可用狀態分開判斷，不共用一個開關。
  * WO-100：匯入次數改以稿子 .db 內的附加表為準（見 db/transferMeta.ts），與本機紀錄以事件代號取聯集。
- * 匯出次數目前沒有任何實際紀錄（另存時間、另存指紋都不是全文匯出），.db 只預留 export_count（NULL），畫面仍「—」。
+ * WO-103：「匯出全文」（Word／TXT）開放。匯出次數＝成功交付的匯出事件數（檔內 export 事件 ∪ 本機可靠對應，
+ * 以事件代號去重）；沒有紀錄是 0，不再是「—」。另存 .db、另存時間或指紋都不算匯出全文。
  */
 
 export const IMPORT_EXPORT_UNAVAILABLE_DISPLAY = '—';
@@ -17,7 +18,7 @@ export interface ImportExportMetric {
 }
 
 export interface DayImportExportStats {
-  /** 匯入與匯出都開放才是 true。WO-99 起匯入開放、匯出仍準備中，所以是 false。 */
+  /** 匯入與匯出都開放才是 true。WO-103 起兩者都開放。 */
   readonly available: boolean;
   readonly importAvailable: boolean;
   readonly exportAvailable: boolean;
@@ -44,13 +45,13 @@ export function isTextImportAvailable(): boolean {
   return true;
 }
 
-/** 匯出全文仍在準備中。 */
+/** WO-103：匯出全文（Word／TXT）已開放。 */
 export function isFullTextExportAvailable(): boolean {
-  return false;
+  return true;
 }
 
 /**
- * 匯入與匯出是否「都」已開放。WO-99 只開放匯入，所以仍回傳 false；
+ * 匯入與匯出是否「都」已開放。WO-103 起為 true；
  * 不能拿這個共用開關決定單一項目，請改用 isTextImportAvailable／isFullTextExportAvailable。
  */
 export function isImportExportAvailable(): boolean {
@@ -107,17 +108,18 @@ function metric(count: number | null | undefined, available: boolean): { count: 
 
 /**
  * 取得單日寫作紀錄卡所需之匯入匯出統計狀態。
- * importCount 是這份稿子這一個寫作日的匯入次數；匯出尚未開放，一律「—」。
+ * importCount／exportCount 是這份稿子這一個寫作日的匯入／匯出全文次數；沒有紀錄是 0。
  */
 export function getDayImportExportStats(
   importCount: number | null = null,
   availability: ImportExportAvailability = {},
+  exportCount: number | null = null,
 ): DayImportExportStats {
   const importAvailable = availability.importAvailable ?? isTextImportAvailable();
   const exportAvailable = availability.exportAvailable ?? isFullTextExportAvailable();
   const imported = metric(importAvailable ? (importCount ?? 0) : null, importAvailable);
-  // 匯出尚未有實際計次，開放前固定「—」；開放狀態模擬時以 0 占位。
-  const exported = metric(exportAvailable ? 0 : null, exportAvailable);
+  // WO-103：匯出用真實事件數；開放時沒有紀錄就是 0。
+  const exported = metric(exportAvailable ? (exportCount ?? 0) : null, exportAvailable);
   return {
     available: importAvailable && exportAvailable,
     importAvailable,
@@ -133,16 +135,17 @@ export function getDayImportExportStats(
 
 /**
  * 取得統計頁（這份稿子的全書合計）所需之匯入匯出統計狀態。
- * importCount 是這份稿子所有成功匯入的次數；匯出尚未開放，一律「—」。
+ * importCount／exportCount 是這份稿子所有成功匯入／成功匯出全文的次數。
  */
 export function getTotalImportExportStats(
   importCount: number | null = null,
   availability: ImportExportAvailability = {},
+  exportCount: number | null = null,
 ): TotalImportExportStats {
   const importAvailable = availability.importAvailable ?? isTextImportAvailable();
   const exportAvailable = availability.exportAvailable ?? isFullTextExportAvailable();
   const imported = metric(importAvailable ? (importCount ?? 0) : null, importAvailable);
-  const exported = metric(exportAvailable ? 0 : null, exportAvailable);
+  const exported = metric(exportAvailable ? (exportCount ?? 0) : null, exportAvailable);
   return {
     available: importAvailable && exportAvailable,
     importAvailable,
