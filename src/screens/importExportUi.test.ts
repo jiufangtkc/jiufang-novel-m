@@ -11,9 +11,9 @@ import {
   FILES_GROUP_SAVE,
   IMPORT_TEXT_FILE_BUTTON,
   IMPORT_TEXT_FILE_HINT,
+  LOG_IMPORTED_DAY_NOTE,
   PREPARING_BADGE,
-  STATS_IMPORT_EXPORT_HEADING,
-  STATS_IMPORT_EXPORT_SCOPE_HINT,
+  statsImportedOnLine,
 } from '../copy/userFacing';
 import { LayoutProvider, type LayoutMode } from '../layout';
 import { SampleProvider, useSample } from '../state/sampleStore';
@@ -22,17 +22,40 @@ import { LogsScreen } from './LogsScreen';
 import { StatsScreen } from './StatsScreen';
 import { demoFixtureState } from '../state/testing/sampleFixture';
 
+type DemoState = ReturnType<typeof demoFixtureState>;
+
+/** WO-120：假稿 fog 的匯入事件（事件代號 → 寫作日、時間）；全部假資料。 */
+function withFogImportEvents(
+  base: DemoState,
+  events: Record<string, { dayKey: string; atMs: number }>,
+  options: { largeDelete?: number } = {},
+): DemoState {
+  return {
+    ...base,
+    logs:
+      options.largeDelete === undefined
+        ? base.logs
+        : base.logs.map((log) => ({ ...log, delete_large_count: options.largeDelete! })),
+    importEvents: {
+      events: { ...base.importEvents.events, ...events },
+      byProject: { ...base.importEvents.byProject, fog: Object.keys(events) },
+      byFile: base.importEvents.byFile,
+    },
+  };
+}
+
 function renderWithLayout(
   element: ReactElement,
   path: string,
   initialRoute: string,
   mode: LayoutMode = 'phone-portrait',
+  state: DemoState = demoFixtureState(new Date(), { withDemoStats: true }),
 ): string {
   return renderToStaticMarkup(
     createElement(
       SampleProvider,
       // WO-95：統計與紀錄頁要有紀錄列才看得到各欄，明確放入舊版範例紀錄當測試資料。
-      { initialState: demoFixtureState(new Date(), { withDemoStats: true }) },
+      { initialState: state },
       createElement(
         LayoutProvider,
         { initialMode: mode },
@@ -50,43 +73,72 @@ function renderWithLayout(
   );
 }
 
-describe('WO-60 畫面驗收測試', () => {
-  it('WO-60／WO-99／WO-103：紀錄頁 HTML 不含「大量貼上」，仍含「大量刪除」，匯入、匯出都顯示實際次數，沒有「準備中」', () => {
+const SIMPLIFIED = /[导汇备录档开关写]/;
+
+describe('WO-60／WO-120 畫面驗收測試', () => {
+  it('WO-120：紀錄頁沒有匯入事件時，不含「大量貼上」「大量刪除」、匯入次數與匯入日那一行，也沒有「準備中」', () => {
+    // 即使 delete_large_count 非零，也不顯示（資料保留，只是畫面不列）
+    const base = demoFixtureState(new Date(), { withDemoStats: true });
     const html = renderWithLayout(
       createElement(LogsScreen),
       '/p/:projectId/logs',
       '/p/fog/logs',
       'phone-portrait',
+      withFogImportEvents(base, {}, { largeDelete: 7 }),
     );
+    expect(base.logs.length).toBeGreaterThan(1);
+    expect(html).toContain('log-card-');
 
-    // 1. 拿掉「大量貼上」
     expect(html).not.toContain('大量貼上');
-
-    // 2. 仍保留「大量刪除」
-    expect(html).toContain('大量刪除');
-
-    // 3. WO-99：匯入已開放；WO-113：畫面不顯示匯出次數
-    expect(html).toContain('匯入\u30000 次');
-    expect(html).not.toContain('匯入\u3000—');
-    expect(html).not.toContain('匯出\u30000 次');
-    expect(html).not.toContain('匯出\u3000—');
-
-    // 4. WO-103：匯出列不再有「準備中」徽章、淡色或點擊提示，和匯入列同一種一般樣式
+    expect(html).not.toContain('大量刪除');
+    expect(html).not.toContain(LOG_IMPORTED_DAY_NOTE);
+    expect(html).not.toContain('log-import-row');
+    expect(html).not.toMatch(/匯入[\s　]*[\d—]+\s*次/);
+    // 不顯示匯出次數
+    expect(html).not.toMatch(/匯出[\s　]*[\d—]+\s*次/);
+    expect(html).not.toContain('log-export-row');
     expect(html).not.toContain('準備中');
     expect(html).not.toContain('is-preparing');
     expect(html).not.toContain('log-metric-preparing');
-    const importRows = html.match(/data-testid="log-import-row"><span>[^<]*<\/span><\/span>/g) ?? [];
-    expect(importRows.length).toBeGreaterThan(0);
-    const exportRows = html.match(/<span class="log-metric" data-testid="log-export-row"><span>[^<]*<\/span><\/span>/g) ?? [];
-    // WO-113：不再有匯出列
-    expect(exportRows.length).toBe(0);
-    for (const row of exportRows) expect(row).toContain('匯出\u30000 次');
-
-    // 5. 不含簡體字
-    expect(html).not.toMatch(/[导汇备录档开关写]/);
+    expect(html).not.toMatch(SIMPLIFIED);
   });
 
-  it('WO-113：統計頁只顯示匯入次數，沒有匯出列，也沒有「準備中」', () => {
+  it('WO-120：紀錄卡只有匯入那一天多「這天從文字檔匯入」；同日多筆只顯示一行；沒有次數與大量刪除', () => {
+    const base = demoFixtureState(new Date(), { withDemoStats: true });
+    const importDay = base.logs[0]!.date;
+    const otherDay = base.logs[1]!.date;
+    expect(otherDay).not.toBe(importDay);
+    const state = withFogImportEvents(
+      base,
+      {
+        a: { dayKey: importDay, atMs: 1_000 },
+        b: { dayKey: importDay, atMs: 2_000 },
+        c: { dayKey: importDay, atMs: 3_000 },
+      },
+      { largeDelete: 4 },
+    );
+    const html = renderWithLayout(createElement(LogsScreen), '/p/:projectId/logs', '/p/fog/logs', 'phone-portrait', state);
+    const card = (day: string) =>
+      html.match(new RegExp(`<li class="log-card" data-testid="log-card-${day}">.*?</li>`))?.[0] ?? '';
+    expect(card(importDay)).toContain('這天從文字檔匯入');
+    expect(card(importDay).split('這天從文字檔匯入').length - 1).toBe(1);
+    expect(card(otherDay)).not.toBe('');
+    expect(card(otherDay)).not.toContain('這天從文字檔匯入');
+    expect(html.split('這天從文字檔匯入').length - 1).toBe(1);
+    expect(html).not.toMatch(/匯入[\s　]*\d+\s*次/);
+    expect(html).not.toContain('大量刪除');
+  });
+
+  it('WO-120：只有匯入事件、沒有寫作紀錄列的日子仍有卡片，並顯示匯入那一行', () => {
+    const base = demoFixtureState(new Date(), { withDemoStats: true });
+    expect(base.logs.map((log) => log.date)).not.toContain('2020-02-03');
+    const state = withFogImportEvents(base, { x: { dayKey: '2020-02-03', atMs: 5 } });
+    const html = renderWithLayout(createElement(LogsScreen), '/p/:projectId/logs', '/p/fog/logs', 'phone-portrait', state);
+    const card = html.match(/<li class="log-card" data-testid="log-card-2020-02-03">.*?<\/li>/)?.[0] ?? '';
+    expect(card).toContain('這天從文字檔匯入');
+  });
+
+  it('WO-120：統計頁沒有匯入事件時，整組（標題、次數、說明句）都不出現，也沒有匯出列與「準備中」', () => {
     const html = renderWithLayout(
       createElement(StatsScreen),
       '/p/:projectId/stats',
@@ -94,31 +146,94 @@ describe('WO-60 畫面驗收測試', () => {
       'phone-portrait',
     );
 
-    // 1. 區塊標題
-    expect(html).toContain('匯入次數');
-    expect(html).toContain(STATS_IMPORT_EXPORT_HEADING);
-
-    // 2. 說明小字
-    expect(html).toContain('只算匯入文字檔的次數');
-    expect(html).toContain(STATS_IMPORT_EXPORT_SCOPE_HINT);
-
-    // 3. 只留匯入次數，整列匯出都不在畫面上
-    expect(html).toMatch(/data-testid="stats-import-count">0</);
+    expect(html).not.toContain('匯入次數');
+    expect(html).not.toContain('只算匯入文字檔的次數');
+    expect(html).not.toContain('匯入 次數');
+    expect(html).not.toContain('從文字檔匯入的');
+    expect(html).not.toContain('stats-import-export');
+    expect(html).not.toContain('stats-import-count');
+    expect(html).not.toContain('stats-import-note');
     expect(html).not.toContain('stats-export-row');
     expect(html).not.toContain('stats-export-count');
     expect(html).not.toContain('匯出 次數');
 
-    // 4. 沒有「準備中」
     expect(html).not.toContain(PREPARING_BADGE);
     expect(html).not.toContain('stats-preparing-badge');
     expect(html).not.toContain('is-preparing');
 
-    // 5. 達成目標次數與寫作統計仍正常存在
+    // 達成目標次數與寫作統計仍正常存在
     expect(html).toContain('達成目標次數');
     expect(html).toContain('寫作統計');
   });
 
-  it('WO-60：寬版統計頁雙欄並排，右欄並排寫作過程紀錄', () => {
+  it('WO-120：統計頁有匯入事件時顯示完整一句；取第一筆（atMs 最早）的寫作日，與輸入順序、事件實際日期無關', () => {
+    const base = demoFixtureState(new Date(), { withDemoStats: true });
+    // 事件時間（atMs）所屬的日曆日與儲存的寫作日刻意不同：
+    // early 的 UTC 日曆日是 2026-11-19、臺北是 11-20，但儲存的寫作日是 2026-11-18。
+    const early = Date.UTC(2026, 10, 19, 20, 0, 0);
+    const late = Date.UTC(2026, 10, 25, 4, 0, 0);
+    const orders: Array<Record<string, { dayKey: string; atMs: number }>> = [
+      { z: { dayKey: '2026-11-18', atMs: early }, a: { dayKey: '2026-11-25', atMs: late } },
+      { a: { dayKey: '2026-11-25', atMs: late }, z: { dayKey: '2026-11-18', atMs: early } },
+    ];
+    for (const events of orders) {
+      for (const mode of ['phone-portrait', 'phone-landscape', 'medium', 'wide'] as LayoutMode[]) {
+        const html = renderWithLayout(
+          createElement(StatsScreen),
+          '/p/:projectId/stats',
+          '/p/fog/stats',
+          mode,
+          withFogImportEvents(base, events),
+        );
+        expect(html).toContain('這份稿子是 2026 年 11 月 18 日從文字檔匯入的。');
+        expect(html).not.toContain('2026 年 11 月 25 日從文字檔匯入的');
+        expect(html).not.toContain('2026 年 11 月 19 日從文字檔匯入的');
+        expect(html).not.toContain('2026 年 11 月 20 日從文字檔匯入的');
+        // 沒有次數字樣
+        expect(html).not.toContain('匯入次數');
+        expect(html).not.toContain('只算匯入文字檔的次數');
+        expect(html).not.toContain('stats-import-count');
+        expect(html).not.toContain('stats-export-row');
+        expect(html).not.toContain(PREPARING_BADGE);
+      }
+    }
+  });
+
+  it('WO-120：統計句月日不補 0、年份一定寫、不加星期', () => {
+    const base = demoFixtureState(new Date(), { withDemoStats: true });
+    const html = renderWithLayout(
+      createElement(StatsScreen),
+      '/p/:projectId/stats',
+      '/p/fog/stats',
+      'phone-portrait',
+      withFogImportEvents(base, { only: { dayKey: '2026-01-05', atMs: 10 } }),
+    );
+    expect(html).toContain('這份稿子是 2026 年 1 月 5 日從文字檔匯入的。');
+    expect(html).not.toContain('01 月');
+    expect(html).not.toContain('05 日');
+    expect(html).not.toMatch(/這份稿子是[^<]*(星期|週|禮拜)/);
+    expect(statsImportedOnLine('2026-01-05')).toBe('這份稿子是 2026 年 1 月 5 日從文字檔匯入的。');
+  });
+
+  it('WO-120：只有匯出事件、沒有匯入事件時，統計頁不出現匯入說明，紀錄卡也不出現匯入那一行', () => {
+    const base = demoFixtureState(new Date(), { withDemoStats: true });
+    const state = {
+      ...base,
+      exportEvents: {
+        events: { e1: { dayKey: base.logs[0]!.date, atMs: 100 } },
+        byProject: { fog: ['e1'] },
+        byFile: {},
+      },
+    } as DemoState;
+    const stats = renderWithLayout(createElement(StatsScreen), '/p/:projectId/stats', '/p/fog/stats', 'wide', state);
+    expect(stats).not.toContain('從文字檔匯入');
+    expect(stats).not.toContain('stats-import-export');
+    const logs = renderWithLayout(createElement(LogsScreen), '/p/:projectId/logs', '/p/fog/logs', 'phone-portrait', state);
+    expect(logs).not.toContain('從文字檔匯入');
+    expect(logs).not.toMatch(/匯出[\s　]*[\d—]+\s*次/);
+  });
+
+  it('WO-60／WO-120：寬版統計頁雙欄並排，右欄並排寫作過程紀錄（沒有次數字樣）', () => {
     const htmlWide = renderWithLayout(
       createElement(StatsScreen),
       '/p/:projectId/stats',
@@ -130,12 +245,11 @@ describe('WO-60 畫面驗收測試', () => {
     expect(htmlWide).toContain('is-wide');
     expect(htmlWide).toContain('stats-wide-logs');
     expect(htmlWide).toContain('視覺化的寫作記錄');
-    expect(htmlWide).toContain('匯入\u30000 次');
-    // WO-103：統計頁內共用的紀錄卡也接真實匯出數
-    expect(htmlWide).not.toContain('匯出\u30000 次');
-    expect(htmlWide).not.toContain('匯出\u3000—');
+    expect(htmlWide).not.toMatch(/匯入[\s　]*[\d—]+\s*次/);
+    expect(htmlWide).not.toMatch(/匯出[\s　]*[\d—]+\s*次/);
     expect(htmlWide).not.toContain(PREPARING_BADGE);
     expect(htmlWide).not.toContain('大量貼上');
+    expect(htmlWide).not.toContain('大量刪除');
   });
 
   it('WO-60：手機與中等版面統計頁為單欄，不顯示右欄並排', () => {
@@ -148,7 +262,6 @@ describe('WO-60 畫面驗收測試', () => {
       );
       expect(html).not.toContain('stats-wide-logs');
       expect(html).toContain('查看寫作過程紀錄');
-      expect(html).toContain(STATS_IMPORT_EXPORT_HEADING);
     }
   });
 
@@ -160,7 +273,7 @@ describe('WO-60 畫面驗收測試', () => {
       'phone-portrait',
     );
 
-    // 1. 依序出現三組標題
+    // 1. 依序出現三組標題（WO-120：匯入搬走後組名未另定案，維持原樣）
     const saveIndex = html.indexOf('存檔');
     const openCloseIndex = html.indexOf('開啟與關閉');
     const importExportIndex = html.indexOf('匯入與匯出');
@@ -181,7 +294,7 @@ describe('WO-60 畫面驗收測試', () => {
     expect(html).toContain('關閉稿子並回首頁');
   });
 
-  it('WO-60／WO-99／WO-103：檔案頁匯入、匯出都開放（無 aria-disabled、無淡色、無準備中），說明小字正確、沒有 Markdown', () => {
+  it('WO-60／WO-103／WO-120：檔案頁只剩匯出（開放、無 aria-disabled、無淡色、無準備中），沒有匯入文字檔按鈕，沒有 Markdown', () => {
     const html = renderWithLayout(
       createElement(FilesScreen),
       '/p/:projectId/files',
@@ -189,11 +302,12 @@ describe('WO-60 畫面驗收測試', () => {
       'phone-portrait',
     );
 
-    // 1. 匯入文字檔按鈕與說明
-    expect(html).toContain(IMPORT_TEXT_FILE_BUTTON);
-    expect(html).toContain(IMPORT_TEXT_FILE_HINT);
-    expect(html).toContain('把文字檔的內容開成新稿子');
-    expect(html).not.toContain('把文字檔的內容加進這份稿子');
+    // 1. WO-120：匯入文字檔入口已搬到首頁，檔案頁不再有按鈕、說明、選檔欄位與錯誤區
+    expect(html).not.toContain(IMPORT_TEXT_FILE_BUTTON);
+    expect(html).not.toContain(IMPORT_TEXT_FILE_HINT);
+    expect(html).not.toContain('import-text-file');
+    expect(html).not.toContain('import-text-input');
+    expect(html).not.toContain('import-text-error');
 
     // 2. 匯出全文按鈕與說明
     expect(html).toContain(EXPORT_FULL_TEXT_BUTTON);
@@ -202,14 +316,10 @@ describe('WO-60 畫面驗收測試', () => {
     expect(html).toContain('把全文或自選章節匯出成一個 Word 或 TXT 檔');
     expect(html).not.toContain('Markdown');
 
-    // 3. WO-103：匯入、匯出按鈕都沒有 aria-disabled、淡色與準備中徽章
+    // 3. 匯出按鈕沒有 aria-disabled、淡色與準備中徽章
     expect(html).not.toContain('aria-disabled="true"');
     expect(html).not.toContain('is-preparing');
     expect(html).not.toContain(PREPARING_BADGE);
-    const importTag = html.match(/<button[^>]*data-testid="import-text-file"[^>]*>/)?.[0] ?? '';
-    expect(importTag).not.toBe('');
-    expect(importTag).not.toContain('aria-disabled');
-    expect(importTag).not.toContain('is-preparing');
     const exportTag = html.match(/<button[^>]*data-testid="export-full-text"[^>]*>/)?.[0] ?? '';
     expect(exportTag).not.toBe('');
     expect(exportTag).not.toContain('aria-disabled');
@@ -218,11 +328,9 @@ describe('WO-60 畫面驗收測試', () => {
     expect(exportTag).toContain('aria-haspopup="dialog"');
     // 選單只在按下後才出現
     expect(html).not.toContain('data-testid="export-dialog"');
-    // 選檔欄位只收文字檔
-    expect(html).toMatch(/<input[^>]*type="file"[^>]*accept="\.txt,text\/plain"[^>]*data-testid="import-text-input"/);
 
     // 4. 新文字沒有簡體字
-    expect(html).not.toMatch(/[导汇备录档开关写]/);
+    expect(html).not.toMatch(SIMPLIFIED);
   });
 
   it('WO-60：新文字沒有簡體字，新文字未出現「.db」字樣', () => {
@@ -236,8 +344,8 @@ describe('WO-60 畫面驗收測試', () => {
       IMPORT_TEXT_FILE_HINT,
       EXPORT_FULL_TEXT_BUTTON,
       EXPORT_FULL_TEXT_HINT,
-      STATS_IMPORT_EXPORT_HEADING,
-      STATS_IMPORT_EXPORT_SCOPE_HINT,
+      LOG_IMPORTED_DAY_NOTE,
+      statsImportedOnLine('2026-11-18')!,
     ];
 
     for (const phrase of newPhrases) {
@@ -248,7 +356,7 @@ describe('WO-60 畫面驗收測試', () => {
     }
   });
 
-  it('WO-60／WO-99／WO-103：匯入、匯出按鈕點擊都不再叫出「功能還在準備中。」', () => {
+  it('WO-60／WO-103／WO-120：匯出按鈕點擊不叫出「功能還在準備中。」；檔案頁已沒有匯入按鈕', () => {
     let importBtnProps: any = null;
     let exportBtnProps: any = null;
     let toastMessage: string | null = null;
@@ -301,17 +409,12 @@ describe('WO-60 畫面驗收測試', () => {
       ),
     );
 
-    expect(importBtnProps).not.toBeNull();
+    // WO-120：匯入入口已移到首頁
+    expect(importBtnProps).toBeNull();
     expect(exportBtnProps).not.toBeNull();
-    expect(importBtnProps['aria-disabled']).toBeUndefined();
     expect(exportBtnProps['aria-disabled']).toBeUndefined();
 
-    // 觸發匯入按鈕點擊：只會去開選檔（測試環境沒有真的 input），不叫出準備中
-    importBtnProps.onClick();
-    expect(toastMessage).toBeNull();
-
-    // 重設並觸發匯出按鈕點擊：改成打開匯出選單，不叫出準備中提示
-    toastMessage = null;
+    // 觸發匯出按鈕點擊：打開匯出選單，不叫出準備中提示
     exportBtnProps.onClick();
     expect(toastMessage).toBeNull();
     expect(toastMessage).not.toBe(FEATURE_IN_PREPARATION);

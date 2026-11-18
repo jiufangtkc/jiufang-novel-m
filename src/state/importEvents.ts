@@ -254,6 +254,25 @@ export function countImportEvents(events: Readonly<ProjectImportEvents>): number
   return Object.keys(events).length;
 }
 
+/**
+ * WO-120：第一筆匯入事件的寫作日。「第一筆」＝事件時間 atMs 最小的那一筆，與物件列舉順序、讀檔順序無關；
+ * 回傳該筆儲存的 dayKey，不重新換算成日曆日。沒有事件回傳 null。
+ * atMs 相同時（極罕見）取 dayKey 字串較小者，讓結果不隨列舉順序改變。
+ */
+export function firstImportDayKey(events: Readonly<ProjectImportEvents>): string | null {
+  let first: ImportEvent | null = null;
+  for (const event of Object.values(events)) {
+    if (
+      first === null ||
+      event.atMs < first.atMs ||
+      (event.atMs === first.atMs && event.dayKey < first.dayKey)
+    ) {
+      first = event;
+    }
+  }
+  return first ? first.dayKey : null;
+}
+
 export function countImportEventsOn(events: Readonly<ProjectImportEvents>, dayKey: string): number {
   let count = 0;
   for (const event of Object.values(events)) if (event.dayKey === dayKey) count += 1;
