@@ -24,6 +24,15 @@ export function useOpenManuscriptFile(): {
   const [busy, setBusy] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const afterRef = useRef<((result: OpenFileResult) => void) | null>(null);
+  const busyRef = useRef(false);
+  const begin = () => {
+    busyRef.current = true;
+    setBusy(true);
+  };
+  const end = () => {
+    busyRef.current = false;
+    setBusy(false);
+  };
 
   const settle = (result: OpenFileResult) => {
     const after = afterRef.current;
@@ -41,9 +50,12 @@ export function useOpenManuscriptFile(): {
   }, []);
 
   const open = (after?: (result: OpenFileResult) => void) => {
+    // WO-121：讀取中不重複開選檔（按鈕改顯示 OPEN_FILE_BUSY）。
+    if (busyRef.current) return;
     afterRef.current = after ?? null;
     if (canPickLocalFiles()) {
-      setBusy(true);
+      begin();
+      // 這一行仍在點擊的同步段落裡：openWithPicker 第一步就是 showOpenFilePicker。
       void actions
         .openWithPicker()
         .then((opened) => {
@@ -58,7 +70,7 @@ export function useOpenManuscriptFile(): {
           actions.toast(OPEN_DB_FAIL);
           settle('failed');
         })
-        .finally(() => setBusy(false));
+        .finally(end);
       return;
     }
     inputRef.current?.click();
@@ -78,7 +90,7 @@ export function useOpenManuscriptFile(): {
           settle('cancelled');
           return;
         }
-        setBusy(true);
+        begin();
         void actions
           .importFile(file)
           .then((opened) => {
@@ -89,7 +101,7 @@ export function useOpenManuscriptFile(): {
             actions.toast(OPEN_DB_FAIL);
             settle('failed');
           })
-          .finally(() => setBusy(false));
+          .finally(end);
       }}
     />
   );

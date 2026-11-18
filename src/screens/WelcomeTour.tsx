@@ -36,6 +36,7 @@ import {
   type FinishOutcome,
   type TourStepNumber,
 } from '../copy/welcomeCopy';
+import { OPEN_FILE_BUSY } from '../copy/userFacing';
 import { useLayout } from '../layout';
 import { hasOnboardingRecord, writeOnboardingRecord } from '../state/onboardingRecord';
 import {
@@ -97,6 +98,8 @@ export interface WelcomeTourProps {
   finishOutcome?: FinishOutcome;
   /** WO-111：收尾外觀那一行的連結目標（只在再看一次且有開著的稿子時給）；沒給只是文字。 */
   appearanceTo?: string;
+  /** WO-121：開稿讀取中。收尾「開始寫」（開啟稿子）改顯示 OPEN_FILE_BUSY 並暫時不能再按。 */
+  openBusy?: boolean;
 }
 
 const FOCUSABLE = 'button:not([disabled]), a[href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
@@ -169,6 +172,7 @@ export function WelcomeTour({
   stepBody,
   finishOutcome = 'home',
   appearanceTo,
+  openBusy = false,
 }: WelcomeTourProps) {
   const { mode } = useLayout();
   const presentation = tourPresentation(mode);
@@ -299,9 +303,21 @@ export function WelcomeTour({
 
   const kicker = page === 'welcome' ? WELCOME_KICKER : page === 'finish' ? FINISH_KICKER : stepKicker(page);
   const finishPrimary = FINISH_PRIMARY[finishOutcome] ?? { text: FINISH_HOME };
-  const primaryText = page === 'welcome' ? WELCOME_START : page === 'finish' ? finishPrimary.text : STEP_PRIMARY[page];
-  const primaryAria =
-    page === 'welcome' ? WELCOME_START_ARIA : isStep(page) ? STEP_PRIMARY_ARIA[page] : finishPrimary.aria;
+  const opening = page === 'finish' && finishOutcome === 'open' && openBusy;
+  const primaryText = opening
+    ? OPEN_FILE_BUSY
+    : page === 'welcome'
+      ? WELCOME_START
+      : page === 'finish'
+        ? finishPrimary.text
+        : STEP_PRIMARY[page];
+  const primaryAria = opening
+    ? undefined
+    : page === 'welcome'
+      ? WELCOME_START_ARIA
+      : isStep(page)
+        ? STEP_PRIMARY_ARIA[page]
+        : finishPrimary.aria;
   const back = backPage(page);
 
   return (
@@ -427,6 +443,8 @@ export function WelcomeTour({
             className="welcome-primary"
             data-testid="welcome-primary"
             aria-label={primaryAria}
+            disabled={opening}
+            aria-busy={opening ? 'true' : undefined}
             onClick={onPrimary}
           >
             {primaryText}
