@@ -9,6 +9,7 @@ import {
   SAVE_FATAL_FAIL,
   SAVE_PARTIAL_FAIL,
   SAVE_PERMISSION_DENIED,
+  SAVE_PICKER_ABORTED_TOAST,
   TOAST_NEW_BOOK,
   TREE_FIND_DELETED,
   TREE_FIND_VERSION,
@@ -22,6 +23,12 @@ import {
   deleteRecoverableHint,
   treeMoreSummary,
 } from './userFacing';
+
+describe('WO-123 暫定文案（待九方審定）', () => {
+  it('存檔選位置被中止的提示全文', () => {
+    expect(SAVE_PICKER_ABORTED_TOAST).toBe('如果剛才有選位置，請把選檔視窗縮小一點再試一次。');
+  });
+});
 
 describe('九方審過的文案', () => {
   it('開檔失敗的句子一字不差', () => {

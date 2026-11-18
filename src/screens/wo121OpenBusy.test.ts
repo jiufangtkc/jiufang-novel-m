@@ -123,12 +123,16 @@ describe('WO-121：入口共用同一段開檔流程', () => {
     expect(src('src/screens/WelcomeRevisitScreen.tsx')).toContain('openBusy={openFile.busy}');
   });
 
-  it('hook：支援 picker 走 openWithPicker、否則走 file input；成功、失敗、取消都解除 busy 並通知結果', () => {
+  it('hook：（WO-123）經 dispatchOpen 分流——支援 picker 且非 Windows 桌面走 openWithPicker、否則走 file input；成功、失敗、取消都解除 busy 並通知結果', () => {
     const hook = src('src/screens/useOpenManuscriptFile.tsx');
     expect(hook).toContain('if (busyRef.current) return;');
-    expect(hook).toContain('if (canPickLocalFiles()) {');
+    // 不再「只要 canPick 就走 picker」：判定交給 openFileRoute，並帶入瀏覽器資訊。
+    expect(hook).not.toContain('if (canPickLocalFiles()) {');
+    expect(hook).toContain('dispatchOpen({');
+    expect(hook).toContain('canPick: canPickLocalFiles(),');
+    expect(hook).toContain('env: readBrowserRouteEnv(),');
     expect(hook).toContain('.openWithPicker()');
-    expect(hook).toContain('inputRef.current?.click();');
+    expect(hook).toContain('clickInput: () => inputRef.current?.click(),');
     expect(hook).toContain('.importFile(file)');
     // 兩條路都在 finally 解除 busy。
     expect(hook.match(/\.finally\(end\)/g)?.length).toBe(2);
