@@ -568,10 +568,12 @@ describe('WO-57：版面用字定案畫面輸出與原始碼驗證', () => {
     expect(editorHtml).toContain('<span class="floating-button-label">展開目錄</span>');
 
     // 頁首統計字數與專注模式底列字數：包含每日目標「今天 300／1,000 字」
-    // WO-102：有目標時畫面字包在 aria-hidden 內，另有獨立朗讀句（不念「／」）
-    expect(editorHtml).toContain(
-      '<span class="topbar-words" data-testid="topbar-words"><span aria-hidden="true">今天 300／1,000 字</span><span class="sr-only">今天寫了 300 字，每日目標 1,000 字</span></span>',
-    );
+    // WO-117：頁首不再產生今天字數與暫存；底下進度條（朗讀句獨立）與專注底列各一份，
+    // 專注底列一般模式由 CSS display:none 移出無障礙樹。
+    expect(editorHtml).not.toContain('data-testid="topbar-words"');
+    expect(editorHtml).not.toContain('data-testid="topbar-save"');
+    expect(editorHtml).toContain('data-testid="topbar-stats"');
+    expect(editorHtml).toContain('今天寫了 300 字，每日目標 1,000 字');
     expect(editorHtml).toContain('<div class="focus-bottom-status" data-testid="focus-bottom-status"><span>今天 300／1,000 字</span>');
 
     // 不再包含舊用字
