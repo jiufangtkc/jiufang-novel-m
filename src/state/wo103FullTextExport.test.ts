@@ -576,7 +576,9 @@ describe('WO-103 寫作日、稿子對應與紀錄卡', () => {
     const logs = render(state, 'logs', DRAFT_ID);
     // WO-113：畫面只顯示匯入次數，匯出事件仍在檔內（下方領域層斷言）。
     expect(dayCard(logs, yKey)).not.toContain('匯出');
-    expect(dayCard(logs, yKey)).toContain('匯入　0 次');
+    // WO-120：只有匯出的日子不會被當成匯入日，也沒有任何次數字樣。
+    expect(dayCard(logs, yKey)).not.toContain('匯入');
+    expect(dayCard(logs, yKey)).not.toContain('次');
     expect(dayCard(logs, TODAY)).not.toContain('匯出');
     expect(logs).not.toContain('準備中');
     const stats = render(state, 'stats', DRAFT_ID);

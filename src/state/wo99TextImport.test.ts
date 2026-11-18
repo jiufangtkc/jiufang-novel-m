@@ -14,6 +14,7 @@ import { TRANSFER_TABLES } from '../db/transferMeta';
 import { openMemoryDb } from '../db/wasmDb';
 import { LayoutProvider } from '../layout';
 import { FilesScreen } from '../screens/FilesScreen';
+import { HomeScreen } from '../screens/HomeScreen';
 import { LogsScreen } from '../screens/LogsScreen';
 import { StatsScreen } from '../screens/StatsScreen';
 import { DEVICE_SAVE_RECORD_KEY, fingerprintBytes, rememberExportedFile } from './deviceSaveRecord';
@@ -282,7 +283,41 @@ describe('WO-99 匯入文字檔開成新稿子', () => {
     expect(busy.current).toBe(false);
   });
 
-  it('WO-99：檔案頁取消選檔（沒有選到檔）不呼叫匯入、不顯示錯誤', () => {
+  it('WO-120：檔案頁沒有匯入按鈕；首頁有，且順序是開新稿子、開啟稿子、匯入文字檔', () => {
+    const render = (element: ReturnType<typeof createElement>, url: string, path: string) =>
+      renderToStaticMarkup(
+        createElement(
+          SampleProvider,
+          { initialState: demoFixtureState(NOW) },
+          createElement(
+            LayoutProvider,
+            { initialMode: 'phone-portrait' },
+            createElement(MemoryRouter, { initialEntries: [url] }, createElement(Routes, null, createElement(Route, { path, element }))),
+          ),
+        ),
+      );
+    const files = render(createElement(FilesScreen), '/p/fog/files', '/p/:projectId/files');
+    expect(files).not.toContain(IMPORT_TEXT_FILE_BUTTON);
+    expect(files).not.toContain('import-text-file');
+    expect(files).not.toContain('import-text-input');
+
+    const home = render(createElement(HomeScreen), '/', '/');
+    const footer = home.slice(home.indexOf('class="home-actions"'));
+    const create = footer.indexOf('開新稿子');
+    const open = footer.indexOf('開啟稿子');
+    const importAt = footer.indexOf(IMPORT_TEXT_FILE_BUTTON);
+    expect(create).toBeGreaterThan(-1);
+    expect(open).toBeGreaterThan(create);
+    expect(importAt).toBeGreaterThan(open);
+    // 匯入緊接開啟稿子：兩者之間沒有別的按鈕
+    expect(footer.slice(open, importAt).match(/<button/g)?.length).toBe(1);
+    expect(home).toContain('data-testid="import-text-file"');
+    // 初始沒有處理中與錯誤提示
+    expect(home).not.toContain('import-text-error');
+    expect(home).not.toContain('import-text-working');
+  });
+
+  it('WO-99／WO-120：首頁取消選檔（沒有選到檔）不呼叫匯入、不顯示錯誤', () => {
     let calls = 0;
     let inputProps: { onChange: (event: unknown) => void } | null = null;
     function Harness() {
@@ -291,7 +326,7 @@ describe('WO-99 匯入文字檔開成新稿子', () => {
         calls += 1;
         return { kind: 'busy' };
       };
-      const vdom = FilesScreen();
+      const vdom = HomeScreen();
       const walk = (node: unknown) => {
         if (!node || typeof node !== 'object') return;
         const props = (node as { props?: Record<string, unknown> }).props;
@@ -312,14 +347,15 @@ describe('WO-99 匯入文字檔開成新稿子', () => {
           { initialMode: 'phone-portrait' },
           createElement(
             MemoryRouter,
-            { initialEntries: ['/p/fog/files'] },
-            createElement(Routes, null, createElement(Route, { path: '/p/:projectId/files', element: createElement(Harness) })),
+            { initialEntries: ['/'] },
+            createElement(Routes, null, createElement(Route, { path: '/', element: createElement(Harness) })),
           ),
         ),
       ),
     );
     expect(html).toContain(IMPORT_TEXT_FILE_BUTTON);
-    expect(html).toContain(IMPORT_TEXT_FILE_HINT);
+    // 首頁按鈕就叫「匯入文字檔」，不再帶「把文字檔的內容開成新稿子」副標
+    expect(html).not.toContain(IMPORT_TEXT_FILE_HINT);
     expect(html).not.toContain('import-text-error');
     expect(inputProps).not.toBeNull();
     const target = { files: [] as File[], value: 'C:\\fakepath\\x.txt' };
@@ -374,14 +410,23 @@ describe('WO-99 匯入次數（九方 15:39 補充）', () => {
         ),
       );
     const stats = render(createElement(StatsScreen), '/p/:projectId/stats', `/p/${id}/stats`);
-    expect(stats).toMatch(/data-testid="stats-import-count">1</);
+    // WO-120：統計頁改為一行匯入日期說明（取事件儲存的寫作日），不再顯示次數
+    expect(TODAY).toBe('2026-11-16');
+    expect(stats).toContain('這份稿子是 2026 年 11 月 16 日從文字檔匯入的。');
+    expect(stats).not.toContain('stats-import-count');
+    expect(stats).not.toContain('匯入次數');
     expect(stats).not.toContain('stats-export-count');
     const logs = render(createElement(LogsScreen), '/p/:projectId/logs', `/p/${id}/logs`);
-    expect(logs).toContain('匯入\u30001 次');
+    // WO-120：紀錄卡不再有「匯入　N 次」，改為匯入日一行
+    expect(logs).toContain('這天從文字檔匯入');
+    expect(logs).not.toContain('匯入\u30001 次');
     expect(logs).not.toContain('匯出\u30000 次');
     expect(logs).not.toContain('匯出\u3000— 次');
     const wide = render(createElement(StatsScreen), '/p/:projectId/stats', `/p/${id}/stats`, 'wide');
-    expect(wide).toContain('匯入\u30001 次');
+    // WO-120：統計頁寬版右欄的紀錄卡同樣只有一行匯入日
+    expect(wide).toContain('這天從文字檔匯入');
+    expect(wide).toContain('這份稿子是 2026 年 11 月 16 日從文字檔匯入的。');
+    expect(wide).not.toContain('匯入\u30001 次');
   });
 
   it('WO-99：連續成功兩次各建一稿、各記 1；裝置上共 2 筆事件；舊稿維持 0', async () => {
