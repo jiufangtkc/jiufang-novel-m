@@ -4,9 +4,12 @@ import {
   SAVE_PERMISSION_DENIED,
   TOAST_SAVED_UNDER_NEW_TITLE,
 } from '../copy/userFacing';
+import { SAVE_PICKER_ABORTED_TOAST } from '../copy/userFacing';
 import type { DiskFile, TargetStore } from './fileTarget';
+import { isSavePickerAborted } from './savePickerAbort';
 
 export type SaveOutcome =
+  | { kind: 'picker-aborted' }
   | { kind: 'saved'; filename: string }
   | { kind: 'saved-as'; filename: string }
   | { kind: 'saved-under-new-title'; filename: string }
@@ -22,6 +25,7 @@ export interface SaveEnvironment {
   canPickFiles: boolean;
   targets: TargetStore;
   verify(bytes: Uint8Array): Promise<void>;
+  /** WO-123：存檔 picker 回 AbortError 時 reject SavePickerAbortedError；其他取消（無 picker 等）仍回 null。 */
   pickSaveLocation(suggestedName: string, startIn?: DiskFile | null): Promise<DiskFile | null>;
   share(filename: string, bytes: Uint8Array): Promise<'shared' | 'downloaded' | 'cancelled'>;
 }
@@ -38,6 +42,8 @@ export function saveNotice(outcome: SaveOutcome): string | null {
       return outcome.via === 'share' ? '已另存' : '已下載，請自行放到想放的位置';
     case 'cancelled':
       return null;
+    case 'picker-aborted':
+      return SAVE_PICKER_ABORTED_TOAST;
     case 'permission-denied':
       return SAVE_PERMISSION_DENIED;
     case 'write-failed':
@@ -55,6 +61,20 @@ function sameBytes(left: Uint8Array, right: Uint8Array): boolean {
     if (left[index] !== right[index]) return false;
   }
   return true;
+}
+
+/** 選存檔位置。AbortError 轉成 'aborted'（用來跳提示）；其他錯誤照舊丟出。 */
+async function pickLocation(
+  env: SaveEnvironment,
+  suggestedName: string,
+  startIn?: DiskFile | null,
+): Promise<DiskFile | null | 'aborted'> {
+  try {
+    return await env.pickSaveLocation(suggestedName, startIn);
+  } catch (error) {
+    if (isSavePickerAborted(error)) return 'aborted';
+    throw error;
+  }
 }
 
 async function ensurePermission(file: DiskFile): Promise<boolean> {
@@ -108,7 +128,8 @@ export async function saveProjectToPlace(
     return { kind: 'saved', filename: target.file.name || filename };
   }
   if (env.canPickFiles) {
-    const picked = await env.pickSaveLocation(filename);
+    const picked = await pickLocation(env, filename);
+    if (picked === 'aborted') return { kind: 'picker-aborted' };
     if (!picked) return { kind: 'cancelled' };
     const wrote = await writeGranted(picked, bytes);
     if (wrote !== 'ready') return wrote;
@@ -135,7 +156,8 @@ export async function saveProjectAsNew(
     return { kind: 'invalid-database' };
   }
   if (env.canPickFiles) {
-    const picked = await env.pickSaveLocation(suggestedName);
+    const picked = await pickLocation(env, suggestedName);
+    if (picked === 'aborted') return { kind: 'picker-aborted' };
     if (!picked) return { kind: 'cancelled' };
     const wrote = await writeGranted(picked, bytes);
     if (wrote !== 'ready') return wrote;
@@ -200,7 +222,8 @@ export async function saveProjectFromClick(input: {
   }
   const suggested = input.plan === 'pick-new-name' ? input.newTitleName : input.writeBackName;
   const startIn = input.plan === 'pick-new-name' ? input.startIn : null;
-  const picked = await input.env.pickSaveLocation(suggested, startIn);
+  const picked = await pickLocation(input.env, suggested, startIn);
+  if (picked === 'aborted') return { kind: 'picker-aborted' };
   if (!picked) return { kind: 'cancelled' };
   let bytes: Uint8Array;
   try {

@@ -6,6 +6,7 @@ import {
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
   SAVE_PERMISSION_DENIED,
+  SAVE_PICKER_ABORTED_TOAST,
 } from '../copy/userFacing';
 import { TOAST_DEFAULT_MS, TOAST_PASTE_BLOCKED_MS, toastDurationMs } from './sampleStore';
 
@@ -15,6 +16,7 @@ describe('WO-113／WO-121：短提示停留時間與朗讀', () => {
     expect(TOAST_DEFAULT_MS).toBe(2400);
     expect(toastDurationMs(EDITOR_PASTE_BLOCKED_TOAST)).toBe(5000);
     expect(toastDurationMs(OPEN_DB_FAIL)).toBe(5000);
+    expect(toastDurationMs(SAVE_PICKER_ABORTED_TOAST)).toBe(5000);
     expect(toastDurationMs(EDITOR_COPIED_TOAST)).toBe(2400);
     expect(toastDurationMs(EDITOR_CUT_TOAST)).toBe(2400);
     expect(toastDurationMs(SAVE_PERMISSION_DENIED)).toBe(2400);

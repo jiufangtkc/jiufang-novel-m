@@ -58,6 +58,7 @@ import {
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
   SAVE_FATAL_FAIL,
+  SAVE_PICKER_ABORTED_TOAST,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
   TOAST_NEW_BOOK,
@@ -188,6 +189,7 @@ export const TOAST_OPEN_FAIL_MS = 5000;
 export function toastDurationMs(message: string): number {
   if (message === EDITOR_PASTE_BLOCKED_TOAST) return TOAST_PASTE_BLOCKED_MS;
   if (message === OPEN_DB_FAIL) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_PICKER_ABORTED_TOAST) return TOAST_OPEN_FAIL_MS;
   return TOAST_DEFAULT_MS;
 }
 

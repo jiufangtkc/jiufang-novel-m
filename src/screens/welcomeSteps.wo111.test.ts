@@ -736,9 +736,10 @@ describe('WO-111 收尾', () => {
     expect(home).toContain('onClick={() => openFile.open()}');
     expect(home).not.toMatch(/finish-new'\)[^\n]*addProject/);
     const hook = readFileSync('src/screens/useOpenManuscriptFile.tsx', 'utf8');
-    expect(hook).toContain('if (canPickLocalFiles()) {');
+    expect(hook).toContain('dispatchOpen({');
+    expect(hook).toContain('canPick: canPickLocalFiles(),');
     expect(hook).toContain('.openWithPicker()');
-    expect(hook).toContain('inputRef.current?.click();');
+    expect(hook).toContain('inputRef.current?.click()');
     expect(hook).toContain('.importFile(file)');
     expect(hook).toContain('accept=".db,application/octet-stream,application/x-sqlite3"');
   });

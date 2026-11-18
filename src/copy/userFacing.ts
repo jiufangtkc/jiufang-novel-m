@@ -38,6 +38,9 @@ export function openButtonLabel(busy: boolean, idleLabel: string): string {
   return busy ? OPEN_FILE_BUSY : idleLabel;
 }
 
+/** WO-123（暫定，待九方審定）：存檔選位置視窗回 AbortError 時的提示（真正按取消也會出現，程式分不出來）。 */
+export const SAVE_PICKER_ABORTED_TOAST = '如果剛才有選位置，請把選檔視窗縮小一點再試一次。';
+
 export const OPEN_DB_HINT ='請選擇使用九方編輯器編寫的 .db 稿件檔。';
 
 export const SAVE_PERMISSION_DENIED = '沒有寫入權限，請再按一次並選「允許」。';
