@@ -533,3 +533,15 @@ export function logExportCountLabel(count?: number | string | null): string {
 export const staleSaveReminder = (days: number): string => `已經 ${days} 天沒存檔了`;
 /** 朗讀標籤：與畫面同一句。 */
 export const staleSaveReminderAria = (days: number): string => `已經 ${days} 天沒存檔了`;
+
+// WO-116：首頁最近清單右邊 X 的確認視窗（九方定版文案，逐字照用，不得改字）。
+export const REMOVE_FROM_DEVICE_FALLBACK_TITLE = '未命名稿子';
+export const removeFromDeviceTitle = (bookTitle: string): string =>
+  `要從這個裝置刪掉「${bookTitle.trim() || REMOVE_FROM_DEVICE_FALLBACK_TITLE}」嗎？`;
+export const REMOVE_FROM_DEVICE_BODY =
+  '這份稿子存在這個裝置上的內容會一起刪掉，刪了就找不回來。你另存在別處的 .db 稿件檔不會受影響。';
+export const REMOVE_FROM_DEVICE_CONFIRM = '刪掉';
+export const REMOVE_FROM_DEVICE_CANCEL = '取消';
+/** X 按鈕的朗讀標籤：說明按下去是刪掉這個裝置上的暫存，並可辨認是哪一份。 */
+export const removeFromDeviceAria = (bookTitle: string): string =>
+  `刪掉這個裝置上的暫存：${bookTitle.trim() || REMOVE_FROM_DEVICE_FALLBACK_TITLE}`;

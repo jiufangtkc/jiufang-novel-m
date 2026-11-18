@@ -84,6 +84,7 @@ import {
   withAdoptedFile,
   withFileLink,
   withImportEvent,
+  withoutProject,
   writeExportEvents,
   writeImportEvents,
   type ImportEventRecord,
@@ -110,6 +111,8 @@ import {
   writeBookBytes,
   type ImportedBook,
 } from '../db/library';
+import { isBookRemoved, removedBookIds } from '../db/removedBooks';
+import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
 import {
   bindLeaveFlush,
@@ -230,6 +233,8 @@ export interface FileExtras {
 
 export type Action =
   | { type: 'dismiss-recent'; id: string }
+  /** WO-116：這份稿子已從這個裝置刪掉（儲存層已清完），把記憶體裡所有屬於它的資料拿掉。 */
+  | { type: 'remove-project'; id: string }
   | {
       type: 'add-project';
       id: string;
@@ -455,6 +460,8 @@ export function createState(now: Date): SampleState {
  * 寫作紀錄只留還沒升格成檔案、也不是內建範例書的稿子。
  */
 export function persistDeviceSaveRecord(store: KeyValueStore, state: SampleState): void {
+  // WO-116：已從這個裝置刪掉的稿子，即使拿到的是刪除前的舊狀態，也不能把它的資料寫回裝置紀錄。
+  const excludeIds = removedBookIds();
   saveDeviceSaveRecord(store, {
     saveMeta: state.saveMeta,
     startedById: state.startedById,
@@ -463,6 +470,7 @@ export function persistDeviceSaveRecord(store: KeyValueStore, state: SampleState
     draftIds: state.projects
       .filter((project) => project.origin !== 'file' && !isSampleBook(project))
       .map((project) => project.id),
+    excludeIds,
   });
 }
 
@@ -1218,6 +1226,29 @@ export function reduce(state: SampleState, action: Action): SampleState {
     }
     case 'dismiss-recent':
       return { ...state, recentIds: state.recentIds.filter((id) => id !== action.id) };
+    case 'remove-project': {
+      const target = state.projects.find((item) => item.id === action.id);
+      if (!target) return state;
+      const ids = new Set(deviceKeysOf(target));
+      const without = <T,>(source: Record<string, T>): Record<string, T> =>
+        Object.fromEntries(Object.entries(source).filter(([key]) => !ids.has(key)));
+      const projectIds = state.projects.filter((item) => ids.has(item.id)).map((item) => item.id);
+      const dropEvents = (record: ImportEventRecord) =>
+        projectIds.reduce((current, id) => withoutProject(current, id), record);
+      return {
+        ...state,
+        projects: state.projects.filter((item) => !ids.has(item.id)),
+        recentIds: state.recentIds.filter((id) => !ids.has(id)),
+        goalById: without(state.goalById),
+        logsById: without(state.logsById),
+        saveMeta: without(state.saveMeta),
+        startedById: without(state.startedById),
+        fileExtras: without(state.fileExtras),
+        importEvents: dropEvents(state.importEvents),
+        exportEvents: dropEvents(state.exportEvents),
+        activeProjectId: state.activeProjectId && ids.has(state.activeProjectId) ? null : state.activeProjectId,
+      };
+    }
     case 'add-project': {
       const title = action.title.trim() || '未命名稿子';
       const chapterId = newChapterId(action.id);
@@ -1414,6 +1445,8 @@ export function reduce(state: SampleState, action: Action): SampleState {
         fileExtras: rememberFilePlace(state, action.projectId, action.nodeId, action.cursor),
       };
     case 'attach-file': {
+      // WO-116：已從這個裝置刪掉的稿子，不論 quiet 與否都不能被加回清單。
+      if (isBookRemoved(action.project.id) || isBookRemoved(action.project.dbKey)) return state;
       if (action.quiet && state.projects.some((item) => item.id === action.project.id)) return state;
       const cardsCopy = action.extras.cards.map((card) => ({
         ...card,
@@ -1575,6 +1608,8 @@ export function reduce(state: SampleState, action: Action): SampleState {
 
 interface SampleActions {
   dismissRecent: (id: string) => void;
+  /** WO-116：從這個裝置刪掉這份稿子的暫存與寫作資料。回傳 true 才是真的刪完；失敗回 false 並跳提示，稿子照舊。 */
+  removeFromDevice: (id: string) => Promise<boolean>;
   addProject: (title: string, shape?: 'novel' | 'single') => string;
   rememberPlace: (projectId: string, nodeId: string, cursor: number) => void;
   toggleNode: (projectId: string, nodeId: string) => void;
@@ -2330,7 +2365,7 @@ export function SampleProvider({
     try {
       saveProjects(
         localStorage,
-        state.projects.filter((project) => project.origin !== 'file'),
+        state.projects.filter((project) => project.origin !== 'file' && !isBookRemoved(project.id)),
       );
       const active = state.projects.find((project) => project.id === state.activeProjectId);
       if (active && active.origin !== 'file') {
@@ -2371,6 +2406,8 @@ export function SampleProvider({
         const draft = typeof localStorage === 'undefined' ? null : loadLiveDraft(localStorage);
         let appliedDraft = false;
         for (const book of books) {
+          // WO-116：刪除前就已開始的讀取，讀到已刪稿子也不掛回。
+          if (isBookRemoved(book.key)) continue;
           let tree = book.tree;
           if (draft && draft.projectId === book.key && findNode(book.tree, draft.chapterId)) {
             tree = updateNode(book.tree, draft.chapterId, (node) => ({ ...node, content: draft.text }));
@@ -2382,7 +2419,7 @@ export function SampleProvider({
         }
         if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
         setDeviceLoaded(true);
-        for (const book of books) {
+        for (const book of books.filter((item) => !isBookRemoved(item.key))) {
           void createBrowserTargetStore()
             .load(book.key)
             .then((target) => {
@@ -2430,12 +2467,17 @@ export function SampleProvider({
 
   useEffect(() => {
     const flush = () => {
-      const current = stateRef.current;
+      // WO-116：離頁寫回也不能把已刪稿子寫回（舊狀態、編輯框殘留的草稿都要擋）。
+      const latest = stateRef.current;
+      const current = latest.projects.some((item) => isBookRemoved(item.id))
+        ? { ...latest, projects: latest.projects.filter((item) => !isBookRemoved(item.id)) }
+        : latest;
       let projects = current.projects;
-      const live = readLiveDraftFromEditor();
+      const editorLive = readLiveDraftFromEditor();
+      const live = editorLive && !isBookRemoved(editorLive.projectId) ? editorLive : null;
       try {
         if (typeof localStorage !== 'undefined') {
-          projects = flushOpenDraft({ store: localStorage, projects: current.projects });
+          projects = flushOpenDraft({ store: localStorage, projects: current.projects, read: () => live });
         }
       } catch {
         projects = current.projects;
@@ -2487,6 +2529,17 @@ export function SampleProvider({
   const actions = useMemo<SampleActions>(
     () => ({
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
+      removeFromDevice: async (id) => {
+        const project = stateRef.current.projects.find((item) => item.id === id);
+        if (!project) return false;
+        const done = await removeProjectFromDevice({ project, store: deviceStore() });
+        if (!done) {
+          dispatch({ type: 'toast', message: '沒能刪掉這個裝置上的稿子，稿子還在，請再試一次。' });
+          return false;
+        }
+        dispatch({ type: 'remove-project', id });
+        return true;
+      },
       addProject: (title, shape = 'novel') => {
         const startedMs = Date.now();
         const id = `p-${startedMs}`;

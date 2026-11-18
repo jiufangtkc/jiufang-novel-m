@@ -132,28 +132,59 @@ export function saveDeviceSaveRecord(
     draftIds: readonly string[];
     /** WO-98：沒帶就沿用先前記的。 */
     startedById?: Record<string, number>;
+    /** WO-116：已從這個裝置刪掉的稿子代號；它們的稿別資料（含 tourGoalById 與沿用的 startedById）一律不留。 */
+    excludeIds?: readonly string[];
   },
 ): void {
   const previous = readRaw(store);
+  const excluded = new Set(input.excludeIds ?? []);
   const logsById: DeviceSaveRecord['logsById'] = {};
   const goalById: DeviceSaveRecord['goalById'] = {};
   for (const id of input.draftIds) {
+    if (excluded.has(id)) continue;
     const schedule = input.goalById[id];
     if (!schedule) continue;
     goalById[id] = schedule;
     logsById[id] = input.logsById[id] ?? [];
   }
   const record: DeviceSaveRecord = {
-    saveMeta: input.saveMeta,
+    saveMeta: withoutIds(input.saveMeta, excluded),
     logsById,
     goalById,
     exportedFiles: previous.exportedFiles,
-    startedById: input.startedById ?? previous.startedById,
+    startedById: withoutIds(input.startedById ?? previous.startedById, excluded),
     // WO-111：沒有稿子時的每日目標由 saveHomeDailyGoal 寫，這裡照舊留著。
     ...(previous.homeGoal !== undefined ? { homeGoal: previous.homeGoal } : {}),
-    ...tourGoalField(keptTourGoals(previous.tourGoalById ?? {}, input.goalById)),
+    ...tourGoalField(withoutIds(keptTourGoals(previous.tourGoalById ?? {}, input.goalById), excluded)),
   };
   store.setItem(DEVICE_SAVE_RECORD_KEY, JSON.stringify(record));
+}
+
+function withoutIds<T>(source: Record<string, T>, excluded: ReadonlySet<string>): Record<string, T> {
+  if (excluded.size === 0) return source;
+  return Object.fromEntries(Object.entries(source).filter(([id]) => !excluded.has(id)));
+}
+
+/**
+ * WO-116：從這個裝置刪掉稿子時，把裝置紀錄裡這些稿子的稿別資料（saveMeta、logsById、goalById、
+ * startedById、tourGoalById）清掉；其他稿、另存檔案指紋與共用的 homeGoal 照舊。
+ * 不能只靠 draftIds：tourGoalById 在找不到該稿目標時會被保留。寫不進去會丟錯。
+ */
+export function forgetProjectsInDeviceRecord(store: KeyValueStore, ids: readonly string[]): void {
+  const raw = store.getItem(DEVICE_SAVE_RECORD_KEY);
+  if (!raw) return;
+  const excluded = new Set(ids);
+  const record = readRaw(store);
+  const next: DeviceSaveRecord = {
+    saveMeta: withoutIds(record.saveMeta, excluded),
+    logsById: withoutIds(record.logsById, excluded),
+    goalById: withoutIds(record.goalById, excluded),
+    exportedFiles: record.exportedFiles,
+    startedById: withoutIds(record.startedById, excluded),
+    ...(record.homeGoal !== undefined ? { homeGoal: record.homeGoal } : {}),
+    ...tourGoalField(withoutIds(record.tourGoalById ?? {}, excluded)),
+  };
+  store.setItem(DEVICE_SAVE_RECORD_KEY, JSON.stringify(next));
 }
 
 /** 某份稿子目前（最後一次）的每日目標。 */
