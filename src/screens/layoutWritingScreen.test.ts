@@ -33,6 +33,7 @@ import {
 } from '../layout';
 import { SampleProvider } from '../state/sampleStore';
 import { EditorPane } from './EditorPane';
+import { shouldExitFocusOnEscape } from './focusEscape';
 import { WriteScreen } from './WriteScreen';
 import { demoFixtureState } from '../state/testing/sampleFixture';
 
@@ -216,14 +217,38 @@ describe('WO-55：寬版 one-side／both 規則、專注模式與快捷鍵限制
     expect(state.sidePanels).toEqual({ left: true, right: true });
   });
 
-  it('WO-55：專注模式嚴格不註冊任何鍵盤快捷鍵（未綁定 Esc 等 Keydown 監聽）', () => {
+  it('WO-55／WO-119：專注模式允許電腦 Esc 離開（取代舊的全面禁止），但不可用快捷鍵進入，layout 層不掛 keydown', () => {
     const editorSrc = readFileSync(new URL('./EditorPane.tsx', import.meta.url), 'utf8');
+    const hookSrc = readFileSync(new URL('./useFocusEscape.ts', import.meta.url), 'utf8');
+    const pureSrc = readFileSync(new URL('./focusEscape.ts', import.meta.url), 'utf8');
     const layoutContextSrc = readFileSync(new URL('../layout/layoutContext.tsx', import.meta.url), 'utf8');
     const sidePanelsSrc = readFileSync(new URL('../layout/sidePanels.ts', import.meta.url), 'utf8');
 
-    // 檢查程式碼中絕無註冊 Esc 或快捷鍵進入／離開專注模式
+    // WO-119 新保護：EditorPane 只透過 hook 接線，不直接寫 Escape／Esc 字串
+    expect(editorSrc).toMatch(/useFocusEscape\(/);
     expect(editorSrc).not.toMatch(/['"]Escape['"]/);
     expect(editorSrc).not.toMatch(/['"]Esc['"]/);
+
+    // hook 使用同一個純函式判斷，成立時只呼叫既有 exitFocusMode，不使用 toggle／enter
+    expect(hookSrc).toMatch(/shouldExitFocusOnEscape\(/);
+    expect(hookSrc).toMatch(/exitFocusMode\(\)/);
+    expect(hookSrc).not.toMatch(/toggleFocusMode|enterFocusMode|toggle/);
+    expect(hookSrc).not.toMatch(/\.blur\(|setSelectionRange|selectionStart\s*=/);
+    expect(pureSrc).not.toMatch(/addEventListener|toggle|enterFocusMode/);
+
+    // 未專注時不進入，也不離開
+    const base = {
+      key: 'Escape',
+      focusMode: false,
+      layoutMode: 'wide' as const,
+      pointerFine: true,
+      pointer: 'mouse',
+      escapeTargetOpen: false,
+    };
+    expect(shouldExitFocusOnEscape(base)).toBe(false);
+    expect(shouldExitFocusOnEscape({ ...base, focusMode: true })).toBe(true);
+
+    // 既有保護保留：layoutContext 不為此掛 keydown、sidePanels 不掛事件
     expect(layoutContextSrc).not.toMatch(/addEventListener\(['"]keydown['"]/);
     expect(sidePanelsSrc).not.toMatch(/addEventListener/);
   });

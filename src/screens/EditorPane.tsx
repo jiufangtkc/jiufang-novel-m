@@ -5,6 +5,7 @@ import {
 } from '../editor/bodyFocusGuard';
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useFocusEscape } from './useFocusEscape';
 import { DailyProgressBar } from '../components/DailyProgressBar';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
@@ -296,6 +297,9 @@ export function EditorPane({
       exitFocusMode();
     }
   };
+
+  // WO-119：電腦專注模式按 Esc 離開（沿用既有 exitFocusMode，判斷見 focusEscape.ts）
+  useFocusEscape({ layoutMode, pointer, focusMode, exitFocusMode, isComposingRef });
 
   const clearPendingComposition = () => {
     pendingOpenAfterCompositionRef.current = false;
