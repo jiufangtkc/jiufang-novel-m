@@ -316,12 +316,11 @@ describe('WO-100 核心驗收：清掉瀏覽器本機資料後只靠 .db 重開�
     // 畫面：統計頁全書 1、匯出 0；寫作過程紀錄卡原寫作日 1（手機與寬版）
     const stats = render(clean, 'stats', 'file-new-device');
     expect(stats).toMatch(/data-testid="stats-import-count">1</);
-    expect(stats).toMatch(/data-testid="stats-export-count">0</);
+    expect(stats).not.toContain('stats-export-count');
     expect(stats).not.toContain('準備中');
     const logs = render(clean, 'logs', 'file-new-device');
     expect(dayCard(logs, TODAY)).toContain('匯入　1 次');
-    expect(dayCard(logs, TODAY)).toContain('匯出　0 次');
-    expect(dayCard(logs, TODAY)).not.toContain('匯出　— 次');
+    expect(dayCard(logs, TODAY)).not.toContain('匯出');
     const wide = render(clean, 'stats', 'file-new-device', 'wide');
     expect(dayCard(wide, TODAY)).toContain('匯入　1 次');
 
@@ -664,7 +663,6 @@ describe('WO-100 格式錯誤與匯出預留（稿子狀態層）', () => {
     expect(statsDisplay(state)).toMatchObject({ exportCount: 0, exportDisplay: '0' });
     expect(countImportEvents(projectExportEventsOf(state, imported.id))).toBe(0);
     const html = render(state, 'logs', imported.id);
-    expect(dayCard(html, TODAY)).toContain('匯出　0 次');
-    expect(dayCard(html, TODAY)).not.toContain('匯出　— 次');
+    expect(dayCard(html, TODAY)).not.toContain('匯出');
   });
 });

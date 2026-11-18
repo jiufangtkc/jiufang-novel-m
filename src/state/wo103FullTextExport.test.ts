@@ -574,16 +574,18 @@ describe('WO-103 寫作日、稿子對應與紀錄卡', () => {
     expect(state.logs.some((log) => log.date === yKey)).toBe(false); // 只供顯示，不寫回紀錄
 
     const logs = render(state, 'logs', DRAFT_ID);
-    expect(dayCard(logs, yKey)).toContain('匯出　1 次');
+    // WO-113：畫面只顯示匯入次數，匯出事件仍在檔內（下方領域層斷言）。
+    expect(dayCard(logs, yKey)).not.toContain('匯出');
     expect(dayCard(logs, yKey)).toContain('匯入　0 次');
-    expect(dayCard(logs, TODAY)).toContain('匯出　2 次');
+    expect(dayCard(logs, TODAY)).not.toContain('匯出');
     expect(logs).not.toContain('準備中');
     const stats = render(state, 'stats', DRAFT_ID);
-    expect(stats).toMatch(/data-testid="stats-export-count">3</);
+    expect(stats).not.toContain('stats-export-count');
+    expect(stats).not.toContain('stats-export-row');
     expect(stats).not.toContain('準備中');
     const wide = render(state, 'stats', DRAFT_ID, 'wide');
-    expect(dayCard(wide, TODAY)).toContain('匯出　2 次');
-    expect(dayCard(wide, yKey)).toContain('匯出　1 次');
+    expect(dayCard(wide, TODAY)).not.toContain('匯出');
+    expect(dayCard(wide, yKey)).not.toContain('匯出');
     // 統計頁全書＝各日加總（同一份事件集合）
     const summary = summarizeStats(state.schedule, state.logs, 0, 0, total(state));
     expect(summary.importExport).toMatchObject({ exportCount: 3, exportDisplay: '3' });

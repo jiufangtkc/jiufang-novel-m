@@ -65,10 +65,10 @@ describe('WO-60 畫面驗收測試', () => {
     // 2. 仍保留「大量刪除」
     expect(html).toContain('大量刪除');
 
-    // 3. WO-99：匯入已開放，沒匯入過的稿子是「匯入　0 次」；WO-103：匯出也開放，沒匯出過是「匯出　0 次」
+    // 3. WO-99：匯入已開放；WO-113：畫面不顯示匯出次數
     expect(html).toContain('匯入\u30000 次');
     expect(html).not.toContain('匯入\u3000—');
-    expect(html).toContain('匯出\u30000 次');
+    expect(html).not.toContain('匯出\u30000 次');
     expect(html).not.toContain('匯出\u3000—');
 
     // 4. WO-103：匯出列不再有「準備中」徽章、淡色或點擊提示，和匯入列同一種一般樣式
@@ -78,14 +78,15 @@ describe('WO-60 畫面驗收測試', () => {
     const importRows = html.match(/data-testid="log-import-row"><span>[^<]*<\/span><\/span>/g) ?? [];
     expect(importRows.length).toBeGreaterThan(0);
     const exportRows = html.match(/<span class="log-metric" data-testid="log-export-row"><span>[^<]*<\/span><\/span>/g) ?? [];
-    expect(exportRows.length).toBe(importRows.length);
+    // WO-113：不再有匯出列
+    expect(exportRows.length).toBe(0);
     for (const row of exportRows) expect(row).toContain('匯出\u30000 次');
 
     // 5. 不含簡體字
     expect(html).not.toMatch(/[导汇备录档开关写]/);
   });
 
-  it('WO-60／WO-103：統計頁含「匯入與匯出」「只算匯入文字檔、匯出全文的次數」，匯出為 0，沒有「準備中」', () => {
+  it('WO-113：統計頁只顯示匯入次數，沒有匯出列，也沒有「準備中」', () => {
     const html = renderWithLayout(
       createElement(StatsScreen),
       '/p/:projectId/stats',
@@ -94,24 +95,23 @@ describe('WO-60 畫面驗收測試', () => {
     );
 
     // 1. 區塊標題
-    expect(html).toContain('匯入與匯出');
+    expect(html).toContain('匯入次數');
     expect(html).toContain(STATS_IMPORT_EXPORT_HEADING);
 
     // 2. 說明小字
-    expect(html).toContain('只算匯入文字檔、匯出全文的次數');
+    expect(html).toContain('只算匯入文字檔的次數');
     expect(html).toContain(STATS_IMPORT_EXPORT_SCOPE_HINT);
 
-    // 3. WO-103：匯出已開放，沒有紀錄是 0（不是破折號）
-    expect(html).toMatch(/data-testid="stats-export-count">0</);
+    // 3. 只留匯入次數，整列匯出都不在畫面上
     expect(html).toMatch(/data-testid="stats-import-count">0</);
-    expect(html).not.toMatch(/data-testid="stats-export-count">—</);
+    expect(html).not.toContain('stats-export-row');
+    expect(html).not.toContain('stats-export-count');
+    expect(html).not.toContain('匯出 次數');
 
-    // 4. WO-103：匯出列不再有「準備中」徽章、淡色或點擊提示
+    // 4. 沒有「準備中」
     expect(html).not.toContain(PREPARING_BADGE);
     expect(html).not.toContain('stats-preparing-badge');
     expect(html).not.toContain('is-preparing');
-    const exportRow = html.match(/<div[^>]*data-testid="stats-export-row"[^>]*>/)?.[0] ?? '';
-    expect(exportRow).toBe('<div class="stat-import-export-row" data-testid="stats-export-row">');
 
     // 5. 達成目標次數與寫作統計仍正常存在
     expect(html).toContain('達成目標次數');
@@ -132,7 +132,7 @@ describe('WO-60 畫面驗收測試', () => {
     expect(htmlWide).toContain('視覺化的寫作記錄');
     expect(htmlWide).toContain('匯入\u30000 次');
     // WO-103：統計頁內共用的紀錄卡也接真實匯出數
-    expect(htmlWide).toContain('匯出\u30000 次');
+    expect(htmlWide).not.toContain('匯出\u30000 次');
     expect(htmlWide).not.toContain('匯出\u3000—');
     expect(htmlWide).not.toContain(PREPARING_BADGE);
     expect(htmlWide).not.toContain('大量貼上');
@@ -148,7 +148,7 @@ describe('WO-60 畫面驗收測試', () => {
       );
       expect(html).not.toContain('stats-wide-logs');
       expect(html).toContain('查看寫作過程紀錄');
-      expect(html).toContain('匯入與匯出');
+      expect(html).toContain(STATS_IMPORT_EXPORT_HEADING);
     }
   });
 
