@@ -565,3 +565,37 @@ export const REMOVE_FROM_DEVICE_CANCEL = '取消';
 /** X 按鈕的朗讀標籤：說明按下去是刪掉這個裝置上的暫存，並可辨認是哪一份。 */
 export const removeFromDeviceAria = (bookTitle: string): string =>
   `刪掉這個裝置上的暫存：${bookTitle.trim() || REMOVE_FROM_DEVICE_FALLBACK_TITLE}`;
+
+// WO-122：寫作頁排版小工具。以下全部是「暫定用字」，待九方審稿；元件不可硬寫。
+export const FORMAT_MORE_GLYPH = '⋯';
+export const FORMAT_MORE_ARIA = '更多';
+export const FORMAT_MENU_ITEM = '排版';
+export const FORMAT_DIALOG_TITLE = '排版';
+export const FORMAT_DIALOG_HINT = '選一個排版方式。';
+export const FORMAT_KIND_INDENT = '段首加兩個全形空格';
+export const FORMAT_KIND_STRIP_BLANK = '去除空行';
+export const FORMAT_KIND_SPACE_PARAGRAPHS = '段落之間加空行';
+export const FORMAT_SCOPE_TITLE = '要改哪裡？';
+export const FORMAT_SCOPE_CHAPTER = '這一章';
+export const FORMAT_SCOPE_BOOK = '全書';
+export const FORMAT_BACK = '上一步';
+export const FORMAT_CONFIRM_TITLE = '開始排版嗎？';
+export const formatConfirmSentence = (scope: string, kind: string): string =>
+  `要把${scope}的正文做「${kind}」嗎？只改正文，改完可以復原。`;
+export const FORMAT_CONFIRM_BOOK_NOTE = '全書會一起改這本稿子裡所有章和幕的正文。';
+export const FORMAT_UNDO_WARNING =
+  '按「復原」會回到這次排版前，連排版後在這些正文新打的字也會一起還原。';
+export const FORMAT_CANCEL = '取消';
+export const FORMAT_START = '開始排版';
+export const FORMAT_DONE = '排版好了';
+export const FORMAT_UNDO_BUTTON = '復原';
+export const FORMAT_UNDONE_TOAST = '已回到排版前的樣子。';
+export const FORMAT_UNCHANGED_TOAST = '已經是這個樣子，不用再改。';
+export const FORMAT_NO_TARGET_TOAST = '先打開一章或一幕，再來排版。';
+export const FORMAT_COMPOSING_TOAST = '先把正在輸入的字打完，再來排版。';
+export const FORMAT_STALE_TOAST = '稿子或章節換了，請重新選一次排版。';
+export const FORMAT_UNDO_GONE_TOAST = '這次排版的內容已經不在，沒辦法復原了。';
+export const FORMAT_NOTICE_CLOSE = '關閉';
+export const FORMAT_NOTICE_CLOSE_ARIA = '關閉排版提示';
+export const FORMAT_KIND_GROUP_ARIA = '排版方式';
+export const FORMAT_SCOPE_GROUP_ARIA = '排版範圍';

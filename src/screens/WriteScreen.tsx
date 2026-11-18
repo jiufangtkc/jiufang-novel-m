@@ -161,6 +161,8 @@ export function WriteScreen() {
     // 只在換章時處理
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId]);
+  // WO-122：排版復原快照留到關掉提示、按下復原、下一次有效排版、或離開這本稿子為止；
+  // 切到統計／檔案／卡片再回來、換章都不清。換稿子由 sampleStore 的 reduce 清除。
   const rename = useBookRename(project);
   // WO-65：從別的分頁回來時右欄原本就開著：卡片若有暫存只顯示提示，游標與鍵盤先回正文
   const rightPanelOpenAtEntry = useRef(sidePanels.right);

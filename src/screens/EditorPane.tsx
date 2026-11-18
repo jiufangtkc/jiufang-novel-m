@@ -7,6 +7,8 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useFocusEscape } from './useFocusEscape';
 import { DailyProgressBar } from '../components/DailyProgressBar';
+import { FormatLayer, FormatMoreButton, FormatNotice, useFormatTools } from '../components/FormatTools';
+import '../components/formatTools.css';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
 import { StatusBadge } from '../components/StatusBadge';
@@ -248,6 +250,16 @@ export function EditorPane({
     textareaRef: ref,
     isComposingRef,
     replaceText,
+  });
+
+  // WO-122：排版小工具（頁首／橫拿「⋯」→ 排版）。專注模式不露出，進入專注時關掉殘留視窗。
+  const formatTools = useFormatTools({
+    projectId,
+    chapterId: chapter.id,
+    textareaRef: ref,
+    isComposingRef,
+    replaceText,
+    focusMode,
   });
 
   const [landscapeExitState, setLandscapeExitState] = useState(INITIAL_LANDSCAPE_EXIT_STATE);
@@ -769,6 +781,9 @@ export function EditorPane({
           <CardsIcon size={20} />
           <span className="view-cards-label">{VIEW_CARDS_BUTTON}</span>
         </button>
+        {!focusMode ? (
+          <FormatMoreButton tools={formatTools} className="format-more-button" testId="format-more-topbar" />
+        ) : null}
         {staleDays != null ? <StaleSaveReminder days={staleDays} onSave={saveFromReminder} /> : null}
       </header>
       {dictVisible && dictWhere === 'floating' ? (
@@ -827,6 +842,11 @@ export function EditorPane({
         <FocusIcon size={18} />
         <span className="floating-button-label">{FOCUS_MODE_LANDSCAPE_ENTER_ARIA}</span>
       </button>
+      {!focusMode ? (
+        <FormatMoreButton tools={formatTools} className="format-more-floating" testId="format-more-landscape" />
+      ) : null}
+      <FormatLayer tools={formatTools} />
+      {!focusMode ? <FormatNotice tools={formatTools} /> : null}
       <textarea
         ref={ref}
         className={[
