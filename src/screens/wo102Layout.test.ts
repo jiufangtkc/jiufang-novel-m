@@ -28,13 +28,12 @@ describe('WO-102 三：寬版頁首今天字數', () => {
       expect(topbarTodayWords(1020, goal, true)).toEqual({ display: '今天 1,020 字', aria: null });
     }
   });
-  it('頁首：畫面字 aria-hidden、獨立朗讀句；進度條與頁首同一目標與達標判斷', () => {
+  it('WO-117：頁首不再產生今天字數；進度條與專注底列沿用同一目標與既有用字函式', () => {
     const source = readFileSync(new URL('./EditorPane.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('topbarTodayWords(todayWords, goal, isGlowing)');
+    expect(source).not.toContain('topbarWords');
+    expect(source).not.toContain('data-testid="topbar-words"');
     expect(source).toContain('<DailyProgressBar words={todayWords} goal={goal} met={isGlowing}');
-    expect(source).toContain('<span aria-hidden="true">{topbarWords.display}</span>');
-    expect(source).toContain('<span className="sr-only">{topbarWords.aria}</span>');
-    // 其他呼叫端（專注模式底列）維持原本函式
+    // 專注模式底列維持原本函式
     expect(source).toContain('<span>{todayWordsLabel(todayWords, goal)}</span>');
   });
 });

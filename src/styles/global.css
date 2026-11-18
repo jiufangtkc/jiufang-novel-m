@@ -616,7 +616,9 @@ html[data-layout="phone-portrait"] .editor {
   white-space: nowrap;
 }
 .editor.is-keyboard .editor-status { padding: 6px 16px 8px; }
-.editor.is-keyboard .status-row { display: none; }
+/* WO-117：鍵盤精簡模式只留進度條的今天字數＋一份暫存狀態；本章字數整組收起 */
+.editor.is-keyboard .status-row { justify-content: flex-end; min-height: 0; }
+.editor.is-keyboard .status-cluster { display: none; }
 .editor.is-keyboard .chapter-jump { display: none; }
 html.keyboard-open .bottom-nav { display: none; }
 
@@ -1871,6 +1873,7 @@ html[data-layout="wide"] .write-layout.has-chapter.tree-open .topbar-tree-button
   display: none !important;
 }
 
+/* WO-117：頁首不再放今天字數與暫存（底下進度條區已有），寬版只留半形提醒 */
 html[data-layout="wide"] .topbar-stats {
   display: flex;
   align-items: center;
@@ -2065,10 +2068,16 @@ html[data-focus-mode="true"] .focus-exit-button:hover {
   color: var(--text);
 }
 
-html[data-focus-mode="true"] .focus-bottom-status {
+/* WO-117：專注模式與手機橫拿打字（頁首與底區皆收起）由這一列提供今天字數與暫存各一份 */
+html[data-focus-mode="true"] .focus-bottom-status,
+html.landscape-writing .focus-bottom-status {
   display: flex;
   position: fixed;
-  bottom: 14px;
+  /* 跟隨可見區域（--vv-height／--vv-offset）而非版面底部：鍵盤開啟時仍貼在鍵盤上方。
+     鍵盤收起時 offset 為 0、height 為整個畫面，位置回到原本的可見底部（含安全區）。 */
+  top: calc(var(--vv-offset) + var(--vv-height) - var(--focus-status-gap, 14px) - env(safe-area-inset-bottom, 0px));
+  bottom: auto;
+  transform: translateY(-100%);
   left: 0;
   right: 0;
   justify-content: center;
