@@ -6,33 +6,27 @@ import { formatCalendarDate } from '../domain/formatCalendarDate';
 import { getDayImportExportStats } from '../domain/importExportStats';
 import { formatDuration, type WritingLogRow } from '../domain/writingLog';
 import { countImportEventsOn } from '../state/importEvents';
-import { displayLogRows, projectExportEventsOf, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
+import { displayLogRows, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
 import './importExport.css';
 
 export function LogCardItem({
   row,
   importCount = 0,
-  exportCount = 0,
 }: {
   row: WritingLogRow;
   /** WO-99：這份稿子這一個寫作日的 TXT 匯入次數。 */
   importCount?: number;
-  /** WO-103：這份稿子這一個寫作日成功匯出全文（Word／TXT）的次數。 */
-  exportCount?: number;
 }) {
-  const dayStats = getDayImportExportStats(importCount, {}, exportCount);
+  const dayStats = getDayImportExportStats(importCount);
 
   return (
     <li className="log-card" data-testid={`log-card-${row.date}`}>
       <strong>{formatCalendarDate(row.date)}</strong>
       <span>字數 {row.word_count}</span>
       <span>寫作時間 {formatDuration(row.duration)}</span>
-      {/* WO-99：匯入已開放；WO-103：匯出也開放，兩列都照一般列顯示，不再帶準備中。 */}
+      {/* WO-113：只顯示匯入次數；匯出事件仍記在檔內。 */}
       <span className="log-metric" data-testid="log-import-row">
         <span>{dayStats.importLabel}</span>
-      </span>
-      <span className="log-metric" data-testid="log-export-row">
-        <span>{dayStats.exportLabel}</span>
       </span>
       <span>大量刪除 {row.delete_large_count} 次</span>
     </li>
@@ -47,8 +41,6 @@ export function LogsScreen() {
   if (!project) return <ManuscriptNotFound />;
   // WO-100：每日次數與統計頁同一份事件集合；只有匯入事件的日子也有卡。
   const importEvents = projectImportEventsOf(state, project.id);
-  // WO-103：匯出次數同一份事件集合；只有匯出事件的日子也有卡。
-  const exportEvents = projectExportEventsOf(state, project.id);
   const rows = displayLogRows(state, project.id);
 
   return (
@@ -67,7 +59,6 @@ export function LogsScreen() {
               key={row.id}
               row={row}
               importCount={countImportEventsOn(importEvents, row.date)}
-              exportCount={countImportEventsOn(exportEvents, row.date)}
             />
           ))}
         </ul>

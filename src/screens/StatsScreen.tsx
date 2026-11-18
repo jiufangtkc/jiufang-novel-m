@@ -2,7 +2,6 @@ import { Link, useParams } from 'react-router-dom';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { CalendarIcon, ClockIcon, FlameIcon, PenIcon } from '../components/Icons';
 import {
-  STATS_EXPORT_COUNT_LABEL,
   STATS_HEADING,
   STATS_IMPORT_COUNT_LABEL,
   STATS_IMPORT_EXPORT_HEADING,
@@ -13,7 +12,7 @@ import { getTotalImportExportStats } from '../domain/importExportStats';
 import { formatInteger } from '../domain/formatNumber';
 import { useLayout } from '../layout';
 import { countImportEvents, countImportEventsOn } from '../state/importEvents';
-import { displayLogRows, projectExportEventsOf, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
+import { displayLogRows, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
 import { LogCardItem } from './LogsScreen';
 import './importExport.css';
 
@@ -28,12 +27,11 @@ export function StatsScreen() {
   // WO-99：匯入次數是這份稿子（目前開著的這份）的全書合計，不是整台裝置合計。
   // WO-100：全書與每日都取同一份事件集合（檔內事件 ∪ 本機可靠對應）。
   const importEvents = projectImportEventsOf(state, project.id);
-  // WO-103：匯出次數同樣是這份稿子的全書合計，全書與每日取同一份匯出事件集合。
-  const exportEvents = projectExportEventsOf(state, project.id);
+  // WO-113：畫面只顯示匯入次數；匯出事件仍照舊記在檔內，不在此顯示。
   const totalImportExport =
     state.activeProjectId === project.id && stats.importExport
       ? stats.importExport
-      : getTotalImportExportStats(countImportEvents(importEvents), {}, countImportEvents(exportEvents));
+      : getTotalImportExportStats(countImportEvents(importEvents));
   const sortedLogs = displayLogRows(state, project.id);
 
   return (
@@ -159,29 +157,6 @@ export function StatsScreen() {
                 {totalImportExport.importDisplay}
               </span>
             </div>
-            <div className="stat-import-export-row" data-testid="stats-export-row">
-              <span className="stat-import-export-label">
-                <span className="stat-import-export-icon" aria-hidden="true">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M7 3.5h7l4 4V20a1.5 1.5 0 0 1-1.5 1.5h-9.5A1.5 1.5 0 0 1 5.5 20V5A1.5 1.5 0 0 1 7 3.5z" />
-                    <path d="M14 3.5V8h4.5" />
-                  </svg>
-                </span>
-                <span>{STATS_EXPORT_COUNT_LABEL}</span>
-              </span>
-              <span className="stat-import-export-value is-open" data-testid="stats-export-count">
-                {totalImportExport.exportDisplay}
-              </span>
-            </div>
             <p className="hint stat-import-export-hint">{STATS_IMPORT_EXPORT_SCOPE_HINT}</p>
           </article>
 
@@ -200,7 +175,6 @@ export function StatsScreen() {
                   key={row.id}
                   row={row}
                   importCount={countImportEventsOn(importEvents, row.date)}
-                  exportCount={countImportEventsOn(exportEvents, row.date)}
                 />
               ))}
             </ul>
