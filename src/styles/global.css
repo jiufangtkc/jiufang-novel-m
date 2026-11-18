@@ -336,9 +336,38 @@ a { color: var(--accent); }
 
 .home-actions {
   display: flex;
+  /* WO-120：三顆鈕（開新稿子、開啟稿子、匯入文字檔）窄版放不下時整顆換行，不切字。 */
+  flex-wrap: wrap;
   gap: 10px;
   padding: 12px 16px calc(12px + var(--safe-bottom));
   background: var(--bg);
+}
+
+.home-actions > .button {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+
+.home-import-status,
+.home-import-error {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.home-import-status {
+  color: var(--muted);
+}
+
+.home-import-error {
+  color: var(--danger);
+}
+
+.home-actions > .button[aria-busy='true'] {
+  cursor: progress;
+  opacity: 0.75;
 }
 
 .button {
