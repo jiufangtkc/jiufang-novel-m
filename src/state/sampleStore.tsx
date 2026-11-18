@@ -114,6 +114,7 @@ import {
 } from '../db/library';
 import { isBookRemoved, removedBookIds } from '../db/removedBooks';
 import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
+import type { FormatChange, FormatSnapshot, FormatSnapshotEntry } from '../editor/formatScope';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
 import {
   bindLeaveFlush,
@@ -226,6 +227,8 @@ export interface SampleState {
    * 檔內事件在 fileExtras[...].transfer.exportEvents，畫面次數一律用 projectExportEventsOf（以事件代號取聯集）。
    */
   exportEvents: TransferEventRecord;
+  /** WO-122：最近一次排版前的快照（只在記憶體，不寫入任何儲存、不進 .db）。沒有時為 null 或不存在。 */
+  formatUndo?: FormatSnapshot | null;
 }
 
 /** 開檔帶進來、存檔時原樣帶出的檔案額外資訊。 */
@@ -259,6 +262,11 @@ export type Action =
   | { type: 'set-progress'; projectId: string; nodeId: string; progress: ProgressCode }
   | { type: 'commit-text'; projectId: string; nodeId: string; text: string }
   | { type: 'note-large'; delta: TextDelta }
+  /** WO-122：排版。changes 是要由 store 寫入的章幕（目前開著的章幕已由寫作框同步寫入，不必再列）；snapshot 是整次排版前的快照。 */
+  | { type: 'format-apply'; projectId: string; changes: FormatChange[]; snapshot: FormatSnapshot }
+  /** WO-122：復原。entries 是要由 store 還原的章幕；成功後清空快照。 */
+  | { type: 'format-undo'; projectId: string; entries: FormatSnapshotEntry[] }
+  | { type: 'format-clear' }
   | { type: 'add-duration'; seconds: number }
   | { type: 'set-goal'; goal: number }
   /** WO-111：歡迎導覽第 1 關寫每日目標。和 set-goal 同一個目標與規則，但不改檔案欄位、不跳提示；值沒變不動。 */
@@ -1135,9 +1143,59 @@ export function buildPromotedFileExtras(
   };
 }
 
+/**
+ * WO-122：排版復原快照只屬於目前開著的稿子；稿子換了（或被刪掉）就清掉，不跨稿保留。
+ */
 export function reduce(state: SampleState, action: Action): SampleState {
+  const next = reduceBase(state, action);
+  if (next.formatUndo && next.activeProjectId !== next.formatUndo.projectId) {
+    return { ...next, formatUndo: null };
+  }
+  return next;
+}
+
+/**
+ * WO-122：整批正文更新。先確認每個章幕都還在才動手（不做一半）；
+ * 每一章幕走既有 commit-text，所以字數、稿子自己的紀錄同步與自動暫存路徑都和一般輸入送出相同。
+ * 這裡不碰 note-large，排版與復原都不會增加大量貼上／刪除次數。
+ */
+function commitMany(state: SampleState, projectId: string, items: readonly { nodeId: string; text: string }[]): SampleState | null {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return null;
+  for (const item of items) {
+    const node = findNode(project.nodes, item.nodeId);
+    if (!node || (node.type !== 'file' && node.type !== 'scene')) return null;
+  }
+  let next = state;
+  for (const item of items) {
+    next = reduceBase(next, { type: 'commit-text', projectId, nodeId: item.nodeId, text: item.text });
+  }
+  return next;
+}
+
+function reduceBase(state: SampleState, action: Action): SampleState {
   const now = new Date();
   switch (action.type) {
+    case 'format-apply': {
+      const done = commitMany(
+        state,
+        action.projectId,
+        action.changes.map((change) => ({ nodeId: change.nodeId, text: change.after })),
+      );
+      if (!done) return state;
+      return { ...done, formatUndo: action.snapshot };
+    }
+    case 'format-undo': {
+      const done = commitMany(
+        state,
+        action.projectId,
+        action.entries.map((entry) => ({ nodeId: entry.nodeId, text: entry.before })),
+      );
+      if (!done) return state;
+      return { ...done, formatUndo: null };
+    }
+    case 'format-clear':
+      return state.formatUndo ? { ...state, formatUndo: null } : state;
     case 'toast':
       if (action.message === state.toast) return state;
       return { ...state, toast: action.message };
@@ -1622,6 +1680,12 @@ interface SampleActions {
   setProgress: (projectId: string, nodeId: string, progress: ProgressCode) => void;
   commitText: (projectId: string, nodeId: string, text: string) => void;
   noteLarge: (delta: TextDelta) => void;
+  /** WO-122：排版整批寫入（其他章幕）與快照；走 format-apply，不經 noteLarge。 */
+  applyFormat: (projectId: string, changes: FormatChange[], snapshot: FormatSnapshot) => void;
+  /** WO-122：復原整批（其他章幕），成功後清空快照。 */
+  undoFormat: (projectId: string, entries: FormatSnapshotEntry[]) => void;
+  /** WO-122：清掉排版復原快照（關閉提示、失效、離開稿子）。 */
+  clearFormatUndo: () => void;
   addDuration: (seconds: number) => void;
   setGoal: (goal: number) => void;
   /**
@@ -2560,6 +2624,10 @@ export function SampleProvider({
       commitText: (projectId, nodeId, text) =>
         dispatch({ type: 'commit-text', projectId, nodeId, text }),
       noteLarge: (delta) => dispatch({ type: 'note-large', delta }),
+      applyFormat: (projectId, changes, snapshot) =>
+        dispatch({ type: 'format-apply', projectId, changes, snapshot }),
+      undoFormat: (projectId, entries) => dispatch({ type: 'format-undo', projectId, entries }),
+      clearFormatUndo: () => dispatch({ type: 'format-clear' }),
       addDuration: (seconds) => dispatch({ type: 'add-duration', seconds }),
       setGoal: (goal) => dispatch({ type: 'set-goal', goal }),
       setTourDailyGoal: (goal) =>

@@ -1878,6 +1878,13 @@ html[data-layout="wide"] .workspace {
   flex-direction: row;
 }
 
+/* WO-122：寬版橫排時，主內容欄要允許縮到比內容窄，長章名才會由頁首的省略號吃掉空間，
+   不會把欄撐出視窗、把搜尋／專注／看卡片／「⋯」擠到畫面外。 */
+html[data-layout="wide"] .workspace-body,
+html[data-layout="wide"] .write-layout {
+  min-width: 0;
+}
+
 html[data-layout="wide"] .back-button {
   display: none;
 }
