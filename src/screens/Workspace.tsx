@@ -4,6 +4,7 @@ import { Outlet, useLocation, useParams } from 'react-router-dom';
 import { AppNav, showsLandscapeRail } from '../components/AppNav';
 import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
+import { createSaveShortcutHandler, hasOpenDialog } from './saveShortcuts';
 
 export function Workspace() {
   const { projectId = '' } = useParams();
@@ -28,6 +29,18 @@ export function Workspace() {
     // pathname 變更時才讀當輪的 state.toast 與 actions
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
+  // WO-114：Ctrl/Cmd+S 儲存、Ctrl/Cmd+Shift+S 另存（capture，正文與卡片輸入框內也收得到）
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  useEffect(() => {
+    if (!project) return;
+    const handler = createSaveShortcutHandler({
+      getActions: () => actionsRef.current,
+      isDialogOpen: () => hasOpenDialog(),
+    });
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [project?.id]);
   if (!project) {
     return (
       <div className="page">
