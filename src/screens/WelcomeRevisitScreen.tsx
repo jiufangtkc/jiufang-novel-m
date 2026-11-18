@@ -44,6 +44,7 @@ export function WelcomeRevisitScreen() {
         dailyGoal={state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal}
         met={isGlowing}
         {...steps}
+        openBusy={openFile.busy}
         appearanceTo={project ? `/p/${project.id}/settings` : undefined}
         onExit={(exit) => {
           if (exit === 'finish-home') navigate('/');
