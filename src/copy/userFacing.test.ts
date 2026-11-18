@@ -253,7 +253,7 @@ describe('章節目錄文案', () => {
     expect(copy.STATS_IMPORT_COUNT_LABEL).toBe('匯入 次數');
     expect(copy.SETTINGS_WRITING_LOG_HINT).toBe('每日字數、寫作時間、匯入次數、大量刪除');
     // WO-113：正文貼上與複製、剪下提示。
-    expect(copy.EDITOR_PASTE_BLOCKED_TOAST).toBe('正文只能貼這份稿子裡的字，外面的文字請用匯入 TXT。');
+    expect(copy.EDITOR_PASTE_BLOCKED_TOAST).toBe('匯入已經存在的稿子請用「匯入文字檔」，外部文字只能貼在資料卡片裡喔😊');
     expect(copy.EDITOR_COPIED_TOAST).toBe('已複製');
     expect(copy.EDITOR_CUT_TOAST).toBe('已剪下');
     expect(copy.EDITOR_COPIED_TOAST).not.toContain('只能貼回這個編輯器');

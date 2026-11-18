@@ -499,7 +499,7 @@ export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔的次數';
 export const STATS_IMPORT_COUNT_LABEL = '匯入 次數';
 
 /** WO-113：正文貼上與複製、剪下的短暫提示。 */
-export const EDITOR_PASTE_BLOCKED_TOAST = '正文只能貼這份稿子裡的字，外面的文字請用匯入 TXT。';
+export const EDITOR_PASTE_BLOCKED_TOAST = '匯入已經存在的稿子請用「匯入文字檔」，外部文字只能貼在資料卡片裡喔😊';
 export const EDITOR_COPIED_TOAST = '已複製';
 export const EDITOR_CUT_TOAST = '已剪下';
 

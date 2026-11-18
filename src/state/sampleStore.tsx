@@ -55,6 +55,7 @@ import {
   BOOK_RENAMED_TOAST,
   IMPORT_DEFAULT_CHAPTER_TITLE,
   IMPORT_PREFACE_TITLE,
+  EDITOR_PASTE_BLOCKED_TOAST,
   SAVE_FATAL_FAIL,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
@@ -171,6 +172,14 @@ import {
   recallTourFileGoal,
 } from './deviceSaveRecord';
 import { isValidBookGoal, NEW_BOOK_GOAL_DEFAULT, readNewBookGoal } from './newBookGoal';
+
+/** WO-113：短提示停留時間。被擋的貼上提示句較長，停留約 5 秒；其他維持約 2.4 秒。 */
+export const TOAST_DEFAULT_MS = 2400;
+export const TOAST_PASTE_BLOCKED_MS = 5000;
+
+export function toastDurationMs(message: string): number {
+  return message === EDITOR_PASTE_BLOCKED_TOAST ? TOAST_PASTE_BLOCKED_MS : TOAST_DEFAULT_MS;
+}
 
 export interface SampleState {
   projects: DemoProject[];
@@ -2468,7 +2477,10 @@ export function SampleProvider({
 
   useEffect(() => {
     if (!state.toast) return;
-    const timer = window.setTimeout(() => dispatch({ type: 'toast', message: null }), 2400);
+    const timer = window.setTimeout(
+      () => dispatch({ type: 'toast', message: null }),
+      toastDurationMs(state.toast),
+    );
     return () => window.clearTimeout(timer);
   }, [state.toast]);
 
