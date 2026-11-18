@@ -34,6 +34,7 @@ function normalize(value: unknown): BookArchive {
   return {
     versions: record.versions ?? {},
     deleted: Array.isArray(record.deleted) ? record.deleted : [],
+    deletedCards: Array.isArray(record.deletedCards) ? record.deletedCards : [],
   };
 }
 

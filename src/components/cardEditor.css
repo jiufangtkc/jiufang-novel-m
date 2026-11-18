@@ -1,0 +1,518 @@
+.card-editor-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  background-color: var(--panel);
+  color: var(--text);
+  box-sizing: border-box;
+  position: relative;
+  min-height: 0;
+}
+
+/* 容器查詢掛在內層，避免對自身套用 @container 規則失效 */
+.card-editor-layout-host {
+  container-type: inline-size;
+  container-name: card-editor-beside;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.card-editor-layout-row {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  position: relative;
+}
+
+/* WO-92 返工：挑色時隱藏表單頁尾，避免橫拿誤按編輯的「完成」 */
+.card-editor-pane.is-picking-color .card-editor-footer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.card-editor-pane.is-picking-color .card-editor-main {
+  pointer-events: none;
+}
+
+.card-editor-pane.is-picking-color .card-color-picker-wrapper,
+.card-editor-pane.is-picking-color .card-color-picker-wrapper * {
+  pointer-events: auto;
+}
+
+.card-editor-main {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* WO-92：寬版挑色並排在內層 layout-row（容器夠寬時） */
+@container card-editor-beside (min-width: 800px) {
+  .card-editor-layout-row.is-wide-picker-beside {
+    flex-direction: row;
+    align-items: stretch;
+    max-height: 100%;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside > .card-editor-main {
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+/* WO-92 返工：容器不足（1280 第三欄、寫作側欄約 360）改置中浮出 */
+@container card-editor-beside (max-width: 799px) {
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside {
+    position: absolute;
+    inset: 0;
+    z-index: 100;
+    flex: none;
+    max-width: none;
+    width: auto;
+    border-left: none;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+    overflow: hidden;
+    box-sizing: border-box;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside > .card-color-picker {
+    max-height: 100%;
+    max-width: min(100%, 480px);
+    width: 100%;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-radius: 8px;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-grid-container {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: auto;
+  }
+
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-controls,
+  .card-editor-layout-row.is-wide-picker-beside .card-color-picker-aside .color-picker-actions {
+    flex-shrink: 0;
+  }
+}
+
+.card-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  min-height: 48px;
+  position: relative;
+}
+
+.card-editor-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.card-editor-saved-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.card-preview-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.card-preview-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  justify-content: flex-end;
+}
+
+/* WO-92：預覽內文已有標題列，標頭不再重複卡片標題 */
+.card-editor-mode-preview .card-preview-header {
+  justify-content: flex-end;
+}
+
+/* WO-92：手機直拿編輯頁尾不重複「卡片顏色」，按鈕文字不折成單字一行 */
+.card-editor-thumb-bar .card-editor-cancel-btn,
+.card-editor-thumb-bar .card-editor-done-btn {
+  white-space: nowrap;
+}
+
+.card-editor-field .card-editor-color-btn {
+  white-space: nowrap;
+}
+
+.card-editor-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.card-preview-body {
+  gap: 20px;
+}
+
+.card-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.card-detail-heading {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+
+.card-color-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.card-editor-preview-content {
+  font-size: 1rem;
+  line-height: 1.7;
+  color: var(--text);
+}
+
+.card-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-editor-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.card-editor-input {
+  min-height: 44px;
+  padding: 0 12px;
+  font-size: 1rem;
+  background-color: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-sizing: border-box;
+}
+
+.card-editor-input:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.card-editor-color-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 12px;
+  background-color: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  box-sizing: border-box;
+}
+
+.card-editor-color-btn:hover {
+  background-color: var(--button-hover);
+}
+
+.card-color-indicator-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  display: inline-block;
+}
+
+.card-editor-color-hex {
+  margin-left: auto;
+  font-family: monospace;
+  color: var(--text-muted);
+}
+
+.card-editor-textarea {
+  flex: 1;
+  min-height: 200px;
+  padding: 12px;
+  font-size: 1rem;
+  line-height: 1.6;
+  background-color: var(--input-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  resize: vertical;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.card-editor-textarea:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+.card-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  background-color: var(--panel);
+}
+
+.card-editor-thumb-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.card-editor-done-btn {
+  min-height: 44px;
+  min-width: 100px;
+  padding: 0 20px;
+  background-color: var(--primary);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-done-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+.card-editor-cancel-btn {
+  min-height: 44px;
+  padding: 0 16px;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-cancel-btn:hover {
+  background-color: var(--button-bg);
+  color: var(--text);
+}
+
+.card-editor-edit-btn {
+  min-height: 44px;
+  min-width: 80px;
+  padding: 0 16px;
+  background-color: var(--primary);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-edit-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+.card-editor-more-btn {
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 8px;
+  background-color: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-more-btn:hover {
+  background-color: var(--button-bg);
+  color: var(--text);
+}
+
+.card-preview-thumb-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+
+.card-editor-thumb-edit-btn {
+  flex: 1;
+  min-height: 48px;
+  height: 48px;
+  background-color: var(--primary);
+  color: var(--on-accent);
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-thumb-edit-btn:hover {
+  background-color: var(--primary-hover);
+}
+
+.card-editor-thumb-more-btn {
+  min-width: 48px;
+  min-height: 48px;
+  height: 48px;
+  background-color: var(--button-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-editor-thumb-more-btn:hover {
+  background-color: var(--button-hover);
+}
+
+/* 子卡片清單樣式 */
+.cards-subcards-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.cards-subcards-heading {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.cards-subcards-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cards-subcard-item {
+  margin: 0;
+  padding: 0;
+}
+
+.cards-subcard-button {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  background-color: var(--button-bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.cards-subcard-button:hover {
+  background-color: var(--button-hover);
+}
+
+.cards-subcard-title {
+  font-size: 0.95rem;
+}
+
+.cards-subcard-chevron {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+/* 橫拿排版：標題與顏色並排 */
+.card-editor-row-landscape {
+  display: flex;
+  gap: 12px;
+  align-items: flex-end;
+}
+
+.card-editor-row-landscape .card-editor-field-title {
+  flex: 1;
+}
+
+.card-editor-row-landscape .card-editor-field-color {
+  width: 200px;
+}
+
+/* WO-106 查字典：卡片標題列右端的按鈕與沒網路提示（視覺暫定，交視覺設計） */
+.card-editor-header-end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.dict-button.is-card { margin-left: auto; }
+.card-editor-header .dict-offline-notice[data-visible="true"] {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: calc(100% + 4px);
+  z-index: 5;
+}

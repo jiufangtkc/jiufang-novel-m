@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
+import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { useNavigate, useParams } from 'react-router-dom';
 import { formatInteger } from '../domain/formatNumber';
 import { formatCalendarDateFromDate } from '../domain/formatCalendarDate';
@@ -16,6 +17,7 @@ import {
   renameNode,
   resolveDrop,
   discardFreshChapter,
+  neighborChapterId,
   withoutNode,
 } from '../domain/chapterOps';
 import { titleForNewChapter } from '../domain/chapterTitle';
@@ -37,8 +39,10 @@ import { PROGRESS_ORDER, progressLabel } from '../domain/labels';
 import { findNode, updateNode, type ChapterNode } from '../data/demo';
 import { readLiveDraftFromEditor } from '../editor/liveDraft';
 import {
+  CARDS_PANEL_ARIA,
   CHAPTER_NOT_FOUND,
-  MANUSCRIPT_NOT_FOUND,
+  CLOSE_CHAPTER_TREE_ARIA,
+  OPEN_CHAPTER_TREE_ARIA,
   TREE_ADD_CHAPTER,
   TREE_ADD_CHAPTER_BELOW,
   TREE_ADD_SCENE,
@@ -92,7 +96,16 @@ import {
   treeMovedToast,
   treeSelectedHint,
 } from '../copy/userFacing';
+import { CloseIcon, ListTreeIcon } from '../components/Icons';
+import { BookSearchPanel } from '../components/BookSearchPanel';
+import { SearchIcon } from '../components/BookSearchPanelParts';
+import { useBookSearch } from '../components/BookSearchPanelState';
+import { BOOK_SEARCH_TAB_SEARCH, BOOK_SEARCH_TAB_TREE, BOOK_SEARCH_TITLE } from '../copy/bookSearchCopy';
+import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
+import { useLayout } from '../layout';
 import { useProject, useSample } from '../state/sampleStore';
+import { aliveNearId, markWriteChapterOpen, readWritePlace } from '../state/navMemory';
+import { getCardEditSnapshot, subscribeCardEdit } from '../state/writingCardEditSession';
 import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
 import { ChapterTree } from './ChapterTree';
 import { EditorPane } from './EditorPane';
@@ -100,22 +113,15 @@ import { focusTitleInput } from './titleCaret';
 import { loadTreePlace, saveTreePlace, scrollTopForRow, type TreePlace } from './treeScroll';
 import { reduceDrag, type DragState } from './dragSession';
 import { useBookArchive } from './useBookArchive';
+import { countWords } from '../domain/wordCount';
 
 type UndoBar = { text: string; token: number; deleted?: DeletedRecord; structure?: StructureChange };
 type RenameIntent = 'stay' | 'write';
 type MenuKind = 'short' | 'full' | 'more' | 'progress' | 'volume';
 
 function useDesktop(): boolean {
-  const [desktop, setDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 600px)').matches : false,
-  );
-  useEffect(() => {
-    const media = window.matchMedia('(min-width: 600px)');
-    const onChange = () => setDesktop(media.matches);
-    media.addEventListener('change', onChange);
-    return () => media.removeEventListener('change', onChange);
-  }, []);
-  return desktop;
+  const { isAtLeastMedium } = useLayout();
+  return isAtLeastMedium;
 }
 
 export function WriteScreen() {
@@ -124,8 +130,45 @@ export function WriteScreen() {
   const project = useProject(projectId);
   const { actions } = useSample();
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
+  const { mode: layoutMode, sidePanels, closePanel, openPanel, focusMode, pointer, panelOverlay, setHasBody } = useLayout();
   const desktop = useDesktop();
+  const showKeyboardHints = desktop && pointer !== 'touch';
+  // WO-64：寬版編輯卡片時右欄放寬；iPad（觸控）橫拿時把目錄收起，編輯完再還原
+  const cardEditing = useSyncExternalStore(subscribeCardEdit, getCardEditSnapshot, getCardEditSnapshot).editing;
+  const treeClosedForCardEdit = useRef(false);
+  useEffect(() => {
+    if (layoutMode !== 'wide') return;
+    if (cardEditing) {
+      if (pointer === 'touch' && sidePanels.left) {
+        treeClosedForCardEdit.current = true;
+        closePanel('left');
+      }
+    } else if (treeClosedForCardEdit.current) {
+      treeClosedForCardEdit.current = false;
+      openPanel('left');
+    }
+    // 只在開始或結束編輯時動目錄
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardEditing, layoutMode]);
+  // WO-94：尚未選章時沒有正文要保住 36 字，目錄不因寬度不足被收起；選章後回到容量規則
+  useLayoutEffect(() => {
+    setHasBody(Boolean(chapterId));
+    return () => setHasBody(true);
+  }, [chapterId, setHasBody]);
+  // 目錄若是浮在正文上暫時打開的，選好章就收起來，讓出整個正文
+  useEffect(() => {
+    if (chapterId && panelOverlay === 'left') closePanel('left');
+    // 只在換章時處理
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chapterId]);
+  // WO-122：排版復原快照留到關掉提示、按下復原、下一次有效排版、或離開這本稿子為止；
+  // 切到統計／檔案／卡片再回來、換章都不清。換稿子由 sampleStore 的 reduce 清除。
   const rename = useBookRename(project);
+  // WO-65：從別的分頁回來時右欄原本就開著：卡片若有暫存只顯示提示，游標與鍵盤先回正文
+  const rightPanelOpenAtEntry = useRef(sidePanels.right);
+  useEffect(() => {
+    if (!sidePanels.right) rightPanelOpenAtEntry.current = false;
+  }, [sidePanels.right]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const nodesRef = useRef<ChapterNode[]>(project?.nodes ?? []);
   const [organizing, setOrganizing] = useState(false);
@@ -150,14 +193,21 @@ export function WriteScreen() {
   const dragSession = useRef<DragState>({ dragId: null, drop: null });
   const undoAction = useRef<(() => void) | null>(null);
   nodesRef.current = project?.nodes ?? [];
+  // WO-63：全書搜尋。放在寫作頁，換章不會不見；離開寫作頁就一起清掉。
+  const search = useBookSearch(project, chapterId);
+  const searchInLeft = search.open && search.side === 'left';
 
-  const showOrganize = organizing && !desktop;
+  const showOrganize = organizing;
 
   useEffect(() => {
     if (!undo) return;
     const timer = window.setTimeout(() => setUndo(null), 10000);
     return () => window.clearTimeout(timer);
   }, [undo]);
+
+  useEffect(() => {
+    setMenu(null);
+  }, [chapterId]);
 
   useLayoutEffect(() => {
     if (!project) return;
@@ -188,6 +238,43 @@ export function WriteScreen() {
     setHighlightId(alive);
     restoredKey.current = token;
   }, [chapterId, project, actions]);
+
+  // WO-65：若是因為記住的那一章被刪了才回到目錄，就打開目錄、停在仍存在的附近項目，不停在失效的正文。
+  // （手機直拿要經過目錄頁才看得到分頁，所以只是經過目錄頁不改記住的那一章。）
+  const nearHandledKey = useRef<string | null>(null);
+  const [deletedPanelOpenKey, setDeletedPanelOpenKey] = useState<string | null>(null);
+  useLayoutEffect(() => {
+    if (!project || chapterId) {
+      nearHandledKey.current = null;
+      return;
+    }
+    const token = `${project.id}:near`;
+    if (nearHandledKey.current === token) return;
+    const place = readWritePlace(project.id);
+    if (!place || !place.chapterOpen || findNode(project.nodes, place.chapterId)) {
+      nearHandledKey.current = token;
+      return;
+    }
+    const near = aliveNearId(project.nodes, place);
+    if (near) {
+      const expanded = expandToNode(project.nodes, near);
+      if (JSON.stringify(expanded) !== JSON.stringify(project.nodes)) {
+        actions.setNodes(project.id, expanded);
+        return;
+      }
+      const row = scrollRef.current?.querySelector<HTMLElement>(`[data-node-id="${near}"]`);
+      row?.scrollIntoView({ block: 'center' });
+      setHighlightId(near);
+    }
+    if (layoutMode !== 'phone-portrait' && !sidePanels.left) setDeletedPanelOpenKey(token);
+    nearHandledKey.current = token;
+    markWriteChapterOpen(project.id, false);
+  }, [chapterId, project, actions, layoutMode, sidePanels.left]);
+  useEffect(() => {
+    if (!deletedPanelOpenKey) return;
+    setDeletedPanelOpenKey(null);
+    openPanel('left');
+  }, [deletedPanelOpenKey, openPanel]);
 
   useLayoutEffect(() => {
     const id = pendingScroll.current;
@@ -288,7 +375,7 @@ export function WriteScreen() {
     return () => window.removeEventListener('keydown', onKey);
   });
 
-  if (!project) return <p className="empty-note">{MANUSCRIPT_NOT_FOUND}</p>;
+  if (!project) return <ManuscriptNotFound />;
   const book = project;
 
   const picked = pickedId ? findNode(book.nodes, pickedId) : null;
@@ -299,6 +386,7 @@ export function WriteScreen() {
   const volumes = book.nodes.filter((node) => node.type === 'folder');
 
   function remember(id: string) {
+    setMenu(null);
     const pane = scrollRef.current;
     const row = pane?.querySelector<HTMLElement>(`[data-node-id="${id}"]`);
     const offset = row && pane ? row.getBoundingClientRect().top - pane.getBoundingClientRect().top : 0;
@@ -313,6 +401,9 @@ export function WriteScreen() {
     const place: TreePlace = { nodeId: id, prevId, offset };
     saveTreePlace(window.sessionStorage, book.id, place);
     setHighlightId(id);
+    if (layoutMode === 'medium' || layoutMode === 'phone-landscape') {
+      closePanel('left');
+    }
   }
 
   function commit(
@@ -361,6 +452,15 @@ export function WriteScreen() {
     const node = findNode(book.nodes, id);
     const next = withoutNode(book.nodes, id);
     if (!node || !next) return;
+    const viewingChapterId =
+      chapterId && findNode(book.nodes, chapterId) ? chapterId : null;
+    const loseCurrentChapter =
+      viewingChapterId != null &&
+      (viewingChapterId === id || !findNode(next, viewingChapterId));
+    const neighborId = loseCurrentChapter
+      ? neighborChapterId(book.nodes, viewingChapterId, 1) ??
+        neighborChapterId(book.nodes, viewingChapterId, -1)
+      : null;
     const stamped = liveNodes();
     const when = Date.now();
     const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
@@ -369,6 +469,13 @@ export function WriteScreen() {
     if (pickedId === id) setPickedId(null);
     setConfirmId(null);
     setMenu(null);
+    if (loseCurrentChapter) {
+      if (neighborId && findNode(next, neighborId)) {
+        navigate(`/p/${book.id}/write/${neighborId}`);
+      } else {
+        navigate(`/p/${book.id}/write`);
+      }
+    }
   }
 
   function finishRename(id: string, title: string, intent: RenameIntent) {
@@ -540,9 +647,43 @@ export function WriteScreen() {
 
   const impact = confirmNode ? removalImpact(confirmNode) : null;
 
+  const isYieldLeft =
+    (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.left;
+  const isYieldRight =
+    (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.right;
+  const yieldClasses = [
+    isYieldLeft ? 'yield-left' : '',
+    isYieldRight ? 'yield-right' : '',
+    isYieldLeft || isYieldRight ? 'is-yielding' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   return (
-    <div className={chapterId ? 'write-layout has-chapter' : 'write-layout'} data-testid="write-screen">
-      <section className={showOrganize ? 'tree-pane is-organizing' : 'tree-pane'} data-testid="chapter-tree">
+    <div
+      className={[
+        chapterId ? 'write-layout has-chapter' : 'write-layout',
+        yieldClasses,
+        sidePanels.left ? 'tree-open' : 'tree-closed',
+        sidePanels.right ? 'aside-open' : 'aside-closed',
+        focusMode ? 'is-focus-mode' : '',
+        search.open ? `is-searching search-${search.side}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+      data-testid="write-screen"
+      data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
+      data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
+    >
+      <section
+        className={[
+          showOrganize ? 'tree-pane is-organizing' : 'tree-pane',
+          sidePanels.left ? 'is-open' : 'is-closed',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        data-testid="chapter-tree"
+      >
         <header className="topbar">
           {showOrganize ? (
             <h1>{TREE_ORGANIZE}</h1>
@@ -555,9 +696,51 @@ export function WriteScreen() {
             <button type="button" className="button primary" data-testid="organize-done" onClick={() => setOrganizing(false)}>
               {TREE_DONE}
             </button>
-          ) : null}
+          ) : (
+            <button
+              type="button"
+              className="icon-button tree-close-button"
+              aria-label={CLOSE_CHAPTER_TREE_ARIA}
+              onClick={() => {
+                setMenu(null);
+                closePanel('left');
+              }}
+              data-testid="close-tree-pane"
+            >
+              <CloseIcon size={20} />
+            </button>
+          )}
         </header>
-        <div className="scroll-pane" ref={scrollRef}>
+        {showOrganize ? null : (
+          <div className="tree-search-tabs" role="tablist" aria-label={BOOK_SEARCH_TITLE} data-testid="tree-search-tabs">
+            <button
+              type="button"
+              role="tab"
+              className="tree-search-tab"
+              aria-selected={!searchInLeft}
+              data-testid="tree-tab-tree"
+              onClick={() => {
+                if (searchInLeft) search.closeSearch();
+              }}
+            >
+              <ListTreeIcon size={16} />
+              {BOOK_SEARCH_TAB_TREE}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              className="tree-search-tab"
+              aria-selected={searchInLeft}
+              data-testid="tree-tab-search"
+              onClick={search.openSearch}
+            >
+              <SearchIcon size={16} />
+              {BOOK_SEARCH_TAB_SEARCH}
+            </button>
+          </div>
+        )}
+        {searchInLeft ? <BookSearchPanel search={search} variant="left" /> : null}
+        <div className="scroll-pane" ref={scrollRef} hidden={searchInLeft}>
           <ChapterTree
             projectId={book.id}
             nodes={book.nodes}
@@ -595,7 +778,7 @@ export function WriteScreen() {
             </button>
           ) : null}
         </div>
-        {undo ? (
+        {undo && !searchInLeft ? (
           <div className="undo-bar" data-testid="tree-undo" key={undo.token}>
             <span>{undo.text}</span>
             <button
@@ -607,7 +790,7 @@ export function WriteScreen() {
             <span className="undo-meter" />
           </div>
         ) : null}
-        {showOrganize ? (
+        {searchInLeft ? null : showOrganize ? (
           <div className="organize-dock">
             <p className="hint">{picked ? treeSelectedHint(picked.title) : TREE_DRAG_HINT}</p>
             <div className="organize-actions">
@@ -629,7 +812,7 @@ export function WriteScreen() {
               </button>
             </div>
           </div>
-        ) : !desktop ? (
+        ) : (
           <div className="tree-tools" data-testid="tree-tools">
             <button type="button" className="button secondary" data-testid="organize-toggle" onClick={() => setOrganizing(true)}>
               {TREE_ORGANIZE}
@@ -643,12 +826,19 @@ export function WriteScreen() {
               {TREE_ADD_CHAPTER}
             </button>
           </div>
+        )}
+        {showKeyboardHints && !showOrganize && !searchInLeft ? (
+          <p className="hint tree-desktop-hint">{treeDesktopHint()}</p>
         ) : null}
-        {desktop ? <p className="hint tree-desktop-hint">{treeDesktopHint()}</p> : null}
       </section>
-      <section className="editor-pane">
+      <section
+        className={['editor-pane', yieldClasses].filter(Boolean).join(' ')}
+        data-testid="editor-pane"
+        data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
+        data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
+      >
         {chapter ? (
-          <EditorPane key={`${chapter.id}:${editorEpoch}`} projectId={book.id} chapter={chapter} />
+          <EditorPane key={`${chapter.id}:${editorEpoch}`} projectId={book.id} chapter={chapter} search={search} />
         ) : chapterId ? (
           <div className="editor-empty">
             <p>{CHAPTER_NOT_FOUND}</p>
@@ -656,12 +846,45 @@ export function WriteScreen() {
         ) : (
           <div className="editor-empty wide-hint">
             <p>點左邊的章或幕開始寫作。</p>
+            {!sidePanels.left ? (
+              <button
+                type="button"
+                className="button primary wide-hint-open-tree"
+                onClick={() => openPanel('left')}
+                data-testid="open-tree-empty"
+              >
+                {OPEN_CHAPTER_TREE_ARIA}
+              </button>
+            ) : null}
           </div>
         )}
       </section>
+      <aside
+        className={[
+          sidePanels.right ? 'write-aside is-open' : 'write-aside is-closed',
+          cardEditing && layoutMode === 'wide' ? 'is-card-editing' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+        data-testid="write-aside"
+        aria-label={CARDS_PANEL_ARIA}
+      >
+        {sidePanels.right && layoutMode === 'wide' && (
+          <WritingCardsDrawer
+            key={book.id}
+            projectId={book.id}
+            resumeEditing={!rightPanelOpenAtEntry.current}
+            onClose={() => closePanel('right')}
+            onOpenInDataset={() => navigate(`/p/${book.id}/cards`)}
+          />
+        )}
+      </aside>
+      {search.side !== 'left' ? (
+        <BookSearchPanel search={search} variant={search.side} compact={layoutMode === 'phone-landscape'} />
+      ) : null}
 
       {menuNode && menu?.kind === 'progress' ? (
-        <Sheet title={TREE_PROGRESS} testId="progress-menu" onClose={() => setMenu(null)}>
+        <Sheet title={TREE_PROGRESS} testId="progress-menu" closeOnEscape onClose={() => setMenu(null)}>
           <div className="menu-list">
             {PROGRESS_ORDER.map((code) => (
               <button
@@ -682,7 +905,7 @@ export function WriteScreen() {
       ) : null}
 
       {menuNode && (menu?.kind === 'short' || menu?.kind === 'full' || menu?.kind === 'more') ? (
-        <Sheet title={menuNode.title} testId="node-menu" onClose={() => setMenu(null)}>
+        <Sheet title={menuNode.title} testId="node-menu" closeOnEscape onClose={() => setMenu(null)}>
           {menu.kind === 'more' ? (
             <p className="hint">
               {treeMoreSummary(
@@ -700,7 +923,7 @@ export function WriteScreen() {
             else setRenameId(menuNode.id);
           }}>
             {TREE_RENAME}
-            {desktop ? <small>F2</small> : null}
+            {showKeyboardHints ? <small>F2</small> : null}
           </button>
           {menu.kind !== 'short' ? (
             <button type="button" className="menu-item" onClick={() => addChapter(menuNode.id)}>
@@ -721,11 +944,11 @@ export function WriteScreen() {
             <>
               <button type="button" className="menu-item" disabled={!canMoveBy(book.nodes, menuNode.id, -1)} onClick={() => { shift(menuNode.id, -1); setMenu(null); }}>
                 {TREE_MOVE_UP}
-                {desktop ? <small>{desktopMoveUpShortcut()}</small> : null}
+                {showKeyboardHints ? <small>{desktopMoveUpShortcut()}</small> : null}
               </button>
               <button type="button" className="menu-item" disabled={!canMoveBy(book.nodes, menuNode.id, 1)} onClick={() => { shift(menuNode.id, 1); setMenu(null); }}>
                 {TREE_MOVE_DOWN}
-                {desktop ? <small>{desktopMoveDownShortcut()}</small> : null}
+                {showKeyboardHints ? <small>{desktopMoveDownShortcut()}</small> : null}
               </button>
               {menuNode.type === 'file' ? (
                 <button type="button" className="menu-item" onClick={() => setMenu({ id: menuNode.id, kind: 'volume' })}>
@@ -749,13 +972,13 @@ export function WriteScreen() {
           <div className="menu-sep" />
           <button type="button" className="menu-item danger" onClick={() => requestDelete(menuNode.id)}>
             {deleteLabel(menuNode)}
-            {desktop ? <small>Del</small> : null}
+            {showKeyboardHints ? <small>Del</small> : null}
           </button>
         </Sheet>
       ) : null}
 
       {menu?.kind === 'volume' && menuNode?.type === 'file' ? (
-        <Sheet title={TREE_MOVE_VOLUME} testId="volume-menu" onClose={() => setMenu(null)}>
+        <Sheet title={TREE_MOVE_VOLUME} testId="volume-menu" closeOnEscape onClose={() => setMenu(null)}>
           <button
             type="button"
             className="menu-item"
@@ -866,7 +1089,7 @@ export function WriteScreen() {
             <div className="version-list">
               {(archive.versions[versionFor] ?? []).map((version) => (
                 <div key={version.id} className="version-row">
-                  <span>{versionRowLabel(whenLabel(version.savedAt), formatInteger(version.wordCount))}</span>
+                  <span>{versionRowLabel(whenLabel(version.savedAt), formatInteger(countWords(version.content)))}</span>
                   <button type="button" onClick={() => setPreview(version)}>
                     {TREE_VERSION_PREVIEW}
                   </button>
@@ -924,13 +1147,29 @@ function Sheet({
   title,
   testId,
   onClose,
+  closeOnEscape = false,
   children,
 }: {
   title: string;
   testId: string;
   onClose: () => void;
+  closeOnEscape?: boolean;
   children: ReactNode;
 }) {
+  const { mode } = useLayout();
+
+  useEffect(() => {
+    if (!closeOnEscape) return;
+    if (mode !== 'medium' && mode !== 'wide') return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [closeOnEscape, mode, onClose]);
+
   return (
     <div className="sheet-backdrop" role="presentation" onClick={onClose}>
       <div className="sheet" role="dialog" data-testid={testId} onClick={(event) => event.stopPropagation()}>

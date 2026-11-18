@@ -1,0 +1,166 @@
+/* WO-76 乙段：正文半形標點提醒 */
+
+/* 底線疊層：照抄正文樣式（由程式複製），字透明，只畫淡灰虛線底線。不佔高度、不擋點擊。 */
+.half-width-overlay {
+  position: absolute;
+  display: none;
+  z-index: auto;
+  margin: 0;
+  border: 0;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: transparent;
+  color: transparent;
+  pointer-events: none;
+  user-select: none;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.half-width-mark {
+  color: transparent;
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: rgba(200, 200, 200, 0.75);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 0.28em;
+  text-decoration-skip-ink: none;
+}
+
+/* 游標旁的小泡泡：在游標那一行上方（或下方），不蓋住那一行。 */
+.half-width-bubble {
+  position: absolute;
+  z-index: 20;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 22px;
+  border: 1px solid var(--border);
+  background: var(--button-bg);
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.half-width-action {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.half-width-action.is-primary { font-weight: 700; }
+
+/* ① 手機直拿：拇指區正上方的淡色細條，一行，不換兩行。 */
+.half-width-strip {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 2px 0 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 13px;
+}
+.half-width-strip .half-width-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+}
+.half-width-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 13px;
+  visibility: hidden;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* ②③④ 頁首乙案與甲案小卡 */
+.half-width-badge-wrap {
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.half-width-badge {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.half-width-badge[aria-expanded="true"] { color: var(--text); }
+.half-width-card {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: max-content;
+  max-width: min(360px, 90vw);
+  padding: 12px 8px 4px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+}
+.half-width-card .half-width-text { margin: 0 0 4px; white-space: nowrap; }
+.half-width-card-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.half-width-badge-result {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+/* 專注模式一律只留底線。 */
+html[data-focus-mode="true"] .half-width-strip,
+html[data-focus-mode="true"] .half-width-badge-wrap,
+html[data-focus-mode="true"] .half-width-bubble {
+  display: none !important;
+}
+
+/* 設定頁「提醒半形標點」開關（只存在這個裝置） */
+.half-width-setting { cursor: pointer; }
+.half-width-setting > span:first-child { flex: 1; min-width: 0; }
+.setting-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 44px;
+  height: 26px;
+  border-radius: 13px;
+  background: var(--border);
+  transition: background 0.2s ease;
+}
+.setting-switch > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #c8c8c8;
+  transition: transform 0.2s ease;
+}
+.setting-switch.is-on { background: var(--accent); }
+.setting-switch.is-on > span { transform: translateX(18px); background: #fff; }

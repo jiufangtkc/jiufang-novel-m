@@ -1,0 +1,550 @@
+/*
+ * 歡迎導覽外框（WO-110，歡迎-3）。
+ * 尺寸（主要 52、上一步約 96×52、選項 64 間距 10、跳過 44×44 以上）四版相同，寬版用滑鼠也不縮小，
+ * 所以這裡一律寫固定值，不跟 --hit-size 走。
+ * 顏色沿用既有變數（色票.md 第 2、3、7 節）；小徑插圖與三點畫法、版別標籤色、卡片後變暗程度、
+ * 三套主題可視性【視覺暫定，交視覺設計】。
+ */
+
+.welcome-tour {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  color: var(--text);
+}
+
+/* ── 整頁（手機直拿、橫拿）── */
+.welcome-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  background: var(--bg);
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bottom);
+}
+
+/* ── 置中卡片（中等、寬版）── */
+.welcome-tour[data-presentation="card"] {
+  align-items: center;
+  justify-content: center;
+}
+
+.welcome-scrim {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, #000 55%, transparent);
+}
+
+.welcome-tour[data-presentation="card"] .welcome-card {
+  flex: 0 1 auto;
+  width: min(480px, calc(100vw - 32px));
+  max-height: calc(100dvh - 80px);
+  padding: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px color-mix(in srgb, #000 40%, transparent);
+  overflow: hidden;
+}
+
+.welcome-tour[data-tour-layout="wide"] .welcome-card {
+  width: min(520px, calc(100vw - 32px));
+}
+
+/* ── 頂端：小徑＋跳過 ── */
+.welcome-top {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+  padding: 8px 12px 0 24px;
+}
+
+.welcome-trail-spacer {
+  flex: 1;
+}
+
+.welcome-skip {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.welcome-trail {
+  display: flex;
+  align-items: flex-start;
+}
+
+.welcome-trail-part {
+  display: inline-flex;
+  align-items: flex-start;
+}
+
+.welcome-trail-stop {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 36px;
+}
+
+.welcome-trail-dot {
+  box-sizing: border-box;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  background: transparent;
+}
+
+.welcome-trail-stop[data-state="done"] .welcome-trail-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.welcome-trail-stop[data-state="current"] .welcome-trail-dot {
+  border: 3px solid var(--accent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 33%, transparent),
+    0 0 14px color-mix(in srgb, var(--accent) 33%, transparent);
+}
+
+.welcome-trail-name {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.welcome-trail-stop[data-state="current"] .welcome-trail-name {
+  color: var(--accent);
+}
+
+.welcome-trail-line {
+  width: 24px;
+  height: 2px;
+  margin-top: 6px;
+  background: var(--muted);
+}
+
+.welcome-trail-line[data-state="done"] {
+  background: var(--accent);
+}
+
+/* ── 內容 ── */
+.welcome-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 24px 16px;
+}
+
+.welcome-tour[data-presentation="card"] .welcome-scroll {
+  flex: 0 1 auto;
+}
+
+.welcome-cols {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.welcome-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.welcome-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.welcome-illustration {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.welcome-tour[data-presentation="card"] .welcome-illustration {
+  background: var(--bg);
+}
+
+.welcome-illustration svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 96px;
+}
+
+.welcome-illustration-path {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+}
+
+.welcome-illustration-start {
+  fill: var(--accent);
+}
+
+.welcome-illustration-end {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.welcome-kicker {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.welcome-title {
+  margin: 0;
+  font-size: 1.375rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.welcome-title:focus {
+  outline: none;
+}
+
+.welcome-title:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+/*
+ * 主句換行（規格 B-1）：三段都不斷行；後兩段外面再包一層可換行的 inline-block。
+ * 放得下＝一行；放不下先斷在「故事，」後；第二行再放不下才斷在「是一步步」後。
+ * 「一步步」永不拆，句號跟著「走完的」不落行首。不用寫死的換行。
+ */
+.welcome-title.is-headline {
+  font-size: 1.625rem;
+  line-height: 1.35;
+  overflow-wrap: normal;
+}
+
+.welcome-headline-seg {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.welcome-headline-group {
+  display: inline-block;
+  white-space: normal;
+  max-width: 100%;
+}
+
+.welcome-tour[data-tour-layout="wide"] .welcome-title.is-headline {
+  font-size: 1.5rem;
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-title.is-headline {
+  font-size: 1.375rem;
+}
+
+.welcome-body {
+  margin: 0;
+  color: var(--text);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.welcome-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.welcome-channel {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.welcome-channel[data-channel="preview"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.welcome-preview-note,
+.welcome-appearance-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+/* 三關選項（WO-111 用）：整格可點，高 64 以上、間距 10；放大時跟著變高。 */
+.welcome-options {
+  display: grid;
+  gap: 10px;
+}
+
+.welcome-option {
+  min-height: 64px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  text-align: left;
+  padding: 8px 12px;
+}
+
+.welcome-option[aria-checked="true"] {
+  border: 2px solid var(--accent);
+}
+
+/* ── 底部：上一步＋主要按鈕（拇指區；放大時固定在底部）── */
+.welcome-actions {
+  flex: none;
+  display: flex;
+  gap: 12px;
+  padding: 12px 24px 16px;
+}
+
+.welcome-back {
+  flex: none;
+  width: 96px;
+  min-height: 52px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.welcome-primary {
+  flex: 1 1 auto;
+  min-height: 52px;
+  border-radius: 10px;
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: 17px;
+  font-weight: 700;
+}
+
+/* ── 手機橫拿：左右兩欄，左右各留 60 並依安全區避瀏海 ── */
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-top,
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-scroll,
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-actions {
+  padding-left: max(60px, env(safe-area-inset-left, 0px));
+  padding-right: max(60px, env(safe-area-inset-right, 0px));
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-top {
+  min-height: 48px;
+  padding-top: 4px;
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-cols {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-illustration {
+  padding: 8px;
+  margin-bottom: 4px;
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-illustration svg {
+  max-height: 56px;
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-scroll {
+  padding-top: 4px;
+  padding-bottom: 8px;
+}
+
+.welcome-tour[data-tour-layout="phone-landscape"] .welcome-actions {
+  padding-top: 8px;
+  padding-bottom: 8px;
+}
+
+/* ── WO-111：三關內容 ── */
+
+/* 第 1、2 關：四個選項 2×2，自己填佔一整列；第 3 關一列一個。放大時文字換行、選項變高。 */
+.welcome-options.is-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.welcome-options.is-grid .welcome-option-custom {
+  grid-column: 1 / -1;
+}
+
+.welcome-option {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.welcome-option[aria-checked="true"] {
+  padding: 7px 11px;
+}
+
+.welcome-option:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.welcome-option-name {
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.welcome-option-note {
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+/* 自己填：輸入框＋單位「字」；錯誤句在輸入框正下方。 */
+.welcome-custom {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.welcome-custom-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.welcome-custom-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 17px;
+}
+
+.welcome-tour[data-presentation="card"] .welcome-custom-input {
+  background: var(--panel);
+}
+
+.welcome-custom-input:focus,
+.welcome-custom-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/*
+ * 錯誤狀態（色票.md 第 8 節，已定案、不屬視覺暫定）：外框 1px 加 1px 同色內框＝2px，都是 --danger #E06C75，
+ * 三套主題同值、不新增色；焦點在輸入框時仍是 --danger，不被 --accent 焦點框蓋掉；輸入框內部底色不變。
+ */
+.welcome-custom-field[data-invalid="true"] .welcome-custom-input,
+.welcome-custom-field[data-invalid="true"] .welcome-custom-input:focus,
+.welcome-custom-field[data-invalid="true"] .welcome-custom-input:focus-visible {
+  border: 1px solid var(--danger);
+  box-shadow: inset 0 0 0 1px var(--danger);
+  outline: 2px solid var(--danger);
+  outline-offset: 2px;
+}
+
+.welcome-custom-field[data-invalid="true"] .welcome-custom-input:not(:focus) {
+  outline: none;
+}
+
+.welcome-custom-unit {
+  flex: none;
+  color: var(--text);
+  font-size: 16px;
+}
+
+/* 錯誤句：不乘透明度、不另設底色（坐在頁面底色上：直拿、橫拿 --bg，中等、寬版卡片 --panel），放大可換行不截字。 */
+.welcome-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.welcome-note,
+.welcome-ios-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.welcome-goal,
+.welcome-start {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* 第 1 關示範：就是寫作頁那條進度條（DailyProgressBar），外面包一層小卡。【視覺暫定，交視覺設計】 */
+.welcome-demo {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px;
+}
+
+/* 第 3 關：整列可點，高 64 以上。 */
+.welcome-option-row {
+  width: 100%;
+}
+
+/* iPhone、iPad 另存小卡。【視覺暫定，交視覺設計】 */
+.welcome-ios-note {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+/* 收尾外觀那一行：再看一次且有開著的稿子時才是連結，可點範圍 44 以上。 */
+.welcome-appearance-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.welcome-appearance-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

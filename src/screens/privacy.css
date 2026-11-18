@@ -1,0 +1,31 @@
+/*
+ * 隱私說明正文（WO-102）：左右留白與設定頁基本內距一致（16px），
+ * 內容欄寬度與對齊也照設定頁（最大 620px；手機橫拿、中等置中，寬版靠左）。
+ * 有瀏覽器安全區（瀏海）時取較大者，文字不貼螢幕邊緣。
+ */
+.privacy-page {
+  padding-top: 8px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  width: 100%;
+  max-width: 620px;
+  box-sizing: border-box;
+}
+
+html[data-layout="phone-landscape"] .privacy-page,
+html[data-layout="medium"] .privacy-page {
+  margin-left: auto;
+  margin-right: auto;
+}
+
+html[data-layout="wide"] .privacy-page {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.privacy-paragraph {
+  margin: 0 0 1em;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  color: var(--text);
+}

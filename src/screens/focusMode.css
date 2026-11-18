@@ -1,0 +1,584 @@
+/**
+ * 專注模式樣式表（WO-62）
+ *
+ * 涵蓋四種版面專注模式之入口、浮動按鈕、拇指區與離開按鈕樣式。
+ * 遵守：
+ * 1. 觸控最小點擊區 44×44。
+ * 2. 專注模式下隱藏頁首、側欄、分頁。
+ * 3. 手機直拿與手機橫拿不顯示底部字數行。
+ * 4. 中等與寬版顯示底部淡淡字數行。
+ */
+
+/* ==========================================================================
+   1. ① 手機直拿（phone-portrait）：拇指區專注模式入口
+   ========================================================================== */
+.thumb-bar {
+  display: none;
+}
+
+.thumb-focus-button {
+  display: none;
+}
+
+html[data-layout="phone-portrait"] .thumb-bar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px 12px;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+html[data-layout="phone-portrait"] .thumb-focus-button {
+  display: inline-flex;
+}
+
+.thumb-button {
+  flex: 1;
+  max-width: 120px;
+  min-width: 44px;
+  min-height: 48px;
+  height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0 8px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.thumb-button:hover,
+.thumb-button:active {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--accent);
+}
+
+/* 直拿欄寬不到一般手機時（頁面放大，或很窄的直拿）：三顆鈕改成圖在上、字在下，
+   並收左右留白，讓每顆仍至少 44×44、且都留在畫面裡。390 左右的 100% 不進這段。
+   這段要排在 .thumb-button 基本樣式之後，放大時才蓋得過字級與不換行。 */
+@container writing-editor (max-width: 340px) {
+  html[data-layout="phone-portrait"] .view-cards-button {
+    display: none;
+  }
+
+  html[data-layout="phone-portrait"] .editor-status {
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .daily-bar-heading {
+    flex-wrap: wrap;
+  }
+
+  .daily-bar-heading > span {
+    white-space: nowrap;
+  }
+
+  .status-row {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+
+  .status-cluster {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .save-status {
+    margin-left: 0;
+  }
+
+  .thumb-bar {
+    gap: 4px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+
+  .thumb-button {
+    flex: 1 1 0;
+    flex-direction: column;
+    gap: 2px;
+    max-width: none;
+    min-width: 44px;
+    width: auto;
+    height: auto;
+    min-height: 48px;
+    padding: 4px 2px;
+    font-size: 12px;
+    line-height: 1.15;
+    white-space: normal;
+    text-align: center;
+  }
+}
+
+/* 手機直拿時，隱藏跳章按鈕讓位給拇指區 */
+html[data-layout="phone-portrait"] .chapter-jump {
+  display: none;
+}
+
+/* 鍵盤開啟時收起拇指區 */
+.editor.is-keyboard .thumb-bar {
+  display: none !important;
+}
+
+/* ==========================================================================
+   2. ② 手機橫拿（phone-landscape）：右側浮動按鈕
+   ========================================================================== */
+.landscape-focus-trigger {
+  display: none;
+}
+
+html[data-layout="phone-landscape"] .landscape-focus-trigger {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  top: calc(50% + 28px);
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  z-index: 80;
+  padding: 0;
+  cursor: pointer;
+}
+
+/* 手機橫拿浮動按鈕排版：看卡片偏上、專注模式偏下，兩側對稱 */
+html[data-layout="phone-landscape"] .landscape-cards-trigger {
+  top: calc(50% - 28px);
+  transform: none;
+}
+
+html[data-layout="phone-landscape"] .floating-tree-trigger {
+  top: calc(50% - 28px);
+  transform: none;
+}
+
+/* 側欄讓位時收起手機橫拿浮動專注鈕 */
+html[data-layout="phone-landscape"] .write-layout.aside-open .landscape-focus-trigger,
+html[data-layout="phone-landscape"] .write-layout.yield-right .landscape-focus-trigger,
+html[data-layout="phone-landscape"] .editor.yield-right .landscape-focus-trigger,
+html[data-layout="phone-landscape"] .write-layout.tree-open .landscape-focus-trigger,
+html[data-layout="phone-landscape"] .write-layout.yield-left .landscape-focus-trigger,
+html[data-layout="phone-landscape"] .editor.yield-left .landscape-focus-trigger {
+  display: none !important;
+}
+
+/* ==========================================================================
+   3. ③ 中等（medium）：頁首專注模式有字按鈕
+   ========================================================================== */
+.focus-enter-button {
+  display: none;
+}
+
+html[data-layout="medium"] .focus-enter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-width: var(--hit-size, 44px);
+  min-height: var(--hit-size, 44px);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+html[data-layout="medium"] .focus-enter-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+}
+
+/* WO-81：手機直拿打字中（鍵盤開著，.editor.is-keyboard）時，拇指區會收起，
+   改在頁首顯示既有的專注模式鈕（與中等、寬版共用同一顆），順序為放大鏡、專注模式、看卡片。
+   只留圖示（朗讀仍是 aria-label「專注模式」），熱區維持 44×44。
+   鍵盤收起後這條規則不成立，頁首專注鈕回到預設隱藏，改由拇指區第三顆進入。
+   專注模式內整個頁首已被收起，不受此規則影響。 */
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button:hover,
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+html[data-layout="phone-portrait"] .editor.is-keyboard .focus-enter-button .focus-enter-label {
+  display: none;
+}
+
+/* ==========================================================================
+   4. 專注模式共同規則（四種版面全收頁首、分頁、側欄、浮動鈕）
+   ========================================================================== */
+html[data-focus-mode="true"] .nav-rail,
+html[data-focus-mode="true"] .bottom-nav,
+html[data-focus-mode="true"] .tree-pane,
+html[data-focus-mode="true"] .write-aside,
+html[data-focus-mode="true"] .editor .topbar,
+html[data-focus-mode="true"] .editor-status,
+html[data-focus-mode="true"] .thumb-bar,
+html[data-focus-mode="true"] .floating-tree-trigger,
+html[data-focus-mode="true"] .landscape-cards-trigger,
+html[data-focus-mode="true"] .landscape-focus-trigger {
+  display: none !important;
+}
+
+/* WO-117：手機直拿與手機橫拿專注時，頁首與底區都收起，改由底部字數行提供
+   今天字數與暫存各一份；避開安全區與右側浮動鈕，正文底部留白不被遮住。 */
+html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-bottom-status,
+html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-bottom-status,
+html.landscape-writing[data-layout] .focus-bottom-status {
+  display: flex;
+  /* 位置由 global.css 依 --vv-height／--vv-offset 算出（貼在可見區域底部上方、避開鍵盤與安全區） */
+  --focus-status-gap: 6px;
+  padding: 0 64px;
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+}
+html[data-focus-mode="true"][data-layout="phone-portrait"] .editor,
+html[data-focus-mode="true"][data-layout="phone-landscape"] .editor,
+html.landscape-writing .editor {
+  padding-bottom: calc(26px + env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
+}
+
+/* 手機直拿專注模式正文留白與離開按鈕 */
+html[data-focus-mode="true"][data-layout="phone-portrait"] .editor {
+  padding-top: 52px;
+}
+
+html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-exit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 12px;
+  right: 16px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 0 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 100;
+  opacity: 0.6;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-exit-button:hover,
+html[data-focus-mode="true"][data-layout="phone-portrait"] .focus-exit-button:active {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+}
+
+/* 中等版面專注模式離開按鈕與底列字數 */
+html[data-focus-mode="true"][data-layout="medium"] .focus-exit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 16px;
+  right: 24px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 0 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 100;
+  opacity: 0.6;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+html[data-focus-mode="true"][data-layout="medium"] .focus-exit-button:hover,
+html[data-focus-mode="true"][data-layout="medium"] .focus-exit-button:active {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+}
+
+html[data-focus-mode="true"][data-layout="medium"] .focus-bottom-status {
+  display: flex;
+  position: fixed;
+  --focus-status-gap: 14px;
+  top: calc(var(--vv-offset) + var(--vv-height) - var(--focus-status-gap));
+  bottom: auto;
+  transform: translateY(-100%);
+  left: 0;
+  right: 0;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* ==========================================================================
+   4. ④ 寬版（wide）：專注模式按鈕與離開按鈕、底列字數
+   ========================================================================== */
+html[data-layout="wide"] .focus-enter-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+html[data-layout="wide"] .focus-enter-button:hover,
+html[data-layout="wide"] .focus-enter-button:active {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+}
+
+html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 16px;
+  right: 24px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--muted);
+  font-size: 13px;
+  padding: 0 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  z-index: 100;
+  opacity: 0.6;
+  white-space: nowrap;
+  transition: opacity 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button:hover,
+html[data-focus-mode="true"][data-layout="wide"] .focus-exit-button:active {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+}
+
+html[data-focus-mode="true"][data-layout="wide"] .focus-bottom-status {
+  display: flex;
+  position: fixed;
+  --focus-status-gap: 14px;
+  top: calc(var(--vv-offset) + var(--vv-height) - var(--focus-status-gap));
+  bottom: auto;
+  transform: translateY(-100%);
+  left: 0;
+  right: 0;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+  opacity: 0.55;
+  pointer-events: none;
+  z-index: 50;
+}
+
+/* 手機橫拿專注模式離開按鈕（44×44 圓鈕，第一次點展開，第二次點離開） */
+html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--muted);
+  padding: 0;
+  cursor: pointer;
+  z-index: 100;
+  opacity: 0.6;
+  overflow: hidden;
+  font-size: 0;
+  transition: opacity 0.2s ease, border-color 0.2s ease, width 0.2s ease, border-radius 0.2s ease;
+}
+
+html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button:hover,
+html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button:active {
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+}
+
+html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button::before {
+  content: "";
+  display: block;
+  width: 20px;
+  height: 20px;
+  background-color: currentColor;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6m0 0v6m0-6L3 21'/%3E%3Cpath d='M20 10h-6m0 0V4m0 6l7-7'/%3E%3C/svg%3E") no-repeat center / contain;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14h6m0 0v6m0-6L3 21'/%3E%3Cpath d='M20 10h-6m0 0V4m0 6l7-7'/%3E%3C/svg%3E") no-repeat center / contain;
+}
+
+html[data-focus-mode="true"][data-layout="phone-landscape"] .focus-exit-button.is-expanded {
+  width: auto;
+  border-radius: 6px;
+  padding: 0 14px;
+  font-size: 13px;
+  gap: 6px;
+  opacity: 1;
+  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--text);
+}
+
+/* ==========================================================================
+   WO-105 查字典按鈕與沒網路提示（視覺暫定，交視覺設計）
+   高 44、寬 ≥44；顏色照示意圖：--accent 外框 55%、底色 16%。
+   ========================================================================== */
+
+.dict-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
+  border-radius: 22px;
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+}
+.dict-button svg { color: var(--accent); flex-shrink: 0; }
+.dict-button-label { font-weight: 600; }
+.dict-button-hint { font-size: 12px; color: var(--muted); white-space: pre; }
+.dict-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 頁首：放在「全書搜尋」左邊（中等、寬版、橫拿沒打字）；右邊空間不夠時不讓它被擠掉 */
+.topbar .dict-button { margin-left: auto; }
+html[data-layout="wide"] .topbar .dict-button { margin-left: 0; }
+/* 寬版：頁首統計靠右（margin-left:auto）；查字典在統計與搜尋之間 */
+
+/* 手機直拿：占章名那一格（左 64 起，右緣 ≤191），全書搜尋位置不動 */
+html[data-layout="phone-portrait"] .topbar .dict-button {
+  margin-left: 8px;
+  margin-right: auto;
+  max-width: 127px;
+  overflow: hidden;
+}
+/* 出現期間暫時藏章名與半形提醒小標，取消選取就回來 */
+html[data-layout="phone-portrait"] .topbar.has-dict-button h1,
+html[data-layout="phone-portrait"] .topbar.has-dict-button .half-width-badge-wrap {
+  display: none;
+}
+
+/* WO-117：頁首已不再放今天字數與已暫存（底下進度條區是唯一來源），
+   寬版查字典按鈕出現時不會再藏掉任何一項；頁首統計區只剩半形提醒，可縮小不推擠。 */
+html[data-layout="wide"] .topbar.has-dict-button .topbar-stats { min-width: 0; overflow: hidden; flex-shrink: 1; }
+
+/* 浮動：頁首被收起（橫拿打字、專注模式）時浮在左上角 */
+.dict-button.is-floating {
+  position: fixed;
+  top: calc(8px + var(--safe-top, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  margin: 0;
+  z-index: 90;
+  background-color: var(--panel);
+  background-image: linear-gradient(color-mix(in srgb, var(--accent) 16%, transparent), color-mix(in srgb, var(--accent) 16%, transparent));
+}
+/* 專注模式：和右上「離開專注模式」同高，左邊距等於離開鈕的右邊距 */
+html[data-focus-mode="true"] .dict-button.is-floating { top: calc(16px + var(--safe-top, 0px)); left: 24px; }
+html[data-focus-mode="true"][data-layout="phone-portrait"] .dict-button.is-floating { top: calc(12px + var(--safe-top, 0px)); left: 16px; }
+html[data-focus-mode="true"][data-layout="phone-landscape"] .dict-button.is-floating { top: calc(12px + var(--safe-top, 0px)); left: calc(12px + env(safe-area-inset-left, 0px)); }
+
+/* 沒網路提示：按鈕所在那一塊頂端正下方，左右留 12，蓋在正文上方，不推動版面 */
+.dict-offline-notice { display: none; }
+.dict-offline-notice[data-visible="true"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  top: calc(56px + var(--safe-top, 0px));
+  z-index: 95;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 14px;
+  pointer-events: none;
+}
+/* 寬版左邊有 72 寬導覽欄，提示從導覽欄右邊起算 */
+html[data-layout="wide"] .dict-offline-notice[data-placement="topbar"][data-visible="true"] { left: 84px; }
+.dict-offline-notice svg { color: var(--accent); flex-shrink: 0; }
+.dict-offline-notice[data-placement="floating"][data-visible="true"] {
+  top: calc(8px + 44px + 8px + var(--safe-top, 0px));
+}
+html[data-focus-mode="true"] .dict-offline-notice[data-placement="floating"][data-visible="true"] {
+  top: calc(16px + 44px + 8px + var(--safe-top, 0px));
+}

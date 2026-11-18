@@ -1,0 +1,12 @@
+/* WO-65：來回記住位置的提示（卡片已刪除、還有沒按完成的修改） */
+.nav-memory-notice {
+  margin: 8px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  background-color: var(--panel);
+  color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}

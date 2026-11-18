@@ -1,3 +1,4 @@
+import { localDevicePhrase } from '../copy/userFacing';
 import { formatClockTime } from '../domain/saveClock';
 
 export function isComputerLayout(width: number): boolean {
@@ -10,7 +11,8 @@ export function appSpaceStatusLine(options: {
   computer: boolean;
   lastSaveMs: number | null;
 }): string {
-  const device = options.computer ? '這台電腦' : '這支手機';
+  // 電腦與平板（中等、寬版）說「這個裝置」，手機說「這支手機」。
+  const device = localDevicePhrase(options.computer);
   if (!options.stored) return `還沒存進${device}的 App 空間`;
   if (options.lastSaveMs == null) return `已自動存在${device}的 App 空間`;
   return `已自動存在${device}的 App 空間・最後暫存 ${formatClockTime(new Date(options.lastSaveMs))}`;

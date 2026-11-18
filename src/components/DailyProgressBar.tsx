@@ -1,5 +1,11 @@
 import { goalProgress } from '../domain/dailyGoal';
+import { dailyProgressAriaLabel, dailyProgressDisplayLabel } from '../copy/userFacing';
 
+/**
+ * 今日目標進度條（WO-101）。
+ * 完整與鍵盤開啟的精簡模式畫面都是「今天 N／M 字」，達標後接「　達標了」；
+ * 朗讀兩種模式都用定稿句，不拿含「／」的畫面字串來念。
+ */
 export function DailyProgressBar({
   words,
   goal,
@@ -12,9 +18,8 @@ export function DailyProgressBar({
   compact?: boolean;
 }) {
   const ratio = goalProgress(words, goal);
-  const label = met
-    ? `今日已寫 ${words} 字，已達到目標 ${goal} 字`
-    : `今日已寫 ${words} 字，目標 ${goal} 字`;
+  const display = dailyProgressDisplayLabel(words, goal, met);
+  const label = dailyProgressAriaLabel(words, goal, met);
   return (
     <div
       className={['daily-bar', met ? 'is-met' : '', compact ? 'is-compact' : ''].filter(Boolean).join(' ')}
@@ -26,19 +31,19 @@ export function DailyProgressBar({
       aria-valuemax={goal}
       aria-valuenow={Math.min(words, goal)}
       aria-label={label}
+      aria-valuetext={label}
     >
       {compact ? null : (
-        <div className="daily-bar-heading">
-          <span>{met ? '✦ 今日已寫' : '今日已寫'} {words} 字{met ? '，已達標' : ''}</span>
-          <span>目標 {goal} 字</span>
+        <div className="daily-bar-heading" aria-hidden="true">
+          <span>{display}</span>
         </div>
       )}
       <span className="daily-bar-track">
         <span className="daily-bar-fill" style={{ width: `${ratio}%` }} />
       </span>
       {compact ? (
-        <span className="daily-bar-compact">
-          {words}／{goal}
+        <span className="daily-bar-compact" aria-hidden="true">
+          {display}
         </span>
       ) : null}
     </div>

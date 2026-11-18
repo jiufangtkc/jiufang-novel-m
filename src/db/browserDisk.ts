@@ -1,5 +1,6 @@
 import { DB_FILE_TYPE_LABEL } from '../copy/userFacing';
 import type { DiskFile } from './fileTarget';
+import { SavePickerAbortedError } from './savePickerAbort';
 
 interface SavePickerConfig {
   suggestedName?: string;
@@ -95,11 +96,7 @@ export async function pickExistingDatabase(): Promise<{ bytes: Uint8Array; file:
       types: [DATABASE_FILE_TYPE],
     });
     if (!handle) return null;
-    try {
-      await withPermission(handle).requestPermission({ mode: 'readwrite' });
-    } catch {
-      // 讀得到即可先開啟。存回時會再請一次權限。
-    }
+    // WO-121：開檔只讀，不索取寫入權限（含背景呼叫）。把手留著，第一次存檔時由 saveProject 的 ensurePermission 才問。
     const file = diskFileFromHandle(handle);
     return { bytes: await file.read(), file };
   } catch (error) {
@@ -126,12 +123,13 @@ export async function pickSaveFile(suggestedName: string, directoryHint?: unknow
   try {
     return await pickSaveOnce(suggestedName, directoryHint);
   } catch (error) {
-    if (error instanceof DOMException && error.name === 'AbortError') return null;
+    // WO-123：AbortError 不再當成安靜取消，改丟可辨識的錯誤（不重試選檔、不改走下載）。
+    if (error instanceof DOMException && error.name === 'AbortError') throw new SavePickerAbortedError();
     if (!directoryHint) throw error;
     try {
       return await pickSaveOnce(suggestedName);
     } catch (again) {
-      if (again instanceof DOMException && again.name === 'AbortError') return null;
+      if (again instanceof DOMException && again.name === 'AbortError') throw new SavePickerAbortedError();
       throw again;
     }
   }

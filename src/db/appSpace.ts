@@ -13,12 +13,16 @@ export interface AppSpace {
   put(book: StoredBook): Promise<void>;
   get(key: string): Promise<StoredBook | null>;
   list(): Promise<StoredBook[]>;
+  /** WO-116：只刪 App 自己空間裡這個鍵的副本（稿子本體與中繼資料）。沒有這個鍵視為已刪；絕不碰使用者另存的檔案。 */
+  remove(key: string): Promise<void>;
 }
 
 export interface ByteDirectory {
   write(name: string, bytes: Uint8Array): Promise<void>;
   read(name: string): Promise<Uint8Array | null>;
   list(): Promise<string[]>;
+  /** WO-116：只刪這個名稱的項目；不存在視為已刪。 */
+  remove(name: string): Promise<void>;
 }
 
 export function createMemoryDirectory(): ByteDirectory {
@@ -38,6 +42,9 @@ export function createMemoryDirectory(): ByteDirectory {
     },
     async list() {
       return [...files.keys()];
+    },
+    async remove(name) {
+      files.delete(name);
     },
   };
 }
@@ -93,6 +100,11 @@ export function createDirectoryAppSpace(dir: ByteDirectory): AppSpace {
       }
       return books;
     },
+    async remove(key) {
+      // 先刪本體再刪中繼資料：中途失敗時本體還在（會丟錯），不會留下「沒有本體卻被列出」的狀況。
+      await dir.remove(dataName(key));
+      await dir.remove(metaName(key));
+    },
   };
 }
 
@@ -138,6 +150,12 @@ export function createMirroredSpace(primary: AppSpace, backup: AppSpace): AppSpa
         // 主空間暫時不可用。
       }
       return [...merged.values()];
+    },
+    /** WO-116：兩邊都要刪。任一邊刪不掉就丟錯（呼叫端不能假報已刪除）；兩邊都會試，不因一邊失敗就放著另一邊。 */
+    async remove(key) {
+      const results = await Promise.allSettled([primary.remove(key), backup.remove(key)]);
+      const failed = results.find((result): result is PromiseRejectedResult => result.status === 'rejected');
+      if (failed) throw failed.reason instanceof Error ? failed.reason : new Error('無法刪除這個裝置上的稿子副本');
     },
   };
 }

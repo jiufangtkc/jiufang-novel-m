@@ -56,13 +56,28 @@ export function classifyTextDelta(
   const insertedChars = countWords(after.slice(start, endAfter));
   const deletedChars = countWords(before.slice(start, endBefore));
   return {
-    wordDelta: insertedChars - deletedChars,
+    wordDelta: wordDeltaAround(before, after, start, endBefore, endAfter),
     insertedChars,
     deletedChars,
     // 注音、倉頡送出一整個詞是正常組字，不算突然出現的大段文字。
     largeInsert: source !== 'composition' && insertedChars >= threshold,
     largeDelete: deletedChars >= threshold,
   };
+}
+
+/**
+ * WO-76：字數增減用改前、改後的字數相減，不只數新增片段；
+ * 否則英文單字、數字串（整串算 1）逐字打進來會一個字母多算一次。
+ * 空白與換行一定會切斷單字，所以只要往兩側延伸到最近的空白，數那一小段就和整章相減一樣。
+ */
+function wordDeltaAround(before: string, after: string, start: number, endBefore: number, endAfter: number): number {
+  let from = start;
+  while (from > 0 && !/\s/u.test(before[from - 1])) from -= 1;
+  let tail = 0;
+  while (endBefore + tail < before.length && !/\s/u.test(before[endBefore + tail])) tail += 1;
+  return (
+    countWords(after.slice(from, endAfter + tail)) - countWords(before.slice(from, endBefore + tail))
+  );
 }
 
 export function emptyWritingLog(id: number, date: string): WritingLogRow {

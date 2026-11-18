@@ -1,5 +1,8 @@
-import { NavLink, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { CardsIcon, ChartIcon, FolderIcon, GearIcon, PenIcon } from './Icons';
+import { useLayout } from '../layout';
+import { writeReturnPath } from '../state/navMemory';
+import { useProject } from '../state/sampleStore';
 
 const TABS = [
   { id: 'write', label: '寫作', icon: PenIcon },
@@ -9,31 +12,57 @@ const TABS = [
   { id: 'settings', label: '設定', icon: GearIcon },
 ] as const;
 
-function isTabActive(tab: string, pathname: string): boolean {
+export function isTabActive(tab: string, pathname: string): boolean {
   if (tab === 'write') return pathname.includes('/write');
   if (tab === 'stats') return pathname.includes('/stats') || pathname.includes('/logs');
+  if (tab === 'settings') return pathname.includes('/settings') || pathname.includes('/font-license') || pathname.includes('/privacy');
   return pathname.includes(`/${tab}`);
+}
+
+/**
+ * WO-68：手機橫拿何時顯示左側直排分頁。
+ * 寫作頁只在目錄頁（尚未進章）或目錄抽屜打開時顯示，打字時仍只留正文；
+ * 資料集、檔案、統計、紀錄、設定等其他分頁一律顯示，確保回得了寫作或目錄。
+ */
+export function showsLandscapeRail(pathname: string, chapterTreeOpen: boolean): boolean {
+  const match = /\/p\/[^/]+\/write(?:\/([^/]+))?\/?$/.exec(pathname);
+  if (!match) return true;
+  const inChapter = Boolean(match[1]);
+  return !inChapter || chapterTreeOpen;
 }
 
 export function AppNav({ projectId, variant }: { projectId: string; variant: 'bottom' | 'rail' }) {
   const { pathname } = useLocation();
+  const { focusMode } = useLayout();
+  const project = useProject(projectId);
+
+  if (focusMode) return null;
+
+  // WO-65：從其他分頁按「寫作」回到這本書記住的那一章（那一章被刪了就回目錄，目錄會停在附近）。
+  // 已在寫作頁時照舊回目錄。
+  const targetOf = (tab: string) =>
+    tab === 'write' && project && !isTabActive('write', pathname)
+      ? writeReturnPath(projectId, project.nodes)
+      : `/p/${projectId}/${tab}`;
+
   return (
     <nav className={variant === 'bottom' ? 'bottom-nav' : 'nav-rail'} aria-label="主要導覽" data-testid={variant === 'bottom' ? 'bottom-nav' : 'nav-rail'}>
       {TABS.map((tab) => {
         const Icon = tab.icon;
         const active = isTabActive(tab.id, pathname);
         return (
-          <NavLink
+          <Link
             key={tab.id}
-            to={`/p/${projectId}/${tab.id}`}
+            to={targetOf(tab.id)}
             aria-current={active ? 'page' : undefined}
+            data-nav-active={active ? 'true' : undefined}
             data-testid={`nav-${tab.id}`}
           >
             <span className="nav-icon">
               <Icon />
             </span>
             {tab.label}
-          </NavLink>
+          </Link>
         );
       })}
     </nav>

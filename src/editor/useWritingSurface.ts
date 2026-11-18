@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { clipForBook, rememberBookClip } from './bookClip';
-import { createClipMarker, decidePaste } from './clipboardPolicy';
+import { decidePaste } from './clipboardPolicy';
+import { EDITOR_COPIED_TOAST, EDITOR_CUT_TOAST, EDITOR_PASTE_BLOCKED_TOAST } from '../copy/userFacing';
 import { setLiveReader } from './liveDraft';
 import { revealCaret } from './caret';
 import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './enterGuard';
@@ -39,6 +40,11 @@ export function useWritingSurface({
   onToastRef.current = onToast;
   const openingRef = useRef(openingText);
   openingRef.current = openingText;
+  /**
+   * WO-76 乙段：按「改成全形」或「復原」時整段換掉這一章正文。
+   * 組字中不換（回傳 false）。換完立刻走既有 commit-text，字數照甲段算法更新。
+   */
+  const replaceRef = useRef<(next: string, caret: number) => boolean>(() => false);
 
   useEffect(() => {
     const textarea = ref.current;
@@ -120,7 +126,7 @@ export function useWritingSurface({
       const decision = decidePaste(incoming, clipForBook(bookId), composing.current);
       if (decision.action === 'ignore-composing') return;
       if (decision.action === 'block') {
-        toast('外面的文字不能貼進來');
+        toast(EDITOR_PASTE_BLOCKED_TOAST);
         return;
       }
       const start = textarea.selectionStart ?? textarea.value.length;
@@ -131,6 +137,23 @@ export function useWritingSurface({
       textarea.focus();
       revealCaret(textarea);
       gate.schedule(() => flush());
+    };
+
+    replaceRef.current = (next: string, caret: number) => {
+      if (composing.current) return false;
+      const scrollTop = textarea.scrollTop;
+      const hadFocus = document.activeElement === textarea;
+      textarea.value = next;
+      textarea.setSelectionRange(caret, caret);
+      textarea.scrollTop = scrollTop;
+      // 不算成「大量文字出現」：只是同一章的標點換成全形，前後字數由 commit-text 相減。
+      latest.current = next;
+      source.current = 'type';
+      mark();
+      gate.cancel();
+      flush();
+      if (hadFocus) revealCaret(textarea);
+      return true;
     };
 
     const onCompositionStart = () => {
@@ -186,10 +209,9 @@ export function useWritingSurface({
       const text = selectedText();
       if (!text) return;
       event.preventDefault();
-      const marker = createClipMarker();
-      rememberBookClip(bookId, { text, marker });
-      event.clipboardData?.setData('text/plain', marker);
-      toast('已複製，只能貼回這個編輯器');
+      rememberBookClip(bookId, { text });
+      event.clipboardData?.setData('text/plain', text);
+      toast(EDITOR_COPIED_TOAST);
     };
     const onCut = (event: ClipboardEvent) => {
       if (composing.current) {
@@ -201,13 +223,12 @@ export function useWritingSurface({
       const text = textarea.value.slice(start, end);
       if (!text) return;
       event.preventDefault();
-      const marker = createClipMarker();
-      rememberBookClip(bookId, { text, marker });
-      event.clipboardData?.setData('text/plain', marker);
+      rememberBookClip(bookId, { text });
+      event.clipboardData?.setData('text/plain', text);
       textarea.setRangeText('', start, end, 'end');
       process('type');
       gate.schedule(() => flush());
-      toast('已剪下，只能貼回這個編輯器');
+      toast(EDITOR_CUT_TOAST);
     };
     const onPaste = (event: ClipboardEvent) => {
       event.preventDefault();
@@ -255,6 +276,7 @@ export function useWritingSurface({
     window.visualViewport?.addEventListener('scroll', onViewport);
 
     return () => {
+      replaceRef.current = () => false;
       flush(true);
       gate.cancel();
       setLiveReader(null);
@@ -276,5 +298,6 @@ export function useWritingSurface({
     };
   }, [bookId, chapterId]);
 
-  return { ref, dirty };
+  const replaceText = (next: string, caret: number) => replaceRef.current(next, caret);
+  return { ref, dirty, replaceText };
 }

@@ -47,5 +47,27 @@ describe('連續天數與統計', () => {
     expect(summary.achievementCount).toBe(2);
     expect(summary.todayWords).toBe(1000);
     expect(summary.totalHoursLabel).toBe('2.0');
+    // WO-99：匯入已開放（沒匯入過是 0）；WO-103：匯出也開放，沒匯出過是 0（不是「—」）。
+    expect(summary.importExport).toEqual({
+      available: true,
+      importAvailable: true,
+      exportAvailable: true,
+      importCount: 0,
+      exportCount: 0,
+      importDisplay: '0',
+      exportDisplay: '0',
+    });
+    expect(summarizeStats(schedule, logs, countAchievements(schedule.settled), 3).importExport).toMatchObject({
+      importCount: 3,
+      importDisplay: '3',
+      exportCount: 0,
+      exportDisplay: '0',
+    });
+    // WO-103：匯出次數是真實數字，與匯入各自獨立。
+    expect(summarizeStats(schedule, logs, countAchievements(schedule.settled), 3, 1234).importExport).toMatchObject({
+      importCount: 3,
+      exportCount: 1234,
+      exportDisplay: '1,234',
+    });
   });
 });

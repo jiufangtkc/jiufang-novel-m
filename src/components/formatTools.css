@@ -1,0 +1,194 @@
+/* WO-122：寫作頁排版小工具（「⋯」入口、選單、確認視窗、完成／復原提示）。
+   獨立成檔，避免動到 global.css 內彼此牽動的版面規則。 */
+
+/* ---- 入口：頁首（直拿、中等、寬版） ---- */
+.format-more-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+.format-more-button:hover,
+.format-more-button:focus-visible {
+  background: rgba(255, 255, 255, 0.08);
+}
+/* 長章名由既有 h1（flex:1、min-width:0、省略號）縮短；「⋯」固定 44 寬，不被擠掉 */
+
+/* ---- 入口：手機橫拿浮動鈕（頁首隱藏時仍可用） ---- */
+.format-more-floating {
+  display: none;
+}
+html[data-layout="phone-landscape"] .format-more-button {
+  display: none;
+}
+html[data-layout="phone-landscape"] .format-more-floating {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  left: 12px;
+  top: calc(50% + 84px);
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-size: 22px;
+  line-height: 1;
+  z-index: 80;
+  cursor: pointer;
+}
+/* 打字（鍵盤開著、頁首隱藏）：放到左上角，不壓正文游標也不落在鍵盤後面 */
+html.landscape-writing[data-layout="phone-landscape"] .format-more-floating {
+  top: 8px;
+}
+/* 與目錄、搜尋、看卡片浮動鈕同樣的讓位規則：側欄開著時先收起，關掉側欄後回來 */
+html[data-layout="phone-landscape"] .write-layout.tree-open .format-more-floating,
+html[data-layout="phone-landscape"] .write-layout.aside-open .format-more-floating,
+html[data-layout="phone-landscape"] .write-layout.yield-right .format-more-floating,
+html[data-layout="phone-landscape"] .editor.yield-right .format-more-floating,
+html[data-layout="phone-landscape"] .editor.yield-left .format-more-floating,
+html[data-layout="phone-landscape"] .write-layout.is-searching .format-more-floating {
+  display: none !important;
+}
+
+/* ---- 專注模式：不露出「⋯」、選單與提示 ---- */
+html[data-focus-mode="true"] .format-more-button,
+html[data-focus-mode="true"] .format-more-floating,
+html[data-focus-mode="true"] .format-notice,
+html[data-focus-mode="true"] .format-backdrop {
+  display: none !important;
+}
+
+/* ---- 選單與視窗 ---- */
+.format-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+.format-backdrop.is-menu {
+  background: transparent;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.format-menu {
+  position: fixed;
+  width: 168px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.4);
+}
+.format-menu .menu-item {
+  width: 100%;
+}
+.format-menu .menu-item:focus-visible,
+.format-option:focus-visible,
+.format-dialog .button:focus-visible,
+.format-notice button:focus-visible,
+.format-more-button:focus-visible,
+.format-more-floating:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.format-dialog {
+  width: min(420px, calc(100% - 32px));
+  max-height: calc(100% - 32px);
+  overflow: auto;
+  margin: auto;
+}
+.format-dialog p {
+  margin: 0 0 8px;
+  line-height: 1.6;
+}
+.format-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 8px 0;
+}
+.format-option {
+  width: 100%;
+  height: auto;
+  min-height: 48px;
+  white-space: normal;
+}
+.format-dialog .dialog-actions {
+  flex-wrap: wrap;
+}
+
+/* ---- 完成／復原提示（持續顯示，不被一般提示擠掉） ---- */
+.format-notice {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 250;
+  width: min(420px, calc(100vw - 24px));
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+  color: var(--text);
+}
+.format-notice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.format-notice-row strong {
+  flex: 1;
+  min-width: 0;
+}
+.format-notice p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+.format-notice-undo,
+.format-notice-close {
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 15px;
+  cursor: pointer;
+}
+.format-notice-undo {
+  border: 0;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 700;
+}
+.format-notice-close {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+}
+html[data-layout="phone-landscape"] .format-notice {
+  top: 8px;
+  width: min(420px, calc(100vw - 160px));
+}
