@@ -14,8 +14,8 @@ import {
   IMPORT_TEXT_UNREADABLE,
   IMPORT_TEXT_WORKING,
   lastEditDisplay,
-  OPEN_DB_FAIL,
   OPEN_DB_HINT,
+  openButtonLabel,
   stashDraftHint,
   currentFileLine,
   titlePendingNotice,
@@ -28,6 +28,7 @@ import { useProject, useSample } from '../state/sampleStore';
 import { appSpaceStatusLine } from './filesStatus';
 import { filesPageLayout } from './filesPageLayout';
 import { ExportDialog } from './ExportDialog';
+import { useOpenManuscriptFile } from './useOpenManuscriptFile';
 import './importExport.css';
 
 function useComputerLayout(): boolean {
@@ -40,7 +41,8 @@ export function FilesScreen() {
   const project = useProject(projectId);
   const { state, actions } = useSample();
   const navigate = useNavigate();
-  const openInputRef = useRef<HTMLInputElement>(null);
+  // WO-121：「開啟別的稿子」與首頁共用同一段開檔流程（picker／file input／busy／失敗提示）。須在條件 return 之前呼叫。
+  const openFile = useOpenManuscriptFile();
   const textInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
@@ -62,19 +64,6 @@ export function FilesScreen() {
   const exportLabel = formatLastExportLabel(meta.lastExportMs);
   const projectSaveLabel = formatLastProjectSave(meta.lastProjectSaveMs);
   const pendingTitle = titlePendingNotice(project.titleSavePending);
-
-  const openAnother = async () => {
-    if (canPickLocalFiles()) {
-      try {
-        const opened = await actions.openWithPicker();
-        if (opened) navigate(writePath(opened.id, opened.chapterId));
-      } catch {
-        actions.toast(OPEN_DB_FAIL);
-      }
-      return;
-    }
-    openInputRef.current?.click();
-  };
 
   // WO-103：匯出全文已開放（Word／TXT、全文／自選章節），開啟匯出選單。
   const openExport = () => setExportOpen(true);
@@ -225,29 +214,17 @@ export function FilesScreen() {
             type="button"
             className="setting-row"
             data-testid="open-other-file"
-            onClick={() => void openAnother()}
+            disabled={openFile.busy}
+            aria-busy={openFile.busy ? 'true' : undefined}
+            onClick={() => openFile.open()}
           >
             <FolderIcon />
             <span>
-              <strong>開啟別的稿子</strong>
+              <strong>{openButtonLabel(openFile.busy, '開啟別的稿子')}</strong>
               <small>{OPEN_DB_HINT}</small>
             </span>
           </button>
-          <input
-            ref={openInputRef}
-            type="file"
-            accept=".db,application/octet-stream,application/x-sqlite3"
-            hidden
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (!file) return;
-              void actions
-                .importFile(file)
-                .then((opened) => navigate(writePath(opened.id, opened.chapterId)))
-                .catch(() => actions.toast(OPEN_DB_FAIL));
-            }}
-          />
+          {openFile.input}
 
           <button
             type="button"
