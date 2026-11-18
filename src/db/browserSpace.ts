@@ -31,6 +31,15 @@ function idbSpace(): AppSpace {
         database.close();
       }
     },
+    async remove(key) {
+      // WO-116：只刪 files 物件儲存區裡這一個鍵，不清空整個資料庫。
+      const database = await openAppDatabase();
+      try {
+        await idbRequest(database, 'readwrite', (store) => store.delete(key));
+      } finally {
+        database.close();
+      }
+    },
   };
 }
 
@@ -77,6 +86,16 @@ function opfsDirectory(): ByteDirectory {
       const names: string[] = [];
       for await (const name of dir.keys()) names.push(name);
       return names;
+    },
+    async remove(name) {
+      // WO-116：只刪 App 專用 books 目錄裡這一個項目；不存在視為已刪，不遞迴、不動目錄本身。
+      const dir = await ready;
+      try {
+        await dir.removeEntry(name);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'NotFoundError') return;
+        throw error;
+      }
     },
   };
 }

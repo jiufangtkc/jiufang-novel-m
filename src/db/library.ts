@@ -1,6 +1,7 @@
 import { settleImportedLogs, writingDayKey, type GoalSchedule, createSchedule, withClock, applyWordDelta } from '../domain/dailyGoal';
 import { MIN_DAILY_GOAL } from '../domain/dailyGoal';
 import { appSpace } from './browserSpace';
+import { isBookRemoved, markBookRemoved } from './removedBooks';
 import type { StoredBook } from './appSpace';
 import { externalFileFromStored, type BookFileMark } from '../domain/bookTitle';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
@@ -9,8 +10,42 @@ import { openMemoryDb } from './wasmDb';
 
 export type { StoredBook };
 
+/** WO-116：進行中的寫入（以稿子代號分組），刪除時要等它們結束才刪，避免刪完又被寫回。 */
+const inflightPuts = new Map<string, Set<Promise<unknown>>>();
+
 export async function putBook(book: StoredBook): Promise<void> {
-  await (await appSpace()).put(book);
+  // 已從這個裝置刪掉的稿子不再寫回 App 空間（自動暫存、離頁寫回都經過這裡）。
+  if (isBookRemoved(book.key)) return;
+  const pending = (async () => {
+    await (await appSpace()).put(book);
+  })();
+  let set = inflightPuts.get(book.key);
+  if (!set) {
+    set = new Set();
+    inflightPuts.set(book.key, set);
+  }
+  set.add(pending);
+  try {
+    await pending;
+  } finally {
+    set.delete(pending);
+    if (set.size === 0) inflightPuts.delete(book.key);
+  }
+}
+
+/**
+ * WO-116：從這個裝置的 App 空間刪掉這份稿子的副本（OPFS 與 IndexedDB 備援，只刪這個鍵）。
+ * 先登記為已刪除（擋住之後的寫入與讀回），等已開始的寫入結束，再刪，最後確認兩邊都讀不到。
+ * 刪不掉或確認仍存在會丟錯，呼叫端不能假報完成。不碰使用者另存在別處的檔案。
+ */
+export async function removeBook(key: string): Promise<void> {
+  if (!key) return;
+  markBookRemoved(key);
+  const running = inflightPuts.get(key);
+  if (running) await Promise.allSettled([...running]);
+  const space = await appSpace();
+  await space.remove(key);
+  if (await space.get(key)) throw new Error('這個裝置上的稿子副本沒有刪乾淨');
 }
 
 export async function getBook(key: string): Promise<StoredBook | null> {
@@ -62,6 +97,8 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
   const stored = await listBooks();
   const books: ImportedBook[] = [];
   for (const item of stored) {
+    // WO-116：已刪稿子即使讀取在刪除前就開始，也不回傳。
+    if (isBookRemoved(item.key)) continue;
     const db = await openMemoryDb(item.bytes);
     try {
       const loaded = readFileProject(db.sql);
@@ -92,7 +129,8 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
       db.close();
     }
   }
-  return books;
+  // 讀取期間才被刪掉的稿子也要濾掉。
+  return books.filter((book) => !isBookRemoved(book.key));
 }
 
 /**
