@@ -2,7 +2,7 @@
  * 電腦寬版（wide）正文欄寬與三欄容量（WO-W36）
  *
  * - 正文一行看得見的字數：預設 36；若「左右側欄都展開」仍放得下 40 字就用 40。
- *   限寬 = N 個字的內容寬 + 左右內距 80px（內距不算進字數）。
+ *   限寬 = N 個字的內容寬 + 左右內距 64px（內距不算進字數；WO-115 由 80px 收到 64px）。
  * - 側欄分成兩件事：
  *   1. 使用者的選擇（希望展開哪幾欄）：存在本機，只在使用者操作時更新。
  *   2. 實際顯示：依目前視窗放不放得下 36 個看得見的字決定，放不下就暫時收起。
@@ -16,10 +16,13 @@ export const WIDE_PANELS_STORAGE_KEY = 'wo-w36-wide-panels-v1';
 
 /** 導覽欄寬度（global.css 的 nav-rail） */
 export const WIDE_NAV_RAIL_WIDTH = 72;
-/** 單一側欄占用：320 寬 + 1px 邊線 */
-export const WIDE_SIDE_PANEL_OUTER = 321;
-/** 正文左右內距合計（各 40px） */
-export const WIDE_EDITOR_PADDING_TOTAL = 80;
+/**
+ * 單一側欄占用：280（WO-115 由 320 收到 280）。
+ * 全域 box-sizing 為 border-box，1px 邊線已含在 280 內，與 global.css 寬版 .tree-pane／.write-aside 一致。
+ */
+export const WIDE_SIDE_PANEL_OUTER = 280;
+/** 正文左右內距合計（各 32px；WO-115 由各 40px 收到 32px，與 global.css 寬版 .editor-input 一致） */
+export const WIDE_EDITOR_PADDING_TOTAL = 64;
 /** 正文區塊本身（editor-pane）額外占用的左右空間。目前沒有，量測後若有再填。 */
 export const WIDE_EDITOR_PANE_EXTRA = 0;
 export const WIDE_CHARS_BASE = 36;
@@ -108,7 +111,9 @@ function fitWidePanelsByCapacity(input: WideFitInput): SidePanelsState {
   const ok = (p: SidePanelsState) => fits(viewportWidth, p, WIDE_CHARS_BASE, scalePercent);
   if (wanted.left && wanted.right) {
     const both = { left: true, right: true };
-    if (!oneSide && ok(both)) return both;
+    // WO-115：兩側同開以「正文仍有 40 字」為門檻（100% 字級約 1436px 起，1440 可三欄），
+    // 不因單側門檻放寬而讓 1280–1435 的畫面變成兩側同開。
+    if (!oneSide && fits(viewportWidth, both, WIDE_CHARS_LARGE, scalePercent)) return both;
     const order: SidePanelName[] = prefer === 'right' ? ['right', 'left'] : ['left', 'right'];
     for (const side of order) {
       const only = { left: side === 'left', right: side === 'right' };

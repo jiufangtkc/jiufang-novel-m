@@ -129,14 +129,14 @@ html[data-layout="medium"] .editor-input {
 /* WO-W36：電腦寬版限寬 = N 字內容寬 + 左右內距 80px，N 看得見的字數為 36；
  * 兩側欄都展開仍放得下 40 字時（data-wide-chars="40"）改 40。其餘版面不動。 */
 html[data-layout="wide"] .editor-input {
-  max-width: min(calc(36 * (1em + 0.5px) + 80px), 100%);
+  max-width: min(calc(36 * (1em + 0.5px) + 64px), 100%);
   font-size: calc(18px * var(--body-font-scale, 100) / 100);
-  padding-left: 40px;
-  padding-right: 40px;
+  padding-left: 32px;
+  padding-right: 32px;
 }
 
 html[data-layout="wide"][data-wide-chars="40"] .editor-input {
-  max-width: min(calc(40 * (1em + 0.5px) + 80px), 100%);
+  max-width: min(calc(40 * (1em + 0.5px) + 64px), 100%);
 }
 
 html[data-wide-columns="one-side"] {}
@@ -1815,19 +1815,28 @@ html[data-layout="medium"] .writing-cards-overlay {
   display: none !important;
 }
 
+/* WO-115：底列顯示時（56px 按鈕 + 1px 邊線 + 底部安全區），抽屜下緣停在底列上緣，
+ * 不再蓋住「統計」「設定」；高度交給 top／bottom 決定，不用 100%。
+ * 鍵盤開啟或專注模式時底列不顯示，抽屜恢復貼齊視窗底部。 */
 html[data-layout="medium"] .writing-cards-drawer {
   top: 0;
-  bottom: 0;
+  bottom: calc(57px + var(--safe-bottom));
   right: 0;
   left: auto;
   width: var(--medium-cards-width);
   max-width: var(--medium-cards-width);
-  height: 100%;
-  max-height: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
   border-top: 0;
   border-left: 1px solid var(--border);
   border-radius: 0;
   box-shadow: -4px 0 24px rgba(0, 0, 0, 0.3);
+}
+
+html.keyboard-open[data-layout="medium"] .writing-cards-drawer,
+html[data-focus-mode="true"][data-layout="medium"] .writing-cards-drawer {
+  bottom: 0;
 }
 
 /* 5. ④ 寬版（wide）：
@@ -1909,10 +1918,10 @@ html[data-layout="wide"] .write-layout.has-chapter .tree-pane,
 html[data-layout="wide"] .write-layout:not(.has-chapter) .tree-pane {
   display: flex !important;
   flex-direction: column;
-  flex: 0 0 320px !important;
-  width: 320px !important;
-  min-width: 320px !important;
-  max-width: 320px !important;
+  flex: 0 0 280px !important;
+  width: 280px !important;
+  min-width: 280px !important;
+  max-width: 280px !important;
   flex-shrink: 0 !important;
   border-right: 1px solid var(--border);
   background: var(--writing-surround);
@@ -1975,14 +1984,14 @@ html[data-layout="wide"] .wide-hint-open-tree {
   margin-top: 12px;
 }
 
-/* 右側欄（320） */
+/* 右側欄（280，WO-115 由 320 收到 280，讓 1440 可三欄且正文約 40 字） */
 html[data-layout="wide"] .write-aside {
   display: flex;
   flex-direction: column;
-  flex: 0 0 320px;
-  width: 320px;
-  min-width: 320px;
-  max-width: 320px;
+  flex: 0 0 280px;
+  width: 280px;
+  min-width: 280px;
+  max-width: 280px;
   flex-shrink: 0;
   border-left: 1px solid var(--border);
   background: var(--writing-surround);
