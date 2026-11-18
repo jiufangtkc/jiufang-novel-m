@@ -210,7 +210,8 @@ describe('WO-91 用字與朗讀', () => {
       expect(html).toContain('上次編輯：12 分鐘前');
       expect(html).toContain('存檔');
       expect(html).toContain('開啟與關閉');
-      expect(html).toContain('匯入與匯出');
+      expect(html).toContain('<h2 class="files-group-title">匯出</h2>');
+      expect(html).not.toContain('匯入與匯出');
     }
     for (const mode of ['medium', 'wide'] as const) {
       const html = renderAt(createElement(FilesScreen), '/p/:projectId/files', '/p/fog/files', mode);

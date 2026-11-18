@@ -20,7 +20,7 @@ describe('檔案頁版面', () => {
     expect(layout.showStashDraft).toBe(true);
   });
 
-  it('WO-60：檔案頁分三組，標題依序為「存檔」「開啟與關閉」「匯入與匯出」，絕不出現「開稿」', () => {
+  it('WO-60：檔案頁分三組，標題依序為「存檔」「開啟與關閉」「匯出」，絕不出現「開稿」', () => {
     for (const supportsDirect of [false, true]) {
       const layout = filesPageLayout(supportsDirect);
       expect(layout.showImportExport).toBe(true);
@@ -28,7 +28,7 @@ describe('檔案頁版面', () => {
       expect(layout.groups.map((g) => g.title)).toEqual([
         '存檔',
         '開啟與關閉',
-        '匯入與匯出',
+        '匯出',
       ]);
       expect(layout.groups.map((g) => g.title)).not.toContain('開稿');
     }

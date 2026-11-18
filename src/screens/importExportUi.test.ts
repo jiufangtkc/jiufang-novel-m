@@ -265,7 +265,7 @@ describe('WO-60／WO-120 畫面驗收測試', () => {
     }
   });
 
-  it('WO-60：檔案頁三組標題依序為「存檔」「開啟與關閉」「匯入與匯出」，且不出現「開稿」', () => {
+  it('WO-60：檔案頁三組標題依序為「存檔」「開啟與關閉」「匯出」，且不出現「開稿」', () => {
     const html = renderWithLayout(
       createElement(FilesScreen),
       '/p/:projectId/files',
@@ -273,10 +273,12 @@ describe('WO-60／WO-120 畫面驗收測試', () => {
       'phone-portrait',
     );
 
-    // 1. 依序出現三組標題（WO-120：匯入搬走後組名未另定案，維持原樣）
+    // 1. 依序出現三組標題（WO-120 補丁：第三組標題改為「匯出」，九方 t408s2930）
     const saveIndex = html.indexOf('存檔');
     const openCloseIndex = html.indexOf('開啟與關閉');
-    const importExportIndex = html.indexOf('匯入與匯出');
+    const importExportIndex = html.indexOf('<h2 class="files-group-title">匯出</h2>');
+    expect(html).toContain('aria-label="匯出"');
+    expect(html).not.toContain('匯入與匯出');
 
     expect(saveIndex).toBeGreaterThan(-1);
     expect(openCloseIndex).toBeGreaterThan(saveIndex);
