@@ -315,14 +315,16 @@ describe('WO-100 核心驗收：清掉瀏覽器本機資料後只靠 .db 重開�
 
     // 畫面：統計頁全書 1、匯出 0；寫作過程紀錄卡原寫作日 1（手機與寬版）
     const stats = render(clean, 'stats', 'file-new-device');
-    expect(stats).toMatch(/data-testid="stats-import-count">1</);
+    // WO-120：統計頁改為一行匯入日期說明（原寫作日 TODAY），不再顯示次數
+    expect(stats).toContain(`這份稿子是 ${TODAY.replace(/^(\d+)-0?(\d+)-0?(\d+)$/, '$1 年 $2 月 $3 日')}從文字檔匯入的。`);
+    expect(stats).not.toContain('stats-import-count');
     expect(stats).not.toContain('stats-export-count');
     expect(stats).not.toContain('準備中');
     const logs = render(clean, 'logs', 'file-new-device');
-    expect(dayCard(logs, TODAY)).toContain('匯入　1 次');
+    expect(dayCard(logs, TODAY)).toContain('這天從文字檔匯入');
     expect(dayCard(logs, TODAY)).not.toContain('匯出');
     const wide = render(clean, 'stats', 'file-new-device', 'wide');
-    expect(dayCard(wide, TODAY)).toContain('匯入　1 次');
+    expect(dayCard(wide, TODAY)).toContain('這天從文字檔匯入');
 
     // 同一個乾淨環境開一份從沒匯入過的假 .db：0
     clean = (await openDb(clean, await fakeDb('一般假稿', [fakeLog('2026-11-02')]), 'file-plain')).state;
@@ -352,8 +354,8 @@ describe('WO-100 日期與隔離', () => {
     expect(state.logs.map((log) => log.date)).toEqual(['2026-11-10']);
     expect(displayLogRows(state, 'file-a').map((row) => row.date)).toEqual(['2026-11-12', '2026-11-10']);
     const html = render(state, 'logs', 'file-a');
-    expect(dayCard(html, '2026-11-12')).toContain('匯入　1 次');
-    expect(dayCard(html, '2026-11-10')).toContain('匯入　1 次');
+    expect(dayCard(html, '2026-11-12')).toContain('這天從文字檔匯入');
+    expect(dayCard(html, '2026-11-10')).toContain('這天從文字檔匯入');
     expect(dayCard(html, '2026-11-13')).toBe('');
 
     // 改每日結束時刻後重存、清本機、重開：事件 dayKey／atMs 原樣，舊紀錄列逐欄不變，沒多寫一列

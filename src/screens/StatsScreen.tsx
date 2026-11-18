@@ -1,17 +1,10 @@
 import { Link, useParams } from 'react-router-dom';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { CalendarIcon, ClockIcon, FlameIcon, PenIcon } from '../components/Icons';
-import {
-  STATS_HEADING,
-  STATS_IMPORT_COUNT_LABEL,
-  STATS_IMPORT_EXPORT_HEADING,
-  STATS_IMPORT_EXPORT_SCOPE_HINT,
-  VISUAL_WRITING_RECORD,
-} from '../copy/userFacing';
-import { getTotalImportExportStats } from '../domain/importExportStats';
+import { STATS_HEADING, statsImportedOnLine, VISUAL_WRITING_RECORD } from '../copy/userFacing';
 import { formatInteger } from '../domain/formatNumber';
 import { useLayout } from '../layout';
-import { countImportEvents, countImportEventsOn } from '../state/importEvents';
+import { countImportEventsOn, firstImportDayKey } from '../state/importEvents';
 import { displayLogRows, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
 import { LogCardItem } from './LogsScreen';
 import './importExport.css';
@@ -24,14 +17,11 @@ export function StatsScreen() {
   if (!project) return <ManuscriptNotFound />;
   const total = bookWords(project.id);
   const bookRatio = project.bookGoal > 0 ? Math.min(100, (total / project.bookGoal) * 100) : 0;
-  // WO-99：匯入次數是這份稿子（目前開著的這份）的全書合計，不是整台裝置合計。
-  // WO-100：全書與每日都取同一份事件集合（檔內事件 ∪ 本機可靠對應）。
+  // WO-100：全書與每日都取同一份事件集合（檔內事件 ∪ 本機可靠對應，以事件代號去重）。
+  // WO-120：只顯示第一筆匯入事件（依 atMs 判定）所儲存的寫作日；不顯示次數。匯出事件只在檔內，不在此顯示（WO-113）。
   const importEvents = projectImportEventsOf(state, project.id);
-  // WO-113：畫面只顯示匯入次數；匯出事件仍照舊記在檔內，不在此顯示。
-  const totalImportExport =
-    state.activeProjectId === project.id && stats.importExport
-      ? stats.importExport
-      : getTotalImportExportStats(countImportEvents(importEvents));
+  const firstDay = firstImportDayKey(importEvents);
+  const importedOnLine = firstDay ? statsImportedOnLine(firstDay) : null;
   const sortedLogs = displayLogRows(state, project.id);
 
   return (
@@ -129,36 +119,14 @@ export function StatsScreen() {
             </p>
           </article>
 
-          {/* WO-60 匯入與匯出（全書合計）。WO-99：匯入開放；WO-103：匯出也開放，不再有準備中。 */}
-          <article className="panel stat-import-export-panel" data-testid="stats-import-export">
-            <div className="panel-head">
-              <h2>{STATS_IMPORT_EXPORT_HEADING}</h2>
-            </div>
-            <div className="stat-import-export-row" data-testid="stats-import-row">
-              <span className="stat-import-export-label">
-                <span className="stat-import-export-icon" aria-hidden="true">
-                  <svg
-                    width="18"
-                    height="18"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                    <path d="M3 3v5h5" />
-                  </svg>
-                </span>
-                <span>{STATS_IMPORT_COUNT_LABEL}</span>
-              </span>
-              <span className="stat-import-export-value is-open" data-testid="stats-import-count">
-                {totalImportExport.importDisplay}
-              </span>
-            </div>
-            <p className="hint stat-import-export-hint">{STATS_IMPORT_EXPORT_SCOPE_HINT}</p>
-          </article>
+          {/* WO-120：匯入說明一行；沒匯入過（或日期無法判定）整組不渲染。 */}
+          {importedOnLine ? (
+            <article className="panel stat-import-export-panel" data-testid="stats-import-export">
+              <p className="stat-import-note" data-testid="stats-import-note">
+                {importedOnLine}
+              </p>
+            </article>
+          ) : null}
 
           <Link className="text-link stats-log-link" to={`/p/${project.id}/logs`}>
             查看寫作過程紀錄
@@ -174,7 +142,7 @@ export function StatsScreen() {
                 <LogCardItem
                   key={row.id}
                   row={row}
-                  importCount={countImportEventsOn(importEvents, row.date)}
+                  imported={countImportEventsOn(importEvents, row.date) > 0}
                 />
               ))}
             </ul>

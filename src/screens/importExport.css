@@ -187,7 +187,14 @@
   gap: 8px;
 }
 
-/* 檔案頁匯入文字檔：處理中與錯誤 */
+/* WO-120：統計頁匯入說明（一行完整句） */
+.stat-import-note {
+  margin: 0;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+/* 檔案頁匯入文字檔：處理中與錯誤（WO-120 起入口搬到首頁，樣式暫留不動） */
 .setting-row[aria-busy='true'] {
   cursor: progress;
   opacity: 0.75;

@@ -11,7 +11,7 @@ export interface FilesGroupDefinition {
   readonly title: string;
 }
 
-/** WO-60 檔案頁三組固定分組順序：存檔、開啟與關閉、匯入與匯出 */
+/** WO-60 檔案頁三組固定分組順序：存檔、開啟與關閉、匯出 */
 export const FILES_PAGE_GROUPS: readonly FilesGroupDefinition[] = [
   { key: 'save', title: FILES_GROUP_SAVE },
   { key: 'openClose', title: FILES_GROUP_OPEN_CLOSE },
