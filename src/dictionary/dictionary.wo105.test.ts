@@ -142,11 +142,11 @@ describe('WO-105：版面與樣式規則', () => {
     expect(css).toMatch(/phone-portrait"\] \.topbar\.has-dict-button \.half-width-badge-wrap/);
     expect(css).toMatch(/phone-portrait"\] \.topbar \.dict-button\s*\{[^}]*margin-right:\s*auto[^}]*max-width:\s*127px/s);
   });
-  it('寬版先藏已暫存時間，再藏今天字數', () => {
-    const save = css.indexOf('.topbar-save { display: none; }');
-    const words = css.indexOf('.topbar-words { display: none; }');
-    expect(save).toBeGreaterThan(-1);
-    expect(words).toBeGreaterThan(save);
+  it('WO-117：頁首不再有今天字數與已暫存，擠位規則不再藏任何一項，查字典按鈕不受影響', () => {
+    expect(css).not.toContain('.topbar-save { display: none; }');
+    expect(css).not.toContain('.topbar-words { display: none; }');
+    expect(css).not.toContain('@container editor-topbar');
+    expect(css).toMatch(/wide"\] \.topbar\.has-dict-button \.topbar-stats\s*\{[^}]*min-width:\s*0/s);
   });
   it('專注模式與橫拿打字的浮動位置，和離開鈕同高、左邊距等於離開鈕右邊距', () => {
     expect(css).toMatch(/data-focus-mode="true"\] \.dict-button\.is-floating\s*\{[^}]*top:\s*calc\(16px[^}]*left:\s*24px/s);

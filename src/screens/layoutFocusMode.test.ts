@@ -168,7 +168,7 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
   });
 
   // 驗收條件 2：四種版面進入後：含「離開專注模式」；頁首／分頁／側欄收起；手機直拿與橫拿不顯示底部字數行
-  it('WO-62：① 手機直拿進入專注模式後：含「離開專注模式」；頁首／分頁／側欄收起；不顯示底部字數行', () => {
+  it('WO-62：① 手機直拿進入專注模式後：含「離開專注模式」；頁首／分頁／側欄收起；WO-117 起以底部字數行補上今天字數與暫存', () => {
     const writeHtml = renderWriteScreenWithLayout('phone-portrait', null, { focusMode: true });
     expect(writeHtml).toContain('data-testid="exit-focus-mode"');
     expect(writeHtml).toContain(FOCUS_MODE_EXIT_BUTTON);
@@ -181,11 +181,13 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     expect(workspaceHtml).not.toContain('data-testid="bottom-nav"');
     expect(workspaceHtml).not.toContain('data-testid="nav-rail"');
 
+    // WO-117：手機直拿專注也產生底列，補上今天字數與暫存各一份
     const editorHtml = renderEditorWithLayout('phone-portrait', null, { focusMode: true });
-    expect(editorHtml).not.toContain('data-testid="focus-bottom-status"');
+    expect(editorHtml).toContain('data-testid="focus-bottom-status"');
+    expect(editorHtml.split('data-testid="focus-bottom-status"').length - 1).toBe(1);
   });
 
-  it('WO-62：② 手機橫拿進入專注模式後：含「離開專注模式」；頁首／分頁／側欄收起；不顯示底部字數行', () => {
+  it('WO-62：② 手機橫拿進入專注模式後：含「離開專注模式」；頁首／分頁／側欄收起；WO-117 起以底部字數行補上今天字數與暫存', () => {
     const writeHtml = renderWriteScreenWithLayout('phone-landscape', null, { focusMode: true });
     expect(writeHtml).toContain('data-testid="exit-focus-mode"');
     expect(writeHtml).toContain(FOCUS_MODE_EXIT_BUTTON);
@@ -198,8 +200,10 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     expect(workspaceHtml).not.toContain('data-testid="bottom-nav"');
     expect(workspaceHtml).not.toContain('data-testid="nav-rail"');
 
+    // WO-117：手機橫拿專注也產生底列
     const editorHtml = renderEditorWithLayout('phone-landscape', null, { focusMode: true });
-    expect(editorHtml).not.toContain('data-testid="focus-bottom-status"');
+    expect(editorHtml).toContain('data-testid="focus-bottom-status"');
+    expect(editorHtml.split('data-testid="focus-bottom-status"').length - 1).toBe(1);
   });
 
   it('WO-62：③ 中等版面進入專注模式後：含「離開專注模式」；頁首／分頁／側欄收起；顯示底部淡淡字數行', () => {
@@ -338,9 +342,10 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     // 3. 中等頂列有字按鈕
     expect(css).toMatch(/html\[data-layout="medium"\]\s+\.focus-enter-button[\s\S]*?display:\s*inline-flex/);
 
-    // 4. 手機直拿與手機橫拿專注時不顯示底部字數行
-    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-portrait"\]\s+\.focus-bottom-status[\s\S]*?display:\s*none\s*!important/);
-    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-landscape"\]\s+\.focus-bottom-status[\s\S]*?display:\s*none\s*!important/);
+    // 4. WO-117：手機直拿與手機橫拿專注時顯示底部字數行，不再 display: none !important
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-portrait"\]\s+\.focus-bottom-status[\s\S]*?display:\s*flex/);
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-landscape"\]\s+\.focus-bottom-status[\s\S]*?display:\s*flex/);
+    expect(css).not.toMatch(/\.focus-bottom-status[^{]*\{[^}]*display:\s*none\s*!important/);
 
     // 5. 手機直拿專注模式離開鈕高 44 且不透明度約 60%
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-portrait"\]\s+\.focus-exit-button[\s\S]*?height:\s*44px/);
@@ -356,13 +361,13 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="medium"\]\s+\.focus-exit-button[\s\S]*?height:\s*44px/);
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="medium"\]\s+\.focus-exit-button[\s\S]*?opacity:\s*0\.6/);
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="medium"\]\s+\.focus-exit-button:hover[\s\S]*?opacity:\s*1/);
-    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="medium"\]\s+\.focus-bottom-status[\s\S]*?bottom:\s*14px/);
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="medium"\]\s+\.focus-bottom-status[\s\S]*?--focus-status-gap:\s*14px/);
 
     // 8. 寬版專注模式離開鈕與底列字數（右上淡淡離開鈕、滑鼠移過或碰一下變清楚、底列淡淡字數）
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="wide"\]\s+\.focus-exit-button[\s\S]*?height:\s*44px/);
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="wide"\]\s+\.focus-exit-button[\s\S]*?opacity:\s*0\.6/);
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="wide"\]\s+\.focus-exit-button:hover[\s\S]*?opacity:\s*1/);
-    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="wide"\]\s+\.focus-bottom-status[\s\S]*?bottom:\s*14px/);
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="wide"\]\s+\.focus-bottom-status[\s\S]*?--focus-status-gap:\s*14px/);
   });
 
   it('WO-62：進出專注模式絕不呼叫 blur()／focus() 且未綁定 Esc 等鍵盤快捷鍵', () => {
@@ -409,9 +414,9 @@ describe('WO-62：四種版面專注模式入口與離開方式驗收', () => {
     expect(css).toMatch(/html\[data-layout="wide"\]\s+\.focus-enter-button[\s\S]*?display:\s*inline-flex;/);
     expect(css).not.toMatch(/html\[data-layout="wide"\][^{]*?\.(thumb-bar|thumb-focus-button|landscape-focus-trigger)[^{]*?display:\s*(inline-flex|flex|grid|block)/);
 
-    // 6. 專注模式中，手機兩種版面強制隱藏底部字數列（display: none !important）
-    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-portrait"\]\s+\.focus-bottom-status[\s\S]*?display:\s*none\s*!important/);
-    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-landscape"\]\s+\.focus-bottom-status[\s\S]*?display:\s*none\s*!important/);
+    // 6. WO-117：專注模式中，手機兩種版面改為顯示底部字數列，並避開安全區
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-portrait"\]\s+\.focus-bottom-status[\s\S]*?display:\s*flex/);
+    expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="phone-landscape"\]\s+\.focus-bottom-status[\s\S]*?safe-area-inset-bottom/);
 
     // 7. 中等與寬版在專注模式下正常顯示底部字數列
     expect(css).toMatch(/html\[data-focus-mode="true"\]\[data-layout="medium"\]\s+\.focus-bottom-status[\s\S]*?display:\s*flex/);

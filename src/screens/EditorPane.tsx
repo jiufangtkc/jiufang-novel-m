@@ -31,7 +31,6 @@ import {
   BACK_TO_CHAPTER_TREE_ARIA,
   OPEN_CHAPTER_TREE_ARIA,
   todayWordsLabel,
-  topbarTodayWords,
   TREE_DRAWER_BUTTON,
   TREE_NEXT_CHAPTER,
   TREE_PREV_CHAPTER,
@@ -120,7 +119,6 @@ export function EditorPane({
   });
   const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const todayWords = state.schedule.open?.wordCount ?? 0;
-  const topbarWords = topbarTodayWords(todayWords, goal, isGlowing);
   const meta = state.saveMeta[projectId] ?? {
     lastAutoSaveMs: null,
     lastManualSaveMs: null,
@@ -717,22 +715,10 @@ export function EditorPane({
           <HalfWidthBadge controller={halfWidth} expandable={layoutMode === 'medium'} />
         )}
         <div className="topbar-stats" data-testid="topbar-stats">
-          {topbarWords.aria === null ? (
-            <span className="topbar-words" data-testid="topbar-words">
-              {topbarWords.display}
-            </span>
-          ) : (
-            <span className="topbar-words" data-testid="topbar-words">
-              <span aria-hidden="true">{topbarWords.display}</span>
-              <span className="sr-only">{topbarWords.aria}</span>
-            </span>
-          )}
+          {/* WO-117：今天字數與暫存狀態只由底下進度條區（一般）或 .focus-bottom-status（專注／橫拿打字）提供，頁首不再產生。 */}
           {showHalfWidthBadge && layoutMode === 'wide' && (
             <HalfWidthBadge controller={halfWidth} expandable />
           )}
-          <span className="topbar-save" data-testid="topbar-save">
-            {saveStatus.label}
-          </span>
         </div>
         {dictVisible && dictWhere === 'topbar' ? (
           <DictButton
@@ -976,13 +962,12 @@ export function EditorPane({
           </button>
         </div>
       </footer>
-      {(!focusMode || (layoutMode !== 'phone-portrait' && layoutMode !== 'phone-landscape')) && (
-        <div className="focus-bottom-status" data-testid="focus-bottom-status">
-          <span>{todayWordsLabel(todayWords, goal)}</span>
-          <span className="focus-status-sep">·</span>
-          <span>{saveStatus.label}</span>
-        </div>
-      )}
+      {/* WO-117：恆產生；一般模式 display:none（移出無障礙樹），專注與橫拿打字才顯示，由 CSS 決定 */}
+      <div className="focus-bottom-status" data-testid="focus-bottom-status">
+        <span>{todayWordsLabel(todayWords, goal)}</span>
+        <span className="focus-status-sep">·</span>
+        <span>{saveStatus.label}</span>
+      </div>
       {isCardsOpen && !focusMode && layoutMode !== 'wide' && (
         <WritingCardsDrawer
           key={projectId}
