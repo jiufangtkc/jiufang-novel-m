@@ -56,6 +56,7 @@ import {
   IMPORT_DEFAULT_CHAPTER_TITLE,
   IMPORT_PREFACE_TITLE,
   EDITOR_PASTE_BLOCKED_TOAST,
+  OPEN_DB_FAIL,
   SAVE_FATAL_FAIL,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
@@ -180,8 +181,13 @@ import { isValidBookGoal, NEW_BOOK_GOAL_DEFAULT, readNewBookGoal } from './newBo
 export const TOAST_DEFAULT_MS = 2400;
 export const TOAST_PASTE_BLOCKED_MS = 5000;
 
+/** WO-121：開檔失敗句深色背景容易漏看，也停留約 5 秒。 */
+export const TOAST_OPEN_FAIL_MS = 5000;
+
 export function toastDurationMs(message: string): number {
-  return message === EDITOR_PASTE_BLOCKED_TOAST ? TOAST_PASTE_BLOCKED_MS : TOAST_DEFAULT_MS;
+  if (message === EDITOR_PASTE_BLOCKED_TOAST) return TOAST_PASTE_BLOCKED_MS;
+  if (message === OPEN_DB_FAIL) return TOAST_OPEN_FAIL_MS;
+  return TOAST_DEFAULT_MS;
 }
 
 export interface SampleState {
