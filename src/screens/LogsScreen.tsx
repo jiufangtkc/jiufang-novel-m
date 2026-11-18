@@ -1,9 +1,8 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { BackIcon } from '../components/Icons';
-import { VISUAL_WRITING_RECORD } from '../copy/userFacing';
+import { LOG_IMPORTED_DAY_NOTE, VISUAL_WRITING_RECORD } from '../copy/userFacing';
 import { formatCalendarDate } from '../domain/formatCalendarDate';
-import { getDayImportExportStats } from '../domain/importExportStats';
 import { formatDuration, type WritingLogRow } from '../domain/writingLog';
 import { countImportEventsOn } from '../state/importEvents';
 import { displayLogRows, projectImportEventsOf, useProject, useSample } from '../state/sampleStore';
@@ -11,24 +10,19 @@ import './importExport.css';
 
 export function LogCardItem({
   row,
-  importCount = 0,
+  imported = false,
 }: {
   row: WritingLogRow;
-  /** WO-99：這份稿子這一個寫作日的 TXT 匯入次數。 */
-  importCount?: number;
+  /** WO-120：這份稿子這一個寫作日有匯入事件（同日多筆也只算有）。 */
+  imported?: boolean;
 }) {
-  const dayStats = getDayImportExportStats(importCount);
-
   return (
     <li className="log-card" data-testid={`log-card-${row.date}`}>
       <strong>{formatCalendarDate(row.date)}</strong>
       <span>字數 {row.word_count}</span>
       <span>寫作時間 {formatDuration(row.duration)}</span>
-      {/* WO-113：只顯示匯入次數；匯出事件仍記在檔內。 */}
-      <span className="log-metric" data-testid="log-import-row">
-        <span>{dayStats.importLabel}</span>
-      </span>
-      <span>大量刪除 {row.delete_large_count} 次</span>
+      {/* WO-120：只在匯入日顯示一行；不顯示次數。匯出事件仍記在檔內；大量刪除資料保留但不顯示。 */}
+      {imported ? <span data-testid="log-import-row">{LOG_IMPORTED_DAY_NOTE}</span> : null}
     </li>
   );
 }
@@ -58,7 +52,7 @@ export function LogsScreen() {
             <LogCardItem
               key={row.id}
               row={row}
-              importCount={countImportEventsOn(importEvents, row.date)}
+              imported={countImportEventsOn(importEvents, row.date) > 0}
             />
           ))}
         </ul>

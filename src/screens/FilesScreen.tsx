@@ -8,11 +8,6 @@ import {
   FILES_GROUP_IMPORT_EXPORT,
   FILES_GROUP_OPEN_CLOSE,
   FILES_GROUP_SAVE,
-  IMPORT_TEXT_FILE_BUTTON,
-  IMPORT_TEXT_FILE_HINT,
-  IMPORT_TEXT_STORAGE_FAIL,
-  IMPORT_TEXT_UNREADABLE,
-  IMPORT_TEXT_WORKING,
   lastEditDisplay,
   OPEN_DB_FAIL,
   OPEN_DB_HINT,
@@ -41,9 +36,6 @@ export function FilesScreen() {
   const { state, actions } = useSample();
   const navigate = useNavigate();
   const openInputRef = useRef<HTMLInputElement>(null);
-  const textInputRef = useRef<HTMLInputElement>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const exportButtonRef = useRef<HTMLButtonElement>(null);
   const computer = useComputerLayout();
@@ -81,30 +73,6 @@ export function FilesScreen() {
   const closeExport = () => {
     setExportOpen(false);
     exportButtonRef.current?.focus();
-  };
-
-  // WO-99：匯入文字檔。處理中再按不會重複匯入；取消選檔（沒有選到檔）什麼都不做、不顯示錯誤。
-  const pickTextFile = () => {
-    if (importing) return;
-    textInputRef.current?.click();
-  };
-
-  const importTextFile = async (file: File) => {
-    setImportError(null);
-    setImporting(true);
-    try {
-      const result = await actions.importTextFile(file);
-      if (result.kind === 'imported') {
-        navigate(writePath(result.id, result.chapterId));
-        return;
-      }
-      if (result.kind === 'unreadable') setImportError(IMPORT_TEXT_UNREADABLE);
-      if (result.kind === 'storage-failed') setImportError(IMPORT_TEXT_STORAGE_FAIL);
-    } catch {
-      setImportError(IMPORT_TEXT_UNREADABLE);
-    } finally {
-      setImporting(false);
-    }
   };
 
   return (
@@ -262,60 +230,13 @@ export function FilesScreen() {
           </button>
         </section>
 
-        {/* 第 3 組：匯入與匯出 */}
+        {/* 第 3 組：匯出 */}
         <section className="files-group" aria-label={FILES_GROUP_IMPORT_EXPORT} data-testid="files-group-import-export">
           <div className="files-group-head">
             <h2 className="files-group-title">{FILES_GROUP_IMPORT_EXPORT}</h2>
           </div>
 
-          {/* WO-99：匯入文字檔已開放。WO-103：匯出全文也開放，這一組不再有準備中。 */}
-          <button
-            type="button"
-            className="setting-row"
-            data-testid="import-text-file"
-            aria-busy={importing ? 'true' : undefined}
-            aria-describedby={importError ? 'import-text-error' : undefined}
-            onClick={pickTextFile}
-          >
-            <span className="setting-icon" aria-hidden="true">
-              <svg
-                width="22"
-                height="22"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.8"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                <path d="M3 3v5h5" />
-              </svg>
-            </span>
-            <span>
-              <strong>{IMPORT_TEXT_FILE_BUTTON}</strong>
-              <small aria-live="polite">{importing ? IMPORT_TEXT_WORKING : IMPORT_TEXT_FILE_HINT}</small>
-            </span>
-          </button>
-          <input
-            ref={textInputRef}
-            type="file"
-            accept=".txt,text/plain"
-            hidden
-            data-testid="import-text-input"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              event.target.value = '';
-              if (!file || importing) return;
-              void importTextFile(file);
-            }}
-          />
-          {importError ? (
-            <p className="files-import-error" id="import-text-error" role="alert" data-testid="import-text-error">
-              {importError}
-            </p>
-          ) : null}
-
+          {/* WO-120：「匯入文字檔」已搬到首頁；這一組目前只剩匯出（組名未另定案，維持原樣）。 */}
           <button
             ref={exportButtonRef}
             type="button"

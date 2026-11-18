@@ -59,7 +59,8 @@ function renderAt(element: ReactElement, path: string, url: string, mode: Layout
 describe('WO-91 用字與朗讀', () => {
   it('兩處「視覺化的寫作記錄」，設定說明與紀錄頁項目一致', () => {
     expect(VISUAL_WRITING_RECORD).toBe('視覺化的寫作記錄');
-    expect(SETTINGS_WRITING_LOG_HINT).toBe('每日字數、寫作時間、匯入次數、大量刪除');
+    // WO-120（九方 2026-11-18 定案）：次數與大量刪除不再列出。
+    expect(SETTINGS_WRITING_LOG_HINT).toBe('每日字數、寫作時間、匯入紀錄');
 
     const logs = renderAt(createElement(LogsScreen), '/p/:projectId/logs', '/p/fog/logs', 'phone-portrait');
     expect(logs).toContain('視覺化的寫作記錄');
@@ -209,7 +210,8 @@ describe('WO-91 用字與朗讀', () => {
       expect(html).toContain('上次編輯：12 分鐘前');
       expect(html).toContain('存檔');
       expect(html).toContain('開啟與關閉');
-      expect(html).toContain('匯入與匯出');
+      expect(html).toContain('<h2 class="files-group-title">匯出</h2>');
+      expect(html).not.toContain('匯入與匯出');
     }
     for (const mode of ['medium', 'wide'] as const) {
       const html = renderAt(createElement(FilesScreen), '/p/:projectId/files', '/p/fog/files', mode);
