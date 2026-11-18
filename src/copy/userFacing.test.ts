@@ -229,7 +229,7 @@ describe('章節目錄文案', () => {
     // 1. 檔案頁三組標題
     expect(copy.FILES_GROUP_SAVE).toBe('存檔');
     expect(copy.FILES_GROUP_OPEN_CLOSE).toBe('開啟與關閉');
-    expect(copy.FILES_GROUP_IMPORT_EXPORT).toBe('匯入與匯出');
+    expect(copy.FILES_GROUP_IMPORT_EXPORT).toBe('匯出');
     expect(copy.FILES_GROUP_OPEN_CLOSE).not.toBe('開稿');
 
     // 2. 準備中標籤與提示

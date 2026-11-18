@@ -4,7 +4,7 @@
  * 只用假稿與記憶體產生的假文字檔；先略過歡迎導覽；不碰真書稿或 .db。
  * 檢查：
  *  1. 390、1024、1440 寬度的首頁三鈕：順序、文字完整（不被切掉）、不超出視窗左右、有換行時仍整顆在畫面內。
- *  2. 新開假稿後，檔案頁沒有「匯入文字檔」按鈕，並記錄「匯入與匯出」標題現況（只剩匯出）。
+ *  2. 新開假稿後，檔案頁沒有「匯入文字檔」按鈕，並記錄分組標題現況（標題已改為「匯出」）。
  *  3. 沒匯入過的假稿：統計頁沒有匯入說明與「匯入次數」，紀錄卡沒有「這天從文字檔匯入」「大量刪除」。
  *  4. 首頁按「匯入文字檔」選假 .txt：直接開成新稿子；新稿統計頁有一整句、紀錄卡有匯入日一行、沒有次數與大量刪除。
  *
@@ -126,7 +126,7 @@ async function main() {
     const filesText = await page.locator('[data-testid="files-screen"]').innerText();
     rec('檔案頁', '畫面沒有「匯入文字檔」字樣', !filesText.includes('匯入文字檔'), '不含', filesText.includes('匯入文字檔') ? '含' : '不含');
     const groupTitle = await tid(page, 'files-group-import-export').locator('h2').innerText();
-    note('檔案頁', '分組標題現況', `標題仍是「${groupTitle}」，組內只剩「匯出全文」一項；是否顯得突兀請九方看截圖，未改名。`);
+    note('檔案頁', '分組標題現況', `標題是「${groupTitle}」（九方 t408s2930 定案改為「匯出」），組內只剩「匯出全文」一項。`);
     await page.screenshot({ path: path.join(SHOT_DIR, '檔案頁-只剩匯出.png'), fullPage: true });
 
     await page.goto(`${BASE}/p/${projectId}/stats`, { waitUntil: 'domcontentloaded' });

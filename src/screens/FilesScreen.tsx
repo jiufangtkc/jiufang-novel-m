@@ -230,7 +230,7 @@ export function FilesScreen() {
           </button>
         </section>
 
-        {/* 第 3 組：匯入與匯出 */}
+        {/* 第 3 組：匯出 */}
         <section className="files-group" aria-label={FILES_GROUP_IMPORT_EXPORT} data-testid="files-group-import-export">
           <div className="files-group-head">
             <h2 className="files-group-title">{FILES_GROUP_IMPORT_EXPORT}</h2>

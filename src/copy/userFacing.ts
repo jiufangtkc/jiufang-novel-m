@@ -437,7 +437,7 @@ export const SETTINGS_WRITING_LOG_HINT = '每日字數、寫作時間、匯入�
  */
 export const FILES_GROUP_SAVE = '存檔';
 export const FILES_GROUP_OPEN_CLOSE = '開啟與關閉';
-export const FILES_GROUP_IMPORT_EXPORT = '匯入與匯出';
+export const FILES_GROUP_IMPORT_EXPORT = '匯出';
 export const PREPARING_BADGE = '準備中';
 export const FEATURE_IN_PREPARATION = '功能還在準備中。';
 
