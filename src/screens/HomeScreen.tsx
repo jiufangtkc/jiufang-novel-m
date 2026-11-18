@@ -7,12 +7,14 @@ import {
   NEW_BOOK_NOVEL,
   NEW_BOOK_SHAPE,
   NEW_BOOK_SINGLE,
+  removeFromDeviceAria,
 } from '../copy/userFacing';
 import { latestEditTimestamp } from '../domain/saveClock';
 import { useLayout } from '../layout';
 import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
 import { recentDisplayProjects } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
+import { RemoveFromDeviceDialog } from './RemoveFromDeviceDialog';
 import { useFirstRunWelcome } from './useFirstRunWelcome';
 import { useOpenManuscriptFile } from './useOpenManuscriptFile';
 import { isWelcomeStartNew } from './welcomeStart';
@@ -35,6 +37,31 @@ export function HomeScreen() {
   const [shape, setShape] = useState<'novel' | 'single'>('novel');
   // WO-84：同名稿子只列最近一次成功存下來的那份。
   const recent = recentDisplayProjects(state.projects, state.recentIds, state.saveMeta);
+
+  // WO-116：按 X 先問；removing 有值才顯示確認視窗。
+  const [removing, setRemoving] = useState<{ id: string; title: string } | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const closeRemoving = () => {
+    if (!removeBusy) setRemoving(null);
+  };
+  const confirmRemoving = async () => {
+    if (!removing || removeBusy) return;
+    setRemoveBusy(true);
+    try {
+      await actions.removeFromDevice(removing.id);
+    } finally {
+      setRemoveBusy(false);
+      setRemoving(null);
+    }
+  };
+  useEffect(() => {
+    if (!removing) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !removeBusy) setRemoving(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [removing, removeBusy]);
 
   // WO-111：從「設定 › 關於」再看一次、第 3 關選「開新稿子」後回到首頁：打開現有的開新稿子對話框（不直接建稿）。
   // 用過就清掉，重新載入或上一頁不會再打開。
@@ -75,8 +102,9 @@ export function HomeScreen() {
                 <button
                   type="button"
                   className="icon-button"
-                  aria-label={`從最近清單移除${project.title}`}
-                  onClick={() => actions.dismissRecent(project.id)}
+                  aria-label={removeFromDeviceAria(project.title)}
+                  // WO-116：只開確認視窗，不動任何資料；按「刪掉」才真的刪。
+                  onClick={() => setRemoving({ id: project.id, title: project.title })}
                 >
                   <CloseIcon />
                 </button>
@@ -116,6 +144,14 @@ export function HomeScreen() {
             if (exit === 'finish-new') setCreating(true);
             else if (exit === 'finish-open') openFile.open();
           }}
+        />
+      )}
+      {removing && (
+        <RemoveFromDeviceDialog
+          bookTitle={removing.title}
+          busy={removeBusy}
+          onConfirm={() => void confirmRemoving()}
+          onCancel={closeRemoving}
         />
       )}
       {creating && (
