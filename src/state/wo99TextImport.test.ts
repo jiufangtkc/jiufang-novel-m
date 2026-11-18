@@ -375,10 +375,10 @@ describe('WO-99 匯入次數（九方 15:39 補充）', () => {
       );
     const stats = render(createElement(StatsScreen), '/p/:projectId/stats', `/p/${id}/stats`);
     expect(stats).toMatch(/data-testid="stats-import-count">1</);
-    expect(stats).toMatch(/data-testid="stats-export-count">0</);
+    expect(stats).not.toContain('stats-export-count');
     const logs = render(createElement(LogsScreen), '/p/:projectId/logs', `/p/${id}/logs`);
     expect(logs).toContain('匯入\u30001 次');
-    expect(logs).toContain('匯出\u30000 次');
+    expect(logs).not.toContain('匯出\u30000 次');
     expect(logs).not.toContain('匯出\u3000— 次');
     const wide = render(createElement(StatsScreen), '/p/:projectId/stats', `/p/${id}/stats`, 'wide');
     expect(wide).toContain('匯入\u30001 次');

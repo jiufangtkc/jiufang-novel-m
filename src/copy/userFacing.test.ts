@@ -247,10 +247,17 @@ describe('章節目錄文案', () => {
     expect(copy.EXPORT_FULL_TEXT_HINT).not.toContain('Markdown');
 
     // 4. 統計頁區塊與說明小字
-    expect(copy.STATS_IMPORT_EXPORT_HEADING).toBe('匯入與匯出');
-    expect(copy.STATS_IMPORT_EXPORT_SCOPE_HINT).toBe('只算匯入文字檔、匯出全文的次數');
+    // WO-113：統計區塊只描述匯入次數。
+    expect(copy.STATS_IMPORT_EXPORT_HEADING).toBe('匯入次數');
+    expect(copy.STATS_IMPORT_EXPORT_SCOPE_HINT).toBe('只算匯入文字檔的次數');
     expect(copy.STATS_IMPORT_COUNT_LABEL).toBe('匯入 次數');
-    expect(copy.STATS_EXPORT_COUNT_LABEL).toBe('匯出 次數');
+    expect(copy.SETTINGS_WRITING_LOG_HINT).toBe('每日字數、寫作時間、匯入次數、大量刪除');
+    // WO-113：正文貼上與複製、剪下提示。
+    expect(copy.EDITOR_PASTE_BLOCKED_TOAST).toBe('匯入已經存在的稿子請用「匯入文字檔」，外部文字只能貼在資料卡片裡喔😊');
+    expect(copy.EDITOR_COPIED_TOAST).toBe('已複製');
+    expect(copy.EDITOR_CUT_TOAST).toBe('已剪下');
+    expect(copy.EDITOR_COPIED_TOAST).not.toContain('只能貼回這個編輯器');
+    expect(copy.EDITOR_CUT_TOAST).not.toContain('只能貼回這個編輯器');
 
     // 5. 紀錄卡匯入匯出標籤（全形空白與預設破折號）
     expect(copy.logImportCountLabel()).toBe('匯入\u3000— 次');
@@ -279,7 +286,6 @@ describe('章節目錄文案', () => {
       copy.STATS_IMPORT_EXPORT_HEADING,
       copy.STATS_IMPORT_EXPORT_SCOPE_HINT,
       copy.STATS_IMPORT_COUNT_LABEL,
-      copy.STATS_EXPORT_COUNT_LABEL,
       copy.logImportCountLabel(),
       copy.logExportCountLabel(),
     ];

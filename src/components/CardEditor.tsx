@@ -21,6 +21,7 @@ import {
   formatCardColorForSave,
 } from '../domain/cardColors';
 import { cardVisualStyles } from '../domain/cards';
+import { clearBookClip } from '../editor/bookClip';
 import type { LayoutMode } from '../layout/layoutMode';
 import { DictButton, DictOfflineNotice } from './DictButton';
 import { useDictNotice } from '../dictionary/useDictNotice';
@@ -278,10 +279,17 @@ export function CardEditor({
                   aria-hidden="true"
                 />
               )}
-              <h2 className="card-detail-heading">{displayCardTitle(title)}</h2>
+              <h2 className="card-detail-heading" onCopy={clearBookClip} onCut={clearBookClip}>
+                {displayCardTitle(title)}
+              </h2>
             </div>
 
-            <div className="card-editor-preview-content card-detail-content" data-testid="card-editor-preview-content">
+            <div
+              className="card-editor-preview-content card-detail-content"
+              data-testid="card-editor-preview-content"
+              onCopy={clearBookClip}
+              onCut={clearBookClip}
+            >
               <div data-testid="card-raw-content">
                 <CardMarkdownView content={content} />
               </div>
@@ -381,6 +389,8 @@ export function CardEditor({
                     className="card-editor-input"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
+                    onCopy={clearBookClip}
+                    onCut={clearBookClip}
                     placeholder={CARD_TITLE_PLACEHOLDER}
                     data-testid="card-editor-title-input"
                   />
@@ -415,6 +425,8 @@ export function CardEditor({
                     className="card-editor-input"
                     value={title}
                     onChange={(e) => setTitle(e.target.value)}
+                    onCopy={clearBookClip}
+                    onCut={clearBookClip}
                     placeholder={CARD_TITLE_PLACEHOLDER}
                     data-testid="card-editor-title-input"
                   />
@@ -450,6 +462,8 @@ export function CardEditor({
                 className="card-editor-textarea"
                 value={content}
                 onChange={(e) => setContent(e.target.value)}
+                onCopy={clearBookClip}
+                onCut={clearBookClip}
                 placeholder={CARD_CONTENT_PLACEHOLDER}
                 data-testid="card-editor-content-textarea"
               />

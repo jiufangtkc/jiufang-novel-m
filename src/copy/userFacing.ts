@@ -430,7 +430,7 @@ export function topbarTodayWords(
 export const VISUAL_WRITING_RECORD = '視覺化的寫作記錄';
 
 /** 設定頁「寫作過程紀錄」說明，與紀錄頁列出的項目一致。 */
-export const SETTINGS_WRITING_LOG_HINT = '每日字數、寫作時間、匯入匯出、大量刪除';
+export const SETTINGS_WRITING_LOG_HINT = '每日字數、寫作時間、匯入次數、大量刪除';
 
 /**
  * WO-60 統計與寫作紀錄預留匯入匯出次數、檔案頁三組分組標題（九方 2026-11-12 定案）。
@@ -494,10 +494,14 @@ export const EXPORT_COLLAPSE = '收合';
 /** 部分選取時給朗讀用的補充（畫面另有半勾符號，不只靠顏色）。 */
 export const EXPORT_PARTIAL_LABEL = '部分選取';
 
-export const STATS_IMPORT_EXPORT_HEADING = '匯入與匯出';
-export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔、匯出全文的次數';
+export const STATS_IMPORT_EXPORT_HEADING = '匯入次數';
+export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔的次數';
 export const STATS_IMPORT_COUNT_LABEL = '匯入 次數';
-export const STATS_EXPORT_COUNT_LABEL = '匯出 次數';
+
+/** WO-113：正文貼上與複製、剪下的短暫提示。 */
+export const EDITOR_PASTE_BLOCKED_TOAST = '匯入已經存在的稿子請用「匯入文字檔」，外部文字只能貼在資料卡片裡喔😊';
+export const EDITOR_COPIED_TOAST = '已複製';
+export const EDITOR_CUT_TOAST = '已剪下';
 
 /**
  * 寫作過程紀錄卡匯入次數標籤。中間使用全形空白（U+3000）。

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { clipForBook, rememberBookClip } from './bookClip';
-import { createClipMarker, decidePaste } from './clipboardPolicy';
+import { decidePaste } from './clipboardPolicy';
+import { EDITOR_COPIED_TOAST, EDITOR_CUT_TOAST, EDITOR_PASTE_BLOCKED_TOAST } from '../copy/userFacing';
 import { setLiveReader } from './liveDraft';
 import { revealCaret } from './caret';
 import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './enterGuard';
@@ -125,7 +126,7 @@ export function useWritingSurface({
       const decision = decidePaste(incoming, clipForBook(bookId), composing.current);
       if (decision.action === 'ignore-composing') return;
       if (decision.action === 'block') {
-        toast('外面的文字不能貼進來');
+        toast(EDITOR_PASTE_BLOCKED_TOAST);
         return;
       }
       const start = textarea.selectionStart ?? textarea.value.length;
@@ -208,10 +209,9 @@ export function useWritingSurface({
       const text = selectedText();
       if (!text) return;
       event.preventDefault();
-      const marker = createClipMarker();
-      rememberBookClip(bookId, { text, marker });
-      event.clipboardData?.setData('text/plain', marker);
-      toast('已複製，只能貼回這個編輯器');
+      rememberBookClip(bookId, { text });
+      event.clipboardData?.setData('text/plain', text);
+      toast(EDITOR_COPIED_TOAST);
     };
     const onCut = (event: ClipboardEvent) => {
       if (composing.current) {
@@ -223,13 +223,12 @@ export function useWritingSurface({
       const text = textarea.value.slice(start, end);
       if (!text) return;
       event.preventDefault();
-      const marker = createClipMarker();
-      rememberBookClip(bookId, { text, marker });
-      event.clipboardData?.setData('text/plain', marker);
+      rememberBookClip(bookId, { text });
+      event.clipboardData?.setData('text/plain', text);
       textarea.setRangeText('', start, end, 'end');
       process('type');
       gate.schedule(() => flush());
-      toast('已剪下，只能貼回這個編輯器');
+      toast(EDITOR_CUT_TOAST);
     };
     const onPaste = (event: ClipboardEvent) => {
       event.preventDefault();
