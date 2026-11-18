@@ -731,7 +731,8 @@ describe('WO-111 收尾', () => {
 
   it('首頁收尾：開新稿子＝打開現有對話框（不直接建稿）；開啟稿子＝沿用 picker／file input；回首頁只關掉', () => {
     const home = readFileSync('src/screens/HomeScreen.tsx', 'utf8');
-    expect(home).toMatch(/onExit=\{\(exit\) => \{\s*welcome\.dismiss\(\);\s*if \(exit === 'finish-new'\) setCreating\(true\);\s*else if \(exit === 'finish-open'\) openFile\.open\(\);\s*\}\}/);
+    // WO-121：開啟稿子在點擊裡直接 open，導覽留著顯示「正在開啟…」，結束（成功／失敗／取消）才關掉；其他出口照舊先關掉導覽。
+    expect(home).toMatch(/onExit=\{\(exit\) => \{\s*if \(exit === 'finish-open'\) \{\s*openFile\.open\(\(\) => welcome\.dismiss\(\)\);\s*return;\s*\}\s*welcome\.dismiss\(\);\s*if \(exit === 'finish-new'\) setCreating\(true\);\s*\}\}/);
     expect(home).toContain('onClick={() => openFile.open()}');
     expect(home).not.toMatch(/finish-new'\)[^\n]*addProject/);
     const hook = readFileSync('src/screens/useOpenManuscriptFile.tsx', 'utf8');
