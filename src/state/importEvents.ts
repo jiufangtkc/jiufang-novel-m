@@ -159,6 +159,18 @@ export function withAdoptedFile(record: ImportEventRecord, fingerprint: string, 
   return { ...record, byProject: { ...record.byProject, [projectId]: merged } };
 }
 
+/**
+ * WO-116：從這個裝置刪掉稿子時，拿掉這份稿子代號下的事件對應；事件若沒有其他稿子或檔案指紋再引用就一併丟掉。
+ * 檔案指紋（byFile）屬於使用者另存出去的檔，照舊保留，之後開回同一份檔仍可接回。沒有相關紀錄時原樣回傳。
+ */
+export function withoutProject(record: ImportEventRecord, projectId: string): ImportEventRecord {
+  if (!(projectId in record.byProject)) return record;
+  const byProject = Object.fromEntries(Object.entries(record.byProject).filter(([id]) => id !== projectId));
+  const used = new Set<string>([...Object.values(byProject).flat(), ...Object.values(record.byFile).flat()]);
+  const events = Object.fromEntries(Object.entries(record.events).filter(([id]) => used.has(id)));
+  return { events, byProject, byFile: record.byFile };
+}
+
 /** 這份稿子的全書匯入次數。 */
 export function importCountOf(record: ImportEventRecord, projectId: string | null | undefined): number {
   if (!projectId) return 0;

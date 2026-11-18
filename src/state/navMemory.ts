@@ -212,6 +212,19 @@ export function writeNavMemory(bookId: string, memory: NavMemory, store?: NavMem
   }
 }
 
+/**
+ * WO-116：這本書從這個裝置刪掉時，清掉它的位置記憶與卡片草稿（記憶體與本機儲存，只動這一本的鍵）。
+ * 沒有 removeItem 的儲存改寫成空字串（讀回時等同沒有記憶）。寫不進去會丟錯，由呼叫端處理。
+ */
+export function forgetNavMemory(bookId: string, store?: NavMemoryStore | null): void {
+  if (!bookId) return;
+  memoryCache.delete(bookId);
+  const target = resolveStore(store);
+  if (!target) return;
+  if (typeof target.removeItem === 'function') target.removeItem(navMemoryKey(bookId));
+  else target.setItem(navMemoryKey(bookId), '');
+}
+
 function updateNavMemory(
   bookId: string,
   update: (memory: NavMemory) => NavMemory,
