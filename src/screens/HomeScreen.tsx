@@ -3,6 +3,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { BookIcon, CloseIcon, FolderIcon, PlusIcon } from '../components/Icons';
 import {
   lastEditDisplay,
+  IMPORT_TEXT_FILE_BUTTON,
+  IMPORT_TEXT_WORKING,
   NEW_BOOK_DEFAULT_TITLE,
   NEW_BOOK_NOVEL,
   NEW_BOOK_SHAPE,
@@ -17,6 +19,7 @@ import { recentDisplayProjects } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
 import { RemoveFromDeviceDialog } from './RemoveFromDeviceDialog';
 import { useFirstRunWelcome } from './useFirstRunWelcome';
+import { useImportTextFile } from './useImportTextFile';
 import { useOpenManuscriptFile } from './useOpenManuscriptFile';
 import { isWelcomeStartNew } from './welcomeStart';
 import { useWelcomeSteps } from './WelcomeSteps';
@@ -32,6 +35,8 @@ export function HomeScreen() {
   const [creating, setCreating] = useState(false);
   // 「開啟稿子」：picker 或隱藏 file input（WO-111 抽成共用，歡迎導覽收尾也用）。
   const openFile = useOpenManuscriptFile();
+  // WO-120：「匯入文字檔」（原在檔案頁）；沿用既有 actions.importTextFile，成功直接開成新稿子。
+  const importText = useImportTextFile();
   // WO-111：歡迎導覽三關內容（第一次使用，沒有開著的稿子）。
   const steps = useWelcomeSteps({ entry: 'first', project: null });
   const [title, setTitle] = useState(NEW_BOOK_DEFAULT_TITLE);
@@ -128,9 +133,45 @@ export function HomeScreen() {
           <FolderIcon size={18} />
           {openButtonLabel(openFile.busy, '開啟稿子')}
         </button>
+        {/* WO-120：匯入文字檔從檔案頁搬來，固定排在開啟稿子後面；窄版放不下時整顆換行，不切字。 */}
+        <button
+          type="button"
+          className="button secondary"
+          data-testid="import-text-file"
+          aria-busy={importText.busy ? 'true' : undefined}
+          aria-describedby={importText.error ? 'import-text-error' : undefined}
+          onClick={importText.pick}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          {IMPORT_TEXT_FILE_BUTTON}
+        </button>
+        {importText.busy ? (
+          <p className="home-import-status" role="status" data-testid="import-text-working">
+            {IMPORT_TEXT_WORKING}
+          </p>
+        ) : null}
+        {importText.error ? (
+          <p className="home-import-error" id="import-text-error" role="alert" data-testid="import-text-error">
+            {importText.error}
+          </p>
+        ) : null}
       </footer>
       {/* 放在 inert 區塊外：導覽收尾「開始寫」選檔時，首頁後面還是 inert。 */}
       {openFile.input}
+      {importText.input}
       {welcome.show && (
         <WelcomeTour
           entry="first"

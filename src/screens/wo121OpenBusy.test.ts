@@ -93,9 +93,11 @@ describe('WO-121：入口共用同一段開檔流程', () => {
     expect(files).not.toContain('actions.importFile');
     expect(files).not.toContain('openInputRef');
     expect(files).not.toContain('OPEN_DB_FAIL');
-    // 文字檔匯入仍是獨立功能。
-    expect(files).toContain('actions.importTextFile');
-    expect(files).toContain('data-testid="import-text-input"');
+    // 文字檔匯入已搬到首頁（WO-120），檔案頁不再保留匯入入口。
+    expect(files).not.toContain('actions.importTextFile');
+    expect(files).not.toContain('data-testid="import-text-input"');
+    expect(src('src/screens/HomeScreen.tsx')).toContain('useImportTextFile()');
+    expect(src('src/screens/HomeScreen.tsx')).toContain('data-testid="import-text-file"');
   });
 
   it('檔案頁在條件 return（找不到稿子）之前呼叫 hook', () => {
