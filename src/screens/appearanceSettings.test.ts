@@ -170,7 +170,7 @@ describe('WO-96：設定頁正文字級', () => {
     expect(css).toMatch(/html\[data-layout="medium"\] \.editor-input \{[^}]*font-size:\s*calc\(20px \* var\(--body-font-scale, 100\) \/ 100\)/);
     expect(css).toMatch(/html\[data-layout="wide"\] \.editor-input \{[^}]*font-size:\s*calc\(18px \* var\(--body-font-scale, 100\) \/ 100\)/);
     expect(css).toMatch(/max-width:\s*min\(\s*calc\(19\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
-    // WO-W36：寬版限寬改為 N 字內容寬 + 左右內距 80px（舊斷言為純字寬）
-    expect(css).toMatch(/max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\s*\+\s*80px\)\s*,\s*100%\)/);
+    // WO-W36：寬版限寬改為 N 字內容寬 + 左右內距（舊斷言為純字寬）；WO-115 內距合計由 80px 收到 64px
+    expect(css).toMatch(/max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\s*\+\s*64px\)\s*,\s*100%\)/);
   });
 });

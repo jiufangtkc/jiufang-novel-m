@@ -120,7 +120,7 @@ describe('WO-89：中等開目錄或看卡片時保住正文行寬', () => {
     expect(css).toMatch(/html\[data-layout="medium"\] \.is-yielding \.editor-input/);
     expect(css).not.toMatch(/html\[data-layout="wide"\][^{]*is-yielding[^{]*\{/);
     expect(css).not.toMatch(/html\[data-layout="wide"\][^{]*yield-/);
-    expect(ruleBody('html[data-layout="wide"] .editor-input')).toMatch(/padding-left:\s*40px/);
+    expect(ruleBody('html[data-layout="wide"] .editor-input')).toMatch(/padding-left:\s*32px/); // WO-115 由 40px 收到 32px
     expect(ruleBody('html[data-layout="medium"] .editor-input')).toMatch(/padding-left:\s*40px/);
     // WO-72 上限保護仍在
     expect(ruleBody('html[data-layout="medium"] .editor-input')).toMatch(/min\(calc\(30 \* \(1em \+ 0\.5px\)\), 100%\)/);

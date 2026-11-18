@@ -127,7 +127,7 @@ describe('WO-55：各版面正文限寬規則驗證', () => {
     // 3. 中等 N = 30
     expect(css).toMatch(/html\[data-layout="medium"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(30\s*\*\s*\(1em\s*\+\s*0\.5px\)\)\s*,\s*100%\)/);
     // 4. 寬版 N = 36（WO-W36：看得見的 36 字，左右內距 80px 另計；舊版為純字寬，內距吃掉字位）
-    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\s*\+\s*80px\)\s*,\s*100%\)/);
+    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.editor-input[\s\S]*?max-width:\s*min\(\s*calc\(36\s*\*\s*\(1em\s*\+\s*0\.5px\)\s*\+\s*64px\)\s*,\s*100%\)/);
   });
 
   it('WO-55：純函式與限寬常數設定值正確', () => {
@@ -431,13 +431,13 @@ describe('WO-55：第 2 輪修正驗證（寬版 has-chapter 權重、固定 320
     // 寬版包含 .write-layout.has-chapter .tree-pane 規則，權重高於全域 (0,3,0)，足以克服覆蓋問題
     expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane/);
 
-    // 寬版目錄不論有沒有選章均為 display: flex !important，且 flex: 0 0 320px、width/max-width: 320px !important
+    // 寬版目錄不論有沒有選章均為 display: flex !important，且 flex: 0 0 280px、width/max-width: 280px !important（WO-115 由 320 收到 280）
     expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?display:\s*flex\s*!important/);
-    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?flex:\s*0\s+0\s+320px\s*!important/);
-    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?width:\s*320px\s*!important/);
-    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?max-width:\s*320px\s*!important/);
+    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?flex:\s*0\s+0\s+280px\s*!important/);
+    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?width:\s*280px\s*!important/);
+    expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout\.has-chapter\s+\.tree-pane[\s\S]*?max-width:\s*280px\s*!important/);
 
-    // 寬版未選章時亦限制 320px 寬，右側 editor-pane 與提示正常顯示
+    // 寬版未選章時亦限制 280px 寬，右側 editor-pane 與提示正常顯示
     expect(css).toMatch(/html\[data-layout="wide"\][\s\S]*?\.write-layout:not\(\.has-chapter\)\s+\.tree-pane/);
     expect(css).toMatch(/html\[data-layout="wide"\]\s+\.editor-empty\.wide-hint[\s\S]*?display:\s*flex\s*!important/);
   });
