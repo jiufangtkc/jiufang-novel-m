@@ -94,7 +94,7 @@ describe('WO-120 原始碼層面：入口搬到首頁、重用既有 action、�
     expect(home).toContain('IMPORT_TEXT_FILE_BUTTON');
     // 三顆按鈕順序：開新稿子、開啟稿子、匯入文字檔
     const create = home.indexOf('開新稿子\n        </button>');
-    const open = home.indexOf('開啟稿子\n        </button>');
+    const open = home.indexOf("openButtonLabel(openFile.busy, '開啟稿子')");
     const imp = home.indexOf('{IMPORT_TEXT_FILE_BUTTON}');
     expect(create).toBeGreaterThan(-1);
     expect(open).toBeGreaterThan(create);
