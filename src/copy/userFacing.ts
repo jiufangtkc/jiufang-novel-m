@@ -30,7 +30,15 @@ export const CHAPTER_NOT_FOUND = '找不到這一章。請從目錄重新選。'
 export const OPEN_DB_FAIL =
   '這個檔案打不開。請選擇使用九方編輯器編寫的 .db 稿件檔。';
 
-export const OPEN_DB_HINT = '請選擇使用九方編輯器編寫的 .db 稿件檔。';
+/** WO-121：開檔讀取中，所有開稿按鈕（首頁、檔案頁、歡迎導覽）統一顯示這句（九方已核准，單一省略號字元）。 */
+export const OPEN_FILE_BUSY = '正在開啟…';
+
+/** 開稿按鈕目前該顯示的字：忙碌中顯示 OPEN_FILE_BUSY，否則是原本的名稱。 */
+export function openButtonLabel(busy: boolean, idleLabel: string): string {
+  return busy ? OPEN_FILE_BUSY : idleLabel;
+}
+
+export const OPEN_DB_HINT ='請選擇使用九方編輯器編寫的 .db 稿件檔。';
 
 export const SAVE_PERMISSION_DENIED = '沒有寫入權限，請再按一次並選「允許」。';
 

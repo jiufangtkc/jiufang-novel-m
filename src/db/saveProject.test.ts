@@ -109,6 +109,52 @@ describe('儲存專案', () => {
     expect(saveNotice(outcome)).toBe('沒有寫入權限，請再按一次並選「允許」。');
   });
 
+  it('WO-121：已 granted 安靜寫回原檔，不呼叫 requestPermission', async () => {
+    const file = new FakeDisk('原稿.db', ORIGINAL);
+    const box = env();
+    await box.store.save('book-1', { filename: '原稿.db', file });
+    const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
+    expect(outcome.kind).toBe('saved');
+    expect(file.requested).toBe(0);
+    expect(Array.from(file.bytes)).toEqual(Array.from(NEXT));
+  });
+
+  it('WO-121：開檔時是 prompt，第一次存檔才 request；允許後寫回原檔，之後存檔不再問', async () => {
+    const file = new FakeDisk('原稿.db', ORIGINAL);
+    file.permission = 'prompt';
+    const box = env();
+    await box.store.save('book-1', { filename: '原稿.db', file });
+    expect(file.requested).toBe(0);
+    const first = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
+    expect(first.kind).toBe('saved');
+    expect(file.requested).toBe(1);
+    expect(Array.from(file.bytes)).toEqual(Array.from(NEXT));
+    const again = new Uint8Array([5, 5]);
+    const second = await saveProjectToPlace(box.env, 'book-1', again, '書名.db');
+    expect(second.kind).toBe('saved');
+    expect(file.requested).toBe(1);
+    expect(Array.from(file.bytes)).toEqual(Array.from(again));
+  });
+
+  it('WO-121：第一次拒絕不寫、原檔不壞、把手還在；再按一次允許即可寫回', async () => {
+    const file = new FakeDisk('原稿.db', ORIGINAL);
+    file.permission = 'prompt';
+    file.requestResult = 'denied';
+    const box = env();
+    await box.store.save('book-1', { filename: '原稿.db', file });
+    const denied = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
+    expect(denied).toEqual({ kind: 'permission-denied' });
+    expect(saveNotice(denied)).toBe('沒有寫入權限，請再按一次並選「允許」。');
+    expect(file.writes).toBe(0);
+    expect(Array.from(file.bytes)).toEqual(Array.from(ORIGINAL));
+    expect((await box.store.load('book-1'))?.file).toBe(file);
+    // NEXT（App 裡尚未存出的內容）由呼叫端保留；使用者再按一次並允許後同一份內容寫回。
+    file.requestResult = 'granted';
+    const retry = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
+    expect(retry.kind).toBe('saved');
+    expect(Array.from(file.bytes)).toEqual(Array.from(NEXT));
+  });
+
   it('寫到一半失敗時把原檔寫回去', async () => {
     const file = new FakeDisk('原稿.db', ORIGINAL);
     file.failTimes = 1;

@@ -95,11 +95,7 @@ export async function pickExistingDatabase(): Promise<{ bytes: Uint8Array; file:
       types: [DATABASE_FILE_TYPE],
     });
     if (!handle) return null;
-    try {
-      await withPermission(handle).requestPermission({ mode: 'readwrite' });
-    } catch {
-      // 讀得到即可先開啟。存回時會再請一次權限。
-    }
+    // WO-121：開檔只讀，不索取寫入權限（含背景呼叫）。把手留著，第一次存檔時由 saveProject 的 ensurePermission 才問。
     const file = diskFileFromHandle(handle);
     return { bytes: await file.read(), file };
   } catch (error) {
