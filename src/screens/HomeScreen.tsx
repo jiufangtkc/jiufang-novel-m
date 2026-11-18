@@ -9,6 +9,7 @@ import {
   NEW_BOOK_NOVEL,
   NEW_BOOK_SHAPE,
   NEW_BOOK_SINGLE,
+  openButtonLabel,
   removeFromDeviceAria,
 } from '../copy/userFacing';
 import { latestEditTimestamp } from '../domain/saveClock';
@@ -130,7 +131,7 @@ export function HomeScreen() {
           onClick={() => openFile.open()}
         >
           <FolderIcon size={18} />
-          開啟稿子
+          {openButtonLabel(openFile.busy, '開啟稿子')}
         </button>
         {/* WO-120：匯入文字檔從檔案頁搬來，固定排在開啟稿子後面；窄版放不下時整顆換行，不切字。 */}
         <button
@@ -178,12 +179,17 @@ export function HomeScreen() {
           dailyGoal={state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal}
           met={isGlowing}
           {...steps}
+          openBusy={openFile.busy}
           // 整趟跳過、收尾「回首頁」都是關掉導覽留在首頁；紀錄已由導覽寫好。
           // WO-111：收尾「開始寫」：開新稿子＝打開現有對話框（全書目標由 WO-109 帶入）；開啟稿子＝系統選檔。
+          // WO-121：開啟稿子在讀取中導覽先留著，「開始寫」顯示開檔忙碌用字；成功／失敗／取消結束後才關掉導覽。
           onExit={(exit) => {
+            if (exit === 'finish-open') {
+              openFile.open(() => welcome.dismiss());
+              return;
+            }
             welcome.dismiss();
             if (exit === 'finish-new') setCreating(true);
-            else if (exit === 'finish-open') openFile.open();
           }}
         />
       )}
