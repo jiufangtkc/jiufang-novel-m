@@ -430,7 +430,7 @@ export function topbarTodayWords(
 export const VISUAL_WRITING_RECORD = '視覺化的寫作記錄';
 
 /** 設定頁「寫作過程紀錄」說明，與紀錄頁列出的項目一致。 */
-export const SETTINGS_WRITING_LOG_HINT = '每日字數、寫作時間、匯入次數、大量刪除';
+export const SETTINGS_WRITING_LOG_HINT = '每日字數、寫作時間、匯入紀錄';
 
 /**
  * WO-60 統計與寫作紀錄預留匯入匯出次數、檔案頁三組分組標題（九方 2026-11-12 定案）。
@@ -494,9 +494,21 @@ export const EXPORT_COLLAPSE = '收合';
 /** 部分選取時給朗讀用的補充（畫面另有半勾符號，不只靠顏色）。 */
 export const EXPORT_PARTIAL_LABEL = '部分選取';
 
-export const STATS_IMPORT_EXPORT_HEADING = '匯入次數';
-export const STATS_IMPORT_EXPORT_SCOPE_HINT = '只算匯入文字檔的次數';
-export const STATS_IMPORT_COUNT_LABEL = '匯入 次數';
+/**
+ * WO-120（九方 2026-11-18 定案）：統計頁匯入說明，一行完整句。
+ * 日期是第一筆匯入事件的寫作日（YYYY-MM-DD）：年份一定寫、月日不補 0、不加星期。
+ * 格式不對（無法拆成年月日）時回傳 null，由畫面整行不顯示，不自行發明日期。
+ */
+export function statsImportedOnLine(dayKey: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dayKey);
+  if (!match) return null;
+  const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  return `這份稿子是 ${year} 年 ${month} 月 ${day} 日從文字檔匯入的。`;
+}
+
+/** WO-120：寫作紀錄每日卡片，匯入那一天的一行。 */
+export const LOG_IMPORTED_DAY_NOTE = '這天從文字檔匯入';
 
 /** WO-113：正文貼上與複製、剪下的短暫提示。 */
 export const EDITOR_PASTE_BLOCKED_TOAST = '匯入已經存在的稿子請用「匯入文字檔」，外部文字只能貼在資料卡片裡喔😊';

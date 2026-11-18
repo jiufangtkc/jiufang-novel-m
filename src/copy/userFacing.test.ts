@@ -246,12 +246,22 @@ describe('章節目錄文案', () => {
     expect(copy.EXPORT_FULL_TEXT_HINT).toBe('把全文或自選章節匯出成一個 Word 或 TXT 檔');
     expect(copy.EXPORT_FULL_TEXT_HINT).not.toContain('Markdown');
 
-    // 4. 統計頁區塊與說明小字
-    // WO-113：統計區塊只描述匯入次數。
-    expect(copy.STATS_IMPORT_EXPORT_HEADING).toBe('匯入次數');
-    expect(copy.STATS_IMPORT_EXPORT_SCOPE_HINT).toBe('只算匯入文字檔的次數');
-    expect(copy.STATS_IMPORT_COUNT_LABEL).toBe('匯入 次數');
-    expect(copy.SETTINGS_WRITING_LOG_HINT).toBe('每日字數、寫作時間、匯入次數、大量刪除');
+    // 4. 統計頁匯入說明與設定小字（WO-120：統計改為一行匯入日期說明，不再有次數字樣）
+    expect(copy.statsImportedOnLine('2026-11-18')).toBe('這份稿子是 2026 年 11 月 18 日從文字檔匯入的。');
+    // 月日不補 0、年份一定寫、不加星期
+    expect(copy.statsImportedOnLine('2026-01-05')).toBe('這份稿子是 2026 年 1 月 5 日從文字檔匯入的。');
+    expect(copy.statsImportedOnLine('2026-01-05')).not.toMatch(/星期|週|禮拜/);
+    // 日期無法判定時不產生句子
+    expect(copy.statsImportedOnLine('')).toBeNull();
+    expect(copy.statsImportedOnLine('2026-13-01')).toBeNull();
+    expect(copy.statsImportedOnLine('2026/11/18')).toBeNull();
+    expect(copy.LOG_IMPORTED_DAY_NOTE).toBe('這天從文字檔匯入');
+    // 舊的「匯入次數」標題與「只算匯入文字檔的次數」說明已不存在
+    const exported = copy as unknown as Record<string, unknown>;
+    expect(exported.STATS_IMPORT_EXPORT_HEADING).toBeUndefined();
+    expect(exported.STATS_IMPORT_EXPORT_SCOPE_HINT).toBeUndefined();
+    expect(exported.STATS_IMPORT_COUNT_LABEL).toBeUndefined();
+    expect(copy.SETTINGS_WRITING_LOG_HINT).toBe('每日字數、寫作時間、匯入紀錄');
     // WO-113：正文貼上與複製、剪下提示。
     expect(copy.EDITOR_PASTE_BLOCKED_TOAST).toBe('匯入已經存在的稿子請用「匯入文字檔」，外部文字只能貼在資料卡片裡喔😊');
     expect(copy.EDITOR_COPIED_TOAST).toBe('已複製');
@@ -283,9 +293,8 @@ describe('章節目錄文案', () => {
       copy.IMPORT_TEXT_FILE_HINT,
       copy.EXPORT_FULL_TEXT_BUTTON,
       copy.EXPORT_FULL_TEXT_HINT,
-      copy.STATS_IMPORT_EXPORT_HEADING,
-      copy.STATS_IMPORT_EXPORT_SCOPE_HINT,
-      copy.STATS_IMPORT_COUNT_LABEL,
+      copy.statsImportedOnLine('2026-11-18')!,
+      copy.LOG_IMPORTED_DAY_NOTE,
       copy.logImportCountLabel(),
       copy.logExportCountLabel(),
     ];
