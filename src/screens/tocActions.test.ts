@@ -5,7 +5,7 @@ import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
 import { LayoutProvider, type LayoutMode } from '../layout';
 import { SampleProvider } from '../state/sampleStore';
-import { TREE_ADD_CHAPTER, TREE_ORGANIZE } from '../copy/userFacing';
+import { TREE_ADD_CHAPTER, TREE_INLINE_ADD_VOLUME, TREE_ORGANIZE } from '../copy/userFacing';
 import { WriteScreen } from './WriteScreen';
 import { demoFixtureState } from '../state/testing/sampleFixture';
 
@@ -62,6 +62,20 @@ describe('WO-71 中等、橫拿、寬版看得到新增章和整理目錄', () =
       expect(html).toContain(TREE_ADD_CHAPTER);
       expect(html).toContain('data-testid="organize-toggle"');
       expect(html).toContain('data-testid="add-chapter"');
+    }
+  });
+
+  it('WO-124：底部按鈕列仍只有兩顆按鈕，樹內新增行不混進來', () => {
+    for (const mode of ['phone-portrait', 'phone-landscape', 'medium', 'wide'] as const) {
+      const html = renderWrite(mode);
+      const start = html.indexOf('data-testid="tree-tools"');
+      const row = html.slice(start, html.indexOf('</div>', start));
+      expect(row.split('<button').length - 1).toBe(2);
+      expect(row).toContain(`>${TREE_ORGANIZE}<`);
+      expect(row).toContain(`>${TREE_ADD_CHAPTER}<`);
+      expect(row).not.toContain(TREE_INLINE_ADD_VOLUME);
+      // 樹內的根層新增卷在樹裡，每個版面只有一行
+      expect(html.split(TREE_INLINE_ADD_VOLUME).length - 1).toBe(1);
     }
   });
 });
