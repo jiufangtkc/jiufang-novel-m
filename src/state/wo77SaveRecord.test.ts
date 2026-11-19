@@ -14,6 +14,7 @@ import {
   reduce,
   type SampleState,
 } from './sampleStore';
+import { firstFileNode } from './testing/firstFile';
 
 /** 臺北 2026-11-14 中午。 */
 const NOON = new Date('2026-11-14T04:00:00Z');
@@ -39,7 +40,7 @@ function statsOf(state: SampleState) {
 }
 
 function chapterOf(state: SampleState, projectId: string): string {
-  return state.projects.find((item) => item.id === projectId)!.nodes[0]!.id;
+  return firstFileNode(state.projects.find((item) => item.id === projectId)!.nodes)!.id;
 }
 
 function write(state: SampleState, projectId: string, text: string): SampleState {
@@ -85,7 +86,7 @@ describe('WO-77 自動暫存留住今天字數、另存時間重新整理後還�
 
     const reloaded = reload(NOON, 'p-77');
     const project = reloaded.projects.find((item) => item.id === 'p-77')!;
-    expect(project.nodes[0]!.content).toBe(first);
+    expect(firstFileNode(project.nodes)!.content).toBe(first);
     expect(statsOf(reloaded).todayWords).toBe(before);
     expect(reloaded.logs.map((log) => log.date)).toEqual([TODAY]);
     // 不借範例書的 300 字與範例日期

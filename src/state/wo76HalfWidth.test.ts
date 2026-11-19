@@ -24,6 +24,7 @@ import {
   skipHalfWidthForChapter,
   writeHalfWidthReminder,
 } from './halfWidthReminder';
+import { firstFileNode } from './testing/firstFile';
 import { createState, manuscriptSnapshotParts, reduce, type SampleState } from './sampleStore';
 import { demoFixtureState } from './testing/sampleFixture';
 
@@ -43,7 +44,7 @@ function projectOf(state: SampleState, id: string) {
 }
 
 function chapterOf(state: SampleState, projectId: string) {
-  return projectOf(state, projectId).nodes[0]!;
+  return firstFileNode(projectOf(state, projectId).nodes)!;
 }
 
 function write(state: SampleState, projectId: string, text: string): SampleState {

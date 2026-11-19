@@ -6,6 +6,23 @@ export function newChapterId(projectId: string): string {
   return `${projectId}-ch`;
 }
 
+/** WO-124b：長篇新稿範例的卷、幕 ID，穩定且和章 ID 互異。 */
+export function newVolumeId(projectId: string): string {
+  return `${projectId}-vol`;
+}
+
+export function newSceneId(projectId: string): string {
+  return `${projectId}-sc`;
+}
+
+/**
+ * 新稿子建好後第一個要開的節點：長篇是範例的第一幕，單篇是唯一的章。
+ * reducer 的 lastOpenedNodeId 與首頁導向共用這一條規則。
+ */
+export function newManuscriptFirstNodeId(projectId: string, shape: DemoProject['shape']): string {
+  return shape === 'novel' ? newSceneId(projectId) : newChapterId(projectId);
+}
+
 export function shapeAfterEdit(
   shape: DemoProject['shape'],
   nodes: readonly ChapterNode[],

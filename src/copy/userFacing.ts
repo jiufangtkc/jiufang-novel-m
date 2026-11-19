@@ -58,6 +58,13 @@ export const TREE_ADD_CHAPTER = '新增章';
 export const TREE_ADD_VOLUME = '在下方新增一卷';
 export const TREE_ADD_CHAPTER_BELOW = '在下方新增一章';
 export const TREE_ADD_SCENE = '在這章裡新增幕';
+export const TREE_INLINE_ADD_VOLUME = '＋ 新增卷';
+export const TREE_INLINE_ADD_CHAPTER = '＋ 在這卷新增章';
+export const TREE_INLINE_ADD_SCENE = '＋ 在這章新增幕';
+/** WO-124b：長篇新稿的三層範例名稱。第一章結尾保留一個全形空白（U+3000），方便接續輸入副標。與匯入預設章名、手動新增的「新卷」「幕 1 新幕」分開。 */
+export const NEW_NOVEL_VOLUME_TITLE = '第一卷';
+export const NEW_NOVEL_CHAPTER_TITLE = '第一章　';
+export const NEW_NOVEL_SCENE_TITLE = '第一幕';
 export const TREE_RENAME = '改名';
 export const TREE_NAME_NEW_CHAPTER = '幫新章取名';
 export const TREE_SAVE_NAME = '確定';

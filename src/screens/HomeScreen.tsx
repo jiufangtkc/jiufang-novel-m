@@ -14,7 +14,7 @@ import {
 } from '../copy/userFacing';
 import { latestEditTimestamp } from '../domain/saveClock';
 import { useLayout } from '../layout';
-import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
+import { manuscriptWritePath, newManuscriptFirstNodeId, writePath } from '../domain/openManuscript';
 import { recentDisplayProjects } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
 import { RemoveFromDeviceDialog } from './RemoveFromDeviceDialog';
@@ -212,7 +212,7 @@ export function HomeScreen() {
               event.preventDefault();
               const id = actions.addProject(title, shape);
               setCreating(false);
-              navigate(writePath(id, newChapterId(id)));
+              navigate(writePath(id, newManuscriptFirstNodeId(id, shape)));
             }}
           >
             <h2 id="new-project-title">開新稿子</h2>

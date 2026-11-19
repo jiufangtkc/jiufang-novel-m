@@ -6,6 +6,7 @@ import { readWritingCardsData } from '../components/writingCardsData';
 import { MANUSCRIPT_NOT_FOUND, SAMPLE_CARDS_NOTICE } from '../copy/userFacing';
 import { DEMO_PROJECTS, type ChapterNode, type DemoProject } from '../data/demo';
 import { DEMO_CARDS } from '../data/demoCards';
+import { firstFileNode } from './testing/firstFile';
 import { openNodeSql } from '../db/nodeSql';
 import { readFileProject, writeFileProject } from '../db/projectFile';
 import { createVersion14Shell } from '../db/schemaFixture';
@@ -460,7 +461,7 @@ describe('WO-95 f. 空白狀態的既有操作', () => {
     state = reduce(state, { type: 'add-project', id: 'p-new', title: '我的新稿', shape: 'novel' });
     expect(state.recentIds).toEqual(['p-new']);
     state = reduce(state, { type: 'focus-project', id: 'p-new' });
-    const chapterId = state.projects[0]!.nodes[0]!.id;
+    const chapterId = firstFileNode(state.projects[0]!.nodes)!.id;
     expect(statsOf(state).todayWords).toBe(0);
     state = reduce(state, { type: 'commit-text', projectId: 'p-new', nodeId: chapterId, text: '霧從港口退去。' });
     expect(statsOf(state).todayWords).toBe(7);
