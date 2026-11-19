@@ -5,6 +5,7 @@ import { openNodeSql } from '../db/nodeSql';
 import { readFileProject, writeFileProject, type FileLog } from '../db/projectFile';
 import { createVersion14Shell } from '../db/schemaFixture';
 import { scheduleFromLogs } from '../db/library';
+import { firstFileNode } from './testing/firstFile';
 import { createState, manuscriptSnapshotParts, reduce, type SampleState } from './sampleStore';
 import { demoFixtureState } from './testing/sampleFixture';
 
@@ -20,7 +21,7 @@ function statsOf(state: SampleState) {
 
 function chapterOf(state: SampleState, projectId: string): string {
   const project = state.projects.find((item) => item.id === projectId)!;
-  return project.nodes[0]!.id;
+  return firstFileNode(project.nodes)!.id;
 }
 
 function addAndOpen(state: SampleState, id: string, title: string): SampleState {
