@@ -264,6 +264,11 @@ a { color: var(--accent); }
 
 .home-main { padding: 8px 16px 16px; }
 
+/* WO-126：匯入視窗開著時，背景首頁不跟著捲（視窗自己可捲）。 */
+.home[data-import-open='true'] .home-main {
+  overflow: hidden;
+}
+
 .home-main h2 {
   margin: 12px 0;
   font-size: 16px;
@@ -3296,3 +3301,39 @@ html[data-pointer="mouse"] .cards-subcard-button {
 .about-version-row { justify-content: space-between; cursor: default; }
 .about-version-value { color: var(--muted); font-size: 14px; }
 .about-welcome-row { min-height: 56px; }
+
+/* WO-126：匯入文字檔視窗（沿用 sheet／dialog 底，按鈕與輸入欄至少 44px 高） */
+.import-text-sheet,
+.import-text-dialog {
+  max-height: 100%;
+  overflow-y: auto;
+}
+.import-text-label {
+  display: block;
+  margin: 8px 0;
+  font-size: 15px;
+  font-weight: 600;
+}
+.import-text-example { display: block; }
+.import-text-summary {
+  margin: 8px 0;
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.import-text-summary:focus { outline: none; }
+.import-text-titles {
+  margin: 0 0 8px;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.import-text-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+.import-text-actions .button { min-height: 44px; width: 100%; }
