@@ -101,13 +101,17 @@ describe('WO-120 原始碼層面：入口搬到首頁、重用既有 action、�
     expect(imp).toBeGreaterThan(open);
 
     const hook = read('../screens/useImportTextFile.tsx');
-    expect(hook).toContain('actions.importTextFile(file)');
+    // WO-126：選檔後先讀取解碼，預覽後才由 confirmImportText 建稿（不再選檔直接匯入）
+    expect(hook).not.toContain('actions.importTextFile(file)');
+    expect(hook).toContain('actions.readImportText(file)');
+    expect(hook).toContain('actions.previewImportText(');
+    expect(hook).toContain('actions.confirmImportText(');
     expect(hook).toContain("result.kind === 'imported'");
     expect(hook).toContain('navigate(writePath(result.id, result.chapterId))');
     expect(hook).toContain('IMPORT_TEXT_UNREADABLE');
     expect(hook).toContain('IMPORT_TEXT_STORAGE_FAIL');
     // 取消選檔（沒有選到檔）直接返回，不呼叫匯入
-    expect(hook).toMatch(/if \(!file \|\| busy\) return;/);
+    expect(hook).toMatch(/if \(!file \|\| reading \|\| working !== null \|\| session\) return;/);
     expect(hook).toContain('accept=".txt,text/plain"');
   });
 

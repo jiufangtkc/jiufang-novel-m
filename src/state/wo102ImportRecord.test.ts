@@ -159,7 +159,7 @@ describe('WO-102 五：匯入紀錄寫不進 .db 的提示', () => {
   it('接線：匯入成功才寫 .db；失敗時不派發 toast；Workspace 換頁照常清提示；一次匯入只嘗試一次（不重試洗版）', () => {
     const storeSource = readFileSync(new URL('./sampleStore.tsx', import.meta.url), 'utf8');
     expect(storeSource).toContain("if (outcome.kind === 'imported') {");
-    expect(storeSource.match(/persistImportedRecord\(/g)).toHaveLength(2); // 定義＋唯一呼叫
+    expect(storeSource.match(/persistImportedRecord\(/g)).toHaveLength(3); // 定義＋importTextFile＋confirmImportText，各只在 imported 之後呼叫一次
     const workspace = readFileSync(new URL('../screens/Workspace.tsx', import.meta.url), 'utf8');
     expect(workspace).toContain('actions.toast(null)');
     expect(storeSource).not.toMatch(/record-failed[\s\S]{0,200}type: 'toast'/);
