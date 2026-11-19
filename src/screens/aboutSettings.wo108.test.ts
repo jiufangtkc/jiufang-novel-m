@@ -96,7 +96,7 @@ describe('WO-108 設定頁關於組', () => {
       expect([...at].sort((a, b) => a - b)).toEqual(at);
       expect(html).toContain('>關於</h2>');
       expect(html).toContain('>版本</strong>');
-      expect(html).toContain('0.1.0（預覽版）');
+      expect(html).toContain(`${APP_VERSION}（預覽版）`);
       expect(html).toContain('>再看一次歡迎導覽</strong>');
       expect(html).toContain('調整每日目標和新稿子的全書目標');
       expect(html).toContain('aria-label="再看一次歡迎導覽，可以調整每日目標和新稿子的全書目標"');
@@ -108,7 +108,7 @@ describe('WO-108 設定頁關於組', () => {
     const m = html.match(/<div[^>]*data-testid="about-version"[^>]*>[\s\S]*?<\/div>/);
     expect(m).not.toBeNull();
     expect(m![0]).not.toMatch(/<(a|button)\b|onclick|role="button"/i);
-    expect(m![0]).toContain('aria-label="版本 0.1.0，預覽版"');
+    expect(m![0]).toContain(`aria-label="版本 ${APP_VERSION}，預覽版"`);
   });
 
   it('再看一次是整列連結，指向過渡空頁', () => {
