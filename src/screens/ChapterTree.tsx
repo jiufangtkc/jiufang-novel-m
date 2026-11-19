@@ -144,7 +144,13 @@ export function ChapterTree({
               else if (parent) inlineAdd.onAddScene(parent.id);
             }}
           >
-            {INLINE_ADD_LABEL[addKind]}
+            <span className="tree-chevron-spacer" aria-hidden="true" />
+            {addKind === 'volume' ? (
+              <span className="tree-icon type-folder" aria-hidden="true">
+                <FolderIcon size={20} />
+              </span>
+            ) : null}
+            <span className="tree-inline-add-label">{INLINE_ADD_LABEL[addKind]}</span>
           </button>
         </li>
       ) : null}

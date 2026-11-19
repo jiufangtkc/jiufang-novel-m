@@ -107,17 +107,25 @@ describe('WO-124 出現規則（純函式）', () => {
     expect(inlineAddKindFor(v3, false)).toBeNull();
     expect(inlineAddKindFor(volume('x', []), false)).toBe('chapter');
   });
-  it('章要展開且已有幕才有新增幕', () => {
+  it('WO-124b：章一展開就有新增幕（含空章、省略展開值的章），收合沒有', () => {
     expect(inlineAddKindFor(chapter('a', [scene('s')], true), false)).toBe('scene');
-    expect(inlineAddKindFor(chapter('a', [], true), false)).toBeNull();
-    expect(inlineAddKindFor(chapter('a'), false)).toBeNull();
+    expect(inlineAddKindFor(chapter('a', [], true), false)).toBe('scene');
+    expect(inlineAddKindFor(chapter('a'), false)).toBe('scene');
     expect(inlineAddKindFor(v4.children![0], false)).toBeNull();
+    expect(inlineAddKindFor(chapter('a', [], true), true)).toBeNull();
   });
-  it('空卷展開要畫子清單，收合或整理模式不畫', () => {
+  it('幕沒有下層新增行', () => {
+    expect(inlineAddKindFor(scene('s'), false)).toBeNull();
+    expect(showsChildList(scene('s'), false)).toBe(false);
+  });
+  it('WO-124b：空卷、空章展開都要畫子清單，收合或整理模式不畫', () => {
     expect(showsChildList(v2, false)).toBe(true);
     expect(showsChildList({ ...v2, expanded: false }, false)).toBe(false);
     expect(showsChildList(v2, true)).toBe(false);
-    expect(showsChildList(chapter('a'), false)).toBe(false);
+    expect(showsChildList(chapter('a'), false)).toBe(true);
+    expect(showsChildList(chapter('a', [], true), false)).toBe(true);
+    expect(showsChildList(chapter('a', [], false), false)).toBe(false);
+    expect(showsChildList(chapter('a'), true)).toBe(false);
   });
   it('目標卷不存在或不是卷就停止', () => {
     expect(volumeStillExists(sample(), 'v2')).toBe(true);
@@ -139,9 +147,9 @@ describe('WO-124 渲染', () => {
     expect(count(html, TREE_INLINE_ADD_VOLUME)).toBe(1);
     // v1、v2、v4 展開；v3 收合
     expect(count(html, TREE_INLINE_ADD_CHAPTER)).toBe(3);
-    // c1、c3 展開有幕；c2 無幕；c5 收合；c4 在收合的卷裡
-    expect(count(html, TREE_INLINE_ADD_SCENE)).toBe(2);
-    expect(count(html, 'type="button" class="tree-inline-add"')).toBe(6);
+    // r1（根層空章）、c1、c2（空章）、c3 展開；c5 收合；c4 在收合的卷裡
+    expect(count(html, TREE_INLINE_ADD_SCENE)).toBe(4);
+    expect(count(html, 'type="button" class="tree-inline-add"')).toBe(8);
     expect(html).toContain('<li class="tree-inline-add-item" data-inline-add="volume" style="--tree-depth:0">');
     expect(html).toContain('<li class="tree-inline-add-item" data-inline-add="chapter" style="--tree-depth:1">');
     expect(html).toContain('<li class="tree-inline-add-item" data-inline-add="scene" style="--tree-depth:2">');
@@ -150,7 +158,7 @@ describe('WO-124 渲染', () => {
   it('新增行不帶 data-node-id，節點列數量不變', () => {
     const html = render(sample());
     const items = html.match(/<li class="tree-inline-add-item"[^>]*>.*?<\/li>/g) ?? [];
-    expect(items).toHaveLength(6);
+    expect(items).toHaveLength(8);
     for (const item of items) expect(item).not.toContain('data-node-id');
     // 可見節點：r1,v1,c1,s1,s2,c2,c3,s3,v2,v3,v4,c5
     expect(count(html, 'data-node-id=')).toBe(12);
@@ -165,9 +173,62 @@ describe('WO-124 渲染', () => {
     const v1Add = html.indexOf('data-inline-add="chapter"');
     expect(v1Add).toBeGreaterThan(html.indexOf('data-node-id="s3"'));
     expect(v1Add).toBeLessThan(html.indexOf('data-node-id="v2"'));
-    const sceneAdd = html.indexOf('data-inline-add="scene"');
-    expect(sceneAdd).toBeGreaterThan(html.indexOf('data-node-id="s2"'));
+    // 不能用整份 HTML 的第一個新增幕：範例開頭的根層空章 r1 本來就有新增幕（WO-124b）。
+    // 改從 c1 的最後一幕 s2 之後找下一個，它必須是 c1 的新增幕，且在 c2 之前。
+    const afterS2 = html.indexOf('data-node-id="s2"');
+    const sceneAdd = html.indexOf('data-inline-add="scene"', afterS2);
+    expect(sceneAdd).toBeGreaterThan(afterS2);
     expect(sceneAdd).toBeLessThan(html.indexOf('data-node-id="c2"'));
+  });
+
+  it('WO-124b：卷內新增章與同卷章列同深度，不在最後一章的子清單裡', () => {
+    const html = render([volume('v', [chapter('a', [scene('x')], true), chapter('b', [scene('y')], true)], true)]);
+    expect(html).toContain('style="--tree-depth:1" data-node-id="a"');
+    expect(html).toContain('style="--tree-depth:1" data-node-id="b"');
+    expect(html).toContain('data-inline-add="chapter" style="--tree-depth:1"');
+    // 新增章 li 之前，b 的子清單（含它的新增幕）已經關閉
+    const chapterAdd = html.indexOf('<li class="tree-inline-add-item" data-inline-add="chapter"');
+    expect(html.slice(0, chapterAdd).endsWith('</li></ul></li>')).toBe(true);
+  });
+
+  it('WO-124b：根層新增卷帶資料夾圖示與展開佔位；章、幕新增行有佔位但沒有圖示', () => {
+    const html = render([volume('v', [chapter('a', [], true)], true)]);
+    const item = (kind: string) =>
+      html.match(new RegExp(`<li class="tree-inline-add-item" data-inline-add="${kind}"[^>]*>.*?</li>`))![0];
+    const vol = item('volume');
+    expect(vol).toContain('tree-chevron-spacer');
+    expect(vol).toContain('tree-icon type-folder');
+    expect(vol).toContain('<svg');
+    for (const kind of ['chapter', 'scene']) {
+      expect(item(kind)).toContain('tree-chevron-spacer');
+      expect(item(kind)).not.toContain('<svg');
+      expect(item(kind)).not.toContain('tree-icon');
+    }
+    // 裝飾元素不另成焦點，整行仍只有一顆按鈕
+    expect(vol.match(/<button/g)).toHaveLength(1);
+    expect(vol).toContain('aria-hidden="true"');
+  });
+
+  it('WO-124b：根層空章（無卷）展開就有唯一的新增幕子列，深度為章加一', () => {
+    const html = render([chapter('r', [], true)]);
+    expect(count(html, 'data-node-id=')).toBe(1);
+    expect(count(html, TREE_INLINE_ADD_SCENE)).toBe(1);
+    expect(html).toContain('data-inline-add="scene" style="--tree-depth:1"');
+    expect(html).toContain('data-inline-add="volume" style="--tree-depth:0"');
+  });
+
+  it('WO-124b：已有幕的章，新增幕在最後一幕之後、與幕同深度', () => {
+    const html = render([chapter('r', [scene('s1'), scene('s2')], true)]);
+    expect(html.indexOf('data-inline-add="scene"')).toBeGreaterThan(html.indexOf('data-node-id="s2"'));
+    expect(html).toContain('style="--tree-depth:1" data-node-id="s1"');
+    expect(html).toContain('data-inline-add="scene" style="--tree-depth:1"');
+  });
+
+  it('WO-124b：章收合時不畫新增幕，整理模式空章也不畫空子清單', () => {
+    expect(count(render([chapter('r', [], false)]), TREE_INLINE_ADD_SCENE)).toBe(0);
+    const organizing = render([chapter('r', [], true)], { organizing: true });
+    expect(count(organizing, '<ul')).toBe(1);
+    expect(count(organizing, 'tree-inline-add')).toBe(0);
   });
 
   it('空卷展開時，清單只有新增章行', () => {
@@ -265,6 +326,19 @@ describe('WO-124 接線（原始碼）', () => {
     expect(write.indexOf("event.key === 'F2'")).toBeGreaterThan(skip);
     expect(write.indexOf("event.key === 'Delete'")).toBeGreaterThan(skip);
     expect(write.indexOf("event.altKey && event.key === 'ArrowUp'")).toBeGreaterThan(skip);
+  });
+
+  it('WO-124b 樣式：左緣用深度縮排加展開佔位與列內間距，不再把 hit-size 直接加進內距', () => {
+    const block = css.slice(css.indexOf('.tree-inline-add {'), css.indexOf('.tree-inline-add:hover'));
+    expect(block).toContain('padding: 0 12px 0 calc(var(--tree-depth, 0) * var(--tree-indent, 16px));');
+    expect(block).not.toMatch(/--hit-size[^;]*\)\s*;\s*\n\s*border/);
+    expect(css).toMatch(/\.tree-inline-add \.tree-chevron-spacer \{ margin-right: var\(--tree-row-gap\); \}/);
+    // 滑鼠、觸控的列內間距與 .tree-row 相同（0／8px），佔位寬度在滑鼠模式同為 24px
+    expect(css).toContain('html[data-pointer="mouse"] .tree-pane .tree-inline-add { --tree-row-gap: 0px; }');
+    expect(css).toContain('html[data-pointer="touch"] .tree-pane .tree-inline-add { --tree-row-gap: 8px; }');
+    expect(css).toMatch(/html\[data-pointer="mouse"\] \.tree-pane \.tree-inline-add \.tree-chevron-spacer \{[^}]*width: 24px/);
+    // 新增卷上方細線
+    expect(css).toMatch(/\.tree-inline-add-item\[data-inline-add="volume"\] \{[^}]*border-top: 1px solid var\(--border\)/);
   });
 
   it('樣式：淡色小字、焦點樣式、手機至少 44px、整理模式隱藏', () => {
