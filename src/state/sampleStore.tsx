@@ -55,6 +55,9 @@ import {
   BOOK_RENAMED_TOAST,
   IMPORT_DEFAULT_CHAPTER_TITLE,
   IMPORT_PREFACE_TITLE,
+  NEW_NOVEL_CHAPTER_TITLE,
+  NEW_NOVEL_SCENE_TITLE,
+  NEW_NOVEL_VOLUME_TITLE,
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
   SAVE_FATAL_FAIL,
@@ -158,7 +161,13 @@ import {
   updateCard as updateCardInList,
   type UpdateCardPatch,
 } from '../domain/cardOps';
-import { newChapterId, shapeAfterEdit } from '../domain/openManuscript';
+import {
+  newChapterId,
+  newManuscriptFirstNodeId,
+  newSceneId,
+  newVolumeId,
+  shapeAfterEdit,
+} from '../domain/openManuscript';
 import {
   addSceneUnderChapter,
   createScene,
@@ -1325,21 +1334,41 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         updatedLabel: '剛剛',
         bookGoal: isValidBookGoal(action.bookGoal) ? action.bookGoal : NEW_BOOK_GOAL_DEFAULT,
         shape: action.shape,
-        lastOpenedNodeId: chapterId,
+        lastOpenedNodeId: newManuscriptFirstNodeId(action.id, action.shape),
         lastCursor: 0,
         cards: [],
         categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
         expandedCategoriesRaw: null,
         categoriesMetaRaw: '{}',
-        nodes: [
-          {
-            id: chapterId,
-            type: 'file',
-            title: single ? title : '第一章　',
-            progress: 'Draft',
-            content: '',
-          },
-        ],
+        nodes: single
+          ? [{ id: chapterId, type: 'file', title, progress: 'Draft', content: '' }]
+          : [
+              {
+                id: newVolumeId(action.id),
+                type: 'folder',
+                title: NEW_NOVEL_VOLUME_TITLE,
+                expanded: true,
+                children: [
+                  {
+                    id: chapterId,
+                    type: 'file',
+                    title: NEW_NOVEL_CHAPTER_TITLE,
+                    progress: 'Draft',
+                    expanded: true,
+                    content: '',
+                    children: [
+                      {
+                        id: newSceneId(action.id),
+                        type: 'scene',
+                        title: NEW_NOVEL_SCENE_TITLE,
+                        progress: 'Draft',
+                        content: '',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
       };
       return {
         ...state,
