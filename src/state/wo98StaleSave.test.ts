@@ -26,6 +26,7 @@ import {
   loadDeviceSaveRecord,
   saveDeviceSaveRecord,
 } from './deviceSaveRecord';
+import { firstFileNode } from './testing/firstFile';
 import { applySaveOutcome, createState, reduce, runSaveProjectAs, type SampleState } from './sampleStore';
 
 
@@ -43,7 +44,7 @@ function stateWithBook(startedMs: number, text = '有字的稿子'): { state: Sa
   const id = `p-${startedMs}`;
   let state = createState(new Date(startedMs));
   state = reduce(state, { type: 'add-project', id, title: '測試稿', shape: 'novel', startedMs });
-  const chapterId = state.projects.find((p) => p.id === id)!.nodes[0].id;
+  const chapterId = firstFileNode(state.projects.find((p) => p.id === id)!.nodes)!.id;
   if (text) state = reduce(state, { type: 'commit-text', projectId: id, nodeId: chapterId, text });
   return { state, id };
 }
@@ -105,7 +106,7 @@ describe('WO-98 建立時間', () => {
     const { state, id } = stateWithBook(SAVED_AT);
     expect(state.startedById[id]).toBe(SAVED_AT);
     expect(daysOf(state, id, SAVED_AT + 3 * STALE_SAVE_DAY_MS)).toBe(3);
-    const chapterId = state.projects.find((p) => p.id === id)!.nodes[0].id;
+    const chapterId = firstFileNode(state.projects.find((p) => p.id === id)!.nodes)!.id;
     let next = reduce(state, { type: 'commit-text', projectId: id, nodeId: chapterId, text: '又改了很多字' });
     next = reduce(next, { type: 'record-auto-save', projectId: id, atMs: SAVED_AT + 2 * STALE_SAVE_DAY_MS });
     expect(next.startedById[id]).toBe(SAVED_AT);

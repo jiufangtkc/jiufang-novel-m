@@ -423,10 +423,10 @@ describe('WO-110 歡迎頁', () => {
     expect(WELCOME_HEADLINE_SEGMENTS.join('')).toBe(WELCOME_HEADLINE);
     expect(html).toContain(WELCOME_BODY);
     expect(WELCOME_BODY).toBe('花一分鐘，定好你自己的目標，之後隨時都能改。每天打開，就看得到今天走了多遠。');
-    expect(html).toContain('role="group" aria-label="版本 0.1.0，預覽版"');
-    expect(html).toContain('<span aria-hidden="true">版本 0.1.0</span>');
+    expect(html).toContain(`role="group" aria-label="版本 ${APP_VERSION}，預覽版"`);
+    expect(html).toContain(`<span aria-hidden="true">版本 ${APP_VERSION}</span>`);
     expect(html).toContain('data-channel="preview" aria-hidden="true">預覽版</span>');
-    expect(html).not.toMatch(/v0\.1\.0/);
+    expect(html).not.toContain(`v${APP_VERSION}`);
     expect(html).not.toContain('data-testid="welcome-trail"');
   });
 
@@ -452,7 +452,7 @@ describe('WO-110 歡迎頁', () => {
     expect(WELCOME_PREVIEW_NOTE).toBe('預覽版還在測試，有些功能之後可能會改。寫完記得按「另存專案」，把稿子存一份在自己手上。');
     const prod = renderTour('phone-portrait', 'welcome', { channel: 'production' });
     expect(prod).not.toContain('welcome-preview-note');
-    expect(prod).toContain('aria-label="版本 0.1.0，正式版"');
+    expect(prod).toContain(`aria-label="版本 ${APP_VERSION}，正式版"`);
     expect(prod).toContain('>正式版</span>');
   });
 
@@ -577,7 +577,8 @@ describe('WO-110 焦點、鍵盤、不設 Esc、點外不關', () => {
     const src = readFileSync('src/screens/WelcomeTour.tsx', 'utf8');
     expect(src).toContain("event.key === 'Tab'");
     const home = readFileSync('src/screens/HomeScreen.tsx', 'utf8');
-    expect(home.match(/inert=\{welcome\.show\}/g)?.length).toBe(3);
+    // WO-126：匯入視窗開啟時同樣 inert；歡迎導覽仍覆蓋這三處。
+    expect(home.match(/inert=\{welcome\.show \|\| importText\.open\}/g)?.length).toBe(3);
   });
 });
 

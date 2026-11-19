@@ -7,7 +7,7 @@ import { resolvedBookTitle } from './bookTitle';
  *   UTF-8（含 BOM）嚴格解碼；不是合法 UTF-8 時，再試嚴格的 Big5。
  *   解出來還要通過簡單合理性檢查（不准 NUL、異常控制字元），擋掉二進位檔。
  * - 換行：CRLF、單獨 CR 一律換成 LF，其餘文字不動。
- * - 分章：一行一行線性掃描，只認行首的保守章名格式，詳見 chapterHeadingTitle。
+ * - 分章：一行一行線性掃描，認整行的保守章名格式（WO-125 放寬），詳見 chapterHeadingTitle。
  */
 
 export type TextEncodingName = 'utf-8' | 'big5';
@@ -111,11 +111,65 @@ export function normalizeNewlines(text: string): string {
 export const CHAPTER_HEADING_MAX_CODE_POINTS = 80;
 
 /**
- * 「第」＋數字＋「章」，第與數字、數字與章之間可有半形／全形空白；
- * 「章」後面必須是行尾，或至少一個半形／全形空白或定位字元再接標題。
+ * WO-125：章名樣式。全部只比對「去頭尾空白後的整行」，從行首開始；
  * 字元類別彼此不重疊，對單行（最多 80 碼點）不會有高回溯。
  */
-const HEADING_PATTERN = /^第[ 　]*[0-9０-９零〇一二三四五六七八九十百千兩]+[ 　]*章(?:[ \t　][\s\S]*)?$/;
+const NUMERALS = '0-9０-９零〇一二三四五六七八九十百千兩壹貳參叁肆伍陸柒捌玖拾佰仟廿卅';
+/** 「第」可省略；有「第」時，第與數字、數字與單位之間可有半形／全形空白。「部」「篇」「幕」一律不收。 */
+const NUMBERED_PATTERN = new RegExp(`^(?:第[ 　]*[${NUMERALS}]+[ 　]*|[${NUMERALS}]+)[章節回話集]`);
+/** 卷名：只當同層的一章，不建卷節點。 */
+const VOLUME_PATTERN = new RegExp(`^(?:第[ 　]*[${NUMERALS}]+[ 　]*卷|卷[ 　]*[${NUMERALS}]+|[上中下]卷)`);
+const SPECIAL_PATTERN = new RegExp(
+  `^(?:序章|序言|楔子|引子|前言|尾聲|後記|番外|外傳|終章|附錄)(?:之[\\s\\S]+|[${NUMERALS}]*(?:$|[\\s\\p{P}\\p{S}]))`,
+  'u',
+);
+/** 英文章名與井號編號：數字後可直接接標題（`Chapter 1夜雨`、`＃1夜雨`），數字後直接接全形逗號 `，`、分號 `；;` 視為正文；半形逗號 `,` 是英文標題的合法分隔（`Chapter 1, The Beginning`）。 */
+const ENGLISH_PATTERN = /^(?:Chapter|CHAPTER|Ch\.?)[ \t　]*[0-9０-９]+(?![0-9０-９])(?:$|[^，；;])/;
+const HASH_PATTERN = /^[#＃][0-9０-９]+(?![0-9０-９])(?:$|[^，；;])/;
+
+const BRACKET_CLOSE: Readonly<Record<string, string>> = { '【': '】', '[': ']', '［': '］' };
+/** 單位後有明確分隔時直接放行的第一個字：空白、冒號、頓號、短橫／破折號、間隔號、開括號。 */
+const EXPLICIT_SEPARATORS = ' \t　：:、-－—–·（(【「《';
+/** 單位後無分隔而直接接短標題時，接續文字第一個字若是這些虛詞，視為正文。 */
+const PROSE_CONTINUATIONS = '的得地都了就也還在是有和與把被會要能後時裡里中到過來去給跟比很更不沒再才已卻';
+
+/** 章名核心之後的剩餘文字能不能接成標題。 */
+function validHeadingTail(rest: string, afterClosingBracket = false): boolean {
+  if (rest === '') return true;
+  const first = rest[0];
+  if (EXPLICIT_SEPARATORS.includes(first)) return true;
+  // 直接接短標題：必須是文字或數字開頭（擋掉「第三章，她…」）。
+  if (!/^[\p{L}\p{N}]/u.test(rest)) return false;
+  // 閉括號本身就是邊界，不套用單位後無分隔的虛詞限制（`【第一章】不速之客`）。
+  return afterClosingBracket || !PROSE_CONTINUATIONS.includes(first);
+}
+
+/** 「第？數字單位」的核心長度；不合或遇到「節課」「集合」「集和」回傳 -1。 */
+function numberedCoreLength(text: string): number {
+  const match = NUMBERED_PATTERN.exec(text);
+  if (!match) return -1;
+  const core = match[0];
+  const unit = core[core.length - 1];
+  const next = text[core.length];
+  if (unit === '節' && next === '課') return -1;
+  if (unit === '集' && (next === '合' || next === '和')) return -1;
+  return core.length;
+}
+
+function isChapterHeading(text: string): boolean {
+  const close = BRACKET_CLOSE[text[0]];
+  if (close !== undefined) {
+    const inner = text.slice(1);
+    const length = numberedCoreLength(inner);
+    if (length < 0 || inner[length] !== close) return false;
+    return validHeadingTail(inner.slice(length + 1), true);
+  }
+  const length = numberedCoreLength(text);
+  if (length >= 0) return validHeadingTail(text.slice(length));
+  const volume = VOLUME_PATTERN.exec(text);
+  if (volume) return validHeadingTail(text.slice(volume[0].length));
+  return SPECIAL_PATTERN.test(text) || ENGLISH_PATTERN.test(text) || HASH_PATTERN.test(text);
+}
 
 function withinCodePoints(text: string, max: number): boolean {
   if (text.length <= max) return true;
@@ -135,19 +189,21 @@ function withinCodePoints(text: string, max: number): boolean {
   return true;
 }
 
-/** 這一行是合格章名就回傳章名（整行去頭尾空白），否則回傳 null。 */
+/**
+ * 這一行是合格章名就回傳章名（整行去頭尾空白），否則回傳 null。
+ * 先去頭尾空白、擋超過 80 碼點與句尾 。？！，再依 isChapterHeading 比對各類章名。
+ */
 export function chapterHeadingTitle(line: string): string | null {
-  let index = 0;
-  while (index < line.length) {
-    const char = line[index];
-    if (char !== ' ' && char !== '\t' && char !== '　') break;
-    index += 1;
-  }
-  if (line[index] !== '第') return null;
   const trimmed = line.trim();
+  if (trimmed === '') return null;
   if (!withinCodePoints(trimmed, CHAPTER_HEADING_MAX_CODE_POINTS)) return null;
-  return HEADING_PATTERN.test(trimmed) ? trimmed : null;
+  const last = trimmed[trimmed.length - 1];
+  if (last === '。' || last === '？' || last === '！') return null;
+  return isChapterHeading(trimmed) ? trimmed : null;
 }
+
+/** 一行是章名就回傳章名（去頭尾空白），否則 null。 */
+export type HeadingMatcher = (line: string) => string | null;
 
 export interface SplitChapter {
   title: string;
@@ -168,6 +224,9 @@ export interface SplitOptions {
 class ChapterScanner {
   private readonly text: string;
   private readonly options: SplitOptions;
+  private readonly matcher: HeadingMatcher;
+  /** WO-126：實際命中的章名行數。 */
+  hits = 0;
   private position = 0;
   private bodyStart = 0;
   private currentTitle: string | null = null;
@@ -175,9 +234,15 @@ class ChapterScanner {
   /** 第一個章名之前的文字（不含章名前那個換行）；null 代表章名就在第一行。 */
   private prefix: string | null = null;
 
-  constructor(text: string, options: SplitOptions) {
+  constructor(text: string, options: SplitOptions, matcher: HeadingMatcher = chapterHeadingTitle) {
     this.text = text;
     this.options = options;
+    this.matcher = matcher;
+  }
+
+  /** 有命中且第一個章名前有非空白文字（會補前言）。掃完才準。 */
+  get hasPreface(): boolean {
+    return this.currentTitle !== null && this.prefix !== null && /\S/.test(this.prefix);
   }
 
   get done(): boolean {
@@ -192,8 +257,9 @@ class ChapterScanner {
       const lineStart = this.position;
       const newline = text.indexOf('\n', lineStart);
       const lineEnd = newline === -1 ? text.length : newline;
-      const title = chapterHeadingTitle(text.slice(lineStart, lineEnd));
+      const title = this.matcher(text.slice(lineStart, lineEnd));
       if (title !== null) {
+        this.hits += 1;
         // 章名前那個換行屬於分隔，不算進上一章正文。
         const body = lineStart > this.bodyStart ? text.slice(this.bodyStart, lineStart - 1) : '';
         if (this.currentTitle === null) {
@@ -248,6 +314,156 @@ export async function splitChaptersInBatches(
     if (!scanner.done) await yieldToUi();
   }
   return scanner.result();
+}
+
+/**
+ * WO-126：作家打一個章名例子，依樣比對。
+ *
+ * 例子去頭尾空白後拆成「字面片段」與「數字組」；數字組可換成任何一段數字字元（半形、全形、國字、大寫）。
+ * 全程用字面比對，不把例子當成正規表示式。
+ */
+const NUMERAL_CHARS = new Set('0123456789０１２３４５６７８９零〇一二三四五六七八九十百千兩壹貳參叁肆伍陸柒捌玖拾佰仟廿卅');
+
+type ExamplePart = { kind: 'literal'; text: string } | { kind: 'number' };
+
+const CLOSE_TO_OPEN: Readonly<Record<string, string>> = {
+  '】': '【',
+  ']': '[',
+  '］': '［',
+  '）': '（',
+  ')': '(',
+  '」': '「',
+  '』': '『',
+  '》': '《',
+};
+
+export interface ChapterExample {
+  parts: ExamplePart[];
+  /** 核心最後一段是已成對的閉括號：括號本身就是邊界。 */
+  endsWithClosedBracket: boolean;
+  /** 英文章名或井號數字：半形逗號 , 是合法分隔。 */
+  allowsAsciiComma: boolean;
+}
+
+/** 解析例子；空白或無效（多行、沒有數字組、沒有非空白字面、以「幕」作數字單位）回傳 null。 */
+export function parseChapterExample(raw: string): ChapterExample | null {
+  const example = raw.trim();
+  if (example === '' || /[\r\n\u2028\u2029]/.test(example)) return null;
+  const parts: ExamplePart[] = [];
+  for (const char of example) {
+    const last = parts[parts.length - 1];
+    if (NUMERAL_CHARS.has(char)) {
+      if (!last || last.kind !== 'number') parts.push({ kind: 'number' });
+    } else if (last && last.kind === 'literal') {
+      last.text += char;
+    } else {
+      parts.push({ kind: 'literal', text: char });
+    }
+  }
+  if (!parts.some((part) => part.kind === 'number')) return null;
+  if (!parts.some((part) => part.kind === 'literal' && /\S/.test(part.text))) return null;
+  // 幕是章的下層：數字組後（可有空白）接「幕」的例子不當章名。
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const next = parts[index + 1];
+    if (parts[index].kind === 'number' && next.kind === 'literal' && next.text.trimStart().startsWith('幕')) {
+      return null;
+    }
+  }
+  const first = parts[0];
+  const last = parts[parts.length - 1];
+  let endsWithClosedBracket = false;
+  if (last.kind === 'literal') {
+    const opener = CLOSE_TO_OPEN[last.text[last.text.length - 1]];
+    endsWithClosedBracket = opener !== undefined && example.includes(opener);
+  }
+  return {
+    parts,
+    endsWithClosedBracket,
+    allowsAsciiComma: first.kind === 'literal' && /^[A-Za-z#＃]/.test(first.text) && last.kind === 'number',
+  };
+}
+
+/** 從行首比對例子核心，回傳核心長度；對不上回傳 -1。數字組一律吃完整段，不回頭縮短。 */
+function exampleCoreLength(line: string, parts: readonly ExamplePart[]): number {
+  let position = 0;
+  for (const part of parts) {
+    if (part.kind === 'literal') {
+      if (!line.startsWith(part.text, position)) return -1;
+      position += part.text.length;
+    } else {
+      const start = position;
+      while (position < line.length && NUMERAL_CHARS.has(line[position])) position += 1;
+      if (position === start) return -1;
+    }
+  }
+  return position;
+}
+
+function exampleHeadingTitle(line: string, example: ChapterExample): string | null {
+  const trimmed = line.trim();
+  if (trimmed === '') return null;
+  if (!withinCodePoints(trimmed, CHAPTER_HEADING_MAX_CODE_POINTS)) return null;
+  const end = trimmed[trimmed.length - 1];
+  if (end === '。' || end === '？' || end === '！') return null;
+  const length = exampleCoreLength(trimmed, example.parts);
+  if (length < 0) return null;
+  const rest = trimmed.slice(length);
+  const lastPart = example.parts[example.parts.length - 1];
+  if (lastPart.kind === 'literal' && rest !== '') {
+    const unit = lastPart.text[lastPart.text.length - 1];
+    if (unit === '節' && rest[0] === '課') return null;
+    if (unit === '集' && (rest[0] === '合' || rest[0] === '和')) return null;
+  }
+  if (example.allowsAsciiComma && rest[0] === ',') return trimmed;
+  return validHeadingTail(rest, example.endsWithClosedBracket) ? trimmed : null;
+}
+
+/** 例子留白 → WO-125 自動規則；有例子 → 依例子比對；例子無效 → 一行都不中（不回退自動規則）。 */
+export function exampleHeadingMatcher(rawExample: string): HeadingMatcher {
+  if (rawExample.trim() === '') return chapterHeadingTitle;
+  const example = parseChapterExample(rawExample);
+  if (!example) return () => null;
+  return (line) => exampleHeadingTitle(line, example);
+}
+
+export interface ChapterSplitResult {
+  chapters: SplitChapter[];
+  /** 實際命中的章名行數（0 代表全文放進預設的一章）。 */
+  hits: number;
+  /** 有命中，且章名前有非空白文字而補了「前言」。 */
+  prefaceAdded: boolean;
+}
+
+function scannerResult(scanner: ChapterScanner): ChapterSplitResult {
+  return { chapters: scanner.result(), hits: scanner.hits, prefaceAdded: scanner.hits > 0 && scanner.hasPreface };
+}
+
+/** 同步：依例子（可留白）分章，附命中數。text 必須已統一成 LF。 */
+export function splitChaptersByExample(text: string, example: string, options: SplitOptions): ChapterSplitResult {
+  const scanner = new ChapterScanner(text, options, exampleHeadingMatcher(example));
+  while (!scanner.done) scanner.step(Number.MAX_SAFE_INTEGER);
+  return scannerResult(scanner);
+}
+
+/** 分批：依例子（可留白）分章，附命中數；每 linesPerBatch 行讓出一次畫面。 */
+export async function splitChaptersByExampleInBatches(
+  text: string,
+  example: string,
+  options: SplitOptions,
+  yieldToUi: () => Promise<void>,
+  linesPerBatch = 5000,
+): Promise<ChapterSplitResult> {
+  const scanner = new ChapterScanner(text, options, exampleHeadingMatcher(example));
+  while (!scanner.done) {
+    scanner.step(linesPerBatch);
+    if (!scanner.done) await yieldToUi();
+  }
+  return scannerResult(scanner);
+}
+
+/** 不分章：整份文字（含章名行、前言、縮排與尾端空白）放成一章。 */
+export function wholeTextAsOneChapter(text: string, options: SplitOptions): SplitChapter[] {
+  return [{ title: options.defaultTitle, content: text }];
 }
 
 /**

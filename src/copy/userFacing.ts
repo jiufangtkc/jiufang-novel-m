@@ -58,6 +58,13 @@ export const TREE_ADD_CHAPTER = '新增章';
 export const TREE_ADD_VOLUME = '在下方新增一卷';
 export const TREE_ADD_CHAPTER_BELOW = '在下方新增一章';
 export const TREE_ADD_SCENE = '在這章裡新增幕';
+export const TREE_INLINE_ADD_VOLUME = '＋ 新增卷';
+export const TREE_INLINE_ADD_CHAPTER = '＋ 在這卷新增章';
+export const TREE_INLINE_ADD_SCENE = '＋ 在這章新增幕';
+/** WO-124b：長篇新稿的三層範例名稱。第一章結尾保留一個全形空白（U+3000），方便接續輸入副標。與匯入預設章名、手動新增的「新卷」「幕 1 新幕」分開。 */
+export const NEW_NOVEL_VOLUME_TITLE = '第一卷';
+export const NEW_NOVEL_CHAPTER_TITLE = '第一章　';
+export const NEW_NOVEL_SCENE_TITLE = '第一幕';
 export const TREE_RENAME = '改名';
 export const TREE_NAME_NEW_CHAPTER = '幫新章取名';
 export const TREE_SAVE_NAME = '確定';
@@ -465,6 +472,33 @@ export const IMPORT_TEXT_UNREADABLE = '這個文字檔讀不出來，請另存�
 export const IMPORT_TEXT_WORKING = '正在匯入文字檔，請稍候。';
 /** WO-99：這台裝置存不下新稿子時（不建立稿子、不計次）。 */
 export const IMPORT_TEXT_STORAGE_FAIL = '這台裝置存不下這份稿子，這次沒有匯入。';
+/** WO-126（暫定，交九方審）：匯入視窗標題。 */
+export const IMPORT_DIALOG_TITLE = IMPORT_TEXT_FILE_BUTTON;
+/** WO-126（暫定，交九方審）：例子欄位標題。 */
+export const IMPORT_EXAMPLE_LABEL = '你的章名長什麼樣？';
+/** WO-126（暫定，交九方審）：例子欄位說明。 */
+export const IMPORT_EXAMPLE_HINT = '可以填「01章」或「Chapter 1」。留白就自動判斷。';
+/** WO-126（暫定，交九方審）：前往預覽。 */
+export const IMPORT_PREVIEW_BUTTON = '看分章預覽';
+/** WO-126（暫定，交九方審）：找到章名的預覽句。 */
+export function importPreviewFound(count: number, firstTitle: string): string {
+  return `找到 ${count} 章，第一章是『${firstTitle}』`;
+}
+/** WO-126（暫定，交九方審）：填了例子卻找不到。 */
+export const IMPORT_PREVIEW_NOT_FOUND = '找不到符合這個例子的章名';
+/** WO-126（暫定，交九方審）：未找到章名時，確定匯入會放成一章的提示。 */
+export const IMPORT_PREVIEW_ONE_CHAPTER_HINT = '確定匯入後，全文會放在一章，章名是「第一章　」。';
+/** WO-126（暫定，交九方審）：依預覽建立新稿。 */
+export const IMPORT_CONFIRM_BUTTON = '確定匯入';
+/** WO-126（暫定，交九方審）：回到欄位改例子。 */
+export const IMPORT_BACK_BUTTON = '回去改例子';
+/** WO-126（暫定，交九方審）：直接以全文建立單章。 */
+export const IMPORT_NO_SPLIT_BUTTON = '不分章（全部放成一章）';
+/** WO-126（暫定，交九方審）：關閉視窗。 */
+export const IMPORT_CANCEL_BUTTON = TREE_CANCEL;
+/** WO-126（暫定，交九方審）：預覽章名清單的朗讀標籤。 */
+export const IMPORT_PREVIEW_LIST_ARIA = '前幾章的章名';
+
 export const EXPORT_FULL_TEXT_BUTTON = '匯出全文';
 /** WO-103（暫定，交九方審，暫定第 9 條）：不做 Markdown，只承諾已開放的格式與範圍。 */
 export const EXPORT_FULL_TEXT_HINT = '把全文或自選章節匯出成一個 Word 或 TXT 檔';

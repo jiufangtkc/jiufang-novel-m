@@ -14,7 +14,7 @@ import {
 } from '../copy/userFacing';
 import { latestEditTimestamp } from '../domain/saveClock';
 import { useLayout } from '../layout';
-import { manuscriptWritePath, newChapterId, writePath } from '../domain/openManuscript';
+import { manuscriptWritePath, newManuscriptFirstNodeId, writePath } from '../domain/openManuscript';
 import { recentDisplayProjects } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
 import { RemoveFromDeviceDialog } from './RemoveFromDeviceDialog';
@@ -35,7 +35,7 @@ export function HomeScreen() {
   const [creating, setCreating] = useState(false);
   // 「開啟稿子」：picker 或隱藏 file input（WO-111 抽成共用，歡迎導覽收尾也用）。
   const openFile = useOpenManuscriptFile();
-  // WO-120：「匯入文字檔」（原在檔案頁）；沿用既有 actions.importTextFile，成功直接開成新稿子。
+  // WO-120：「匯入文字檔」（原在檔案頁）。WO-126：選檔後開視窗，先預覽再確定，成功直接開成新稿子。
   const importText = useImportTextFile();
   // WO-111：歡迎導覽三關內容（第一次使用，沒有開著的稿子）。
   const steps = useWelcomeSteps({ entry: 'first', project: null });
@@ -78,11 +78,11 @@ export function HomeScreen() {
   }, [location.state, location.pathname, navigate]);
 
   return (
-    <div className="home" data-testid="home-screen">
-      <header className="topbar" inert={welcome.show}>
+    <div className="home" data-testid="home-screen" data-import-open={importText.open ? 'true' : undefined}>
+      <header className="topbar" inert={welcome.show || importText.open}>
         <h1>九方小說編輯器M</h1>
       </header>
-      <main className="home-main" inert={welcome.show}>
+      <main className="home-main" inert={welcome.show || importText.open}>
         <h2>最近開啟的稿子</h2>
         {recent.length === 0 ? (
           <p className="empty-note">還沒有稿子。開一本新的，或開啟已經存在的 .db 稿件檔。</p>
@@ -119,7 +119,7 @@ export function HomeScreen() {
           </ul>
         )}
       </main>
-      <footer className="home-actions" inert={welcome.show}>
+      <footer className="home-actions" inert={welcome.show || importText.open}>
         <button type="button" className="button primary" onClick={() => setCreating(true)}>
           <PlusIcon size={18} />
           開新稿子
@@ -138,6 +138,7 @@ export function HomeScreen() {
           type="button"
           className="button secondary"
           data-testid="import-text-file"
+          ref={importText.buttonRef}
           aria-busy={importText.busy ? 'true' : undefined}
           aria-describedby={importText.error ? 'import-text-error' : undefined}
           onClick={importText.pick}
@@ -172,6 +173,8 @@ export function HomeScreen() {
       {/* 放在 inert 區塊外：導覽收尾「開始寫」選檔時，首頁後面還是 inert。 */}
       {openFile.input}
       {importText.input}
+      {/* WO-126：匯入視窗（填章名例子、看預覽、確定）；放在 inert 區塊外。 */}
+      {importText.dialog}
       {welcome.show && (
         <WelcomeTour
           entry="first"
@@ -212,7 +215,7 @@ export function HomeScreen() {
               event.preventDefault();
               const id = actions.addProject(title, shape);
               setCreating(false);
-              navigate(writePath(id, newChapterId(id)));
+              navigate(writePath(id, newManuscriptFirstNodeId(id, shape)));
             }}
           >
             <h2 id="new-project-title">開新稿子</h2>

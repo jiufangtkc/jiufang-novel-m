@@ -8,6 +8,7 @@ import { openNodeSql } from '../db/nodeSql';
 import { readFileProject, treeWordCount, writeFileProject } from '../db/projectFile';
 import { createVersion14Shell } from '../db/schemaFixture';
 import { scheduleFromLogs } from '../db/library';
+import { firstFileNode } from './testing/firstFile';
 import { createState, manuscriptSnapshotParts, reduce, type SampleState } from './sampleStore';
 import { demoFixtureState } from './testing/sampleFixture';
 
@@ -22,7 +23,7 @@ function projectOf(state: SampleState, id: string) {
 }
 
 function chapterOf(state: SampleState, projectId: string) {
-  return projectOf(state, projectId).nodes[0]!;
+  return firstFileNode(projectOf(state, projectId).nodes)!;
 }
 
 function write(state: SampleState, projectId: string, text: string): SampleState {
@@ -82,8 +83,8 @@ describe('WO-76 同一段文字，各路徑字數相同', () => {
     const bookBefore = countBookWords(projectOf(state, 'p-new').nodes);
     expect(chapterBefore).toBe(28);
     expect(todayWords(state)).toBe(28);
-    // 全書含章名，本章不含
-    expect(bookBefore).toBe(28 + countWords(chapterOf(state, 'p-new').title));
+    // 全書含卷名、章名、幕名（WO-124b 長篇新稿的三層範例），本章不含
+    expect(bookBefore).toBe(28 + countWords('第一卷') + countWords(chapterOf(state, 'p-new').title) + countWords('第一幕'));
 
     const { parts, loaded, reopened } = saveAndReopen(state, 'p-new');
     expect(parts.logs.find((log) => log.date === TODAY)?.word_count).toBe(28);

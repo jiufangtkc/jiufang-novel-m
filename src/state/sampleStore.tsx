@@ -55,6 +55,9 @@ import {
   BOOK_RENAMED_TOAST,
   IMPORT_DEFAULT_CHAPTER_TITLE,
   IMPORT_PREFACE_TITLE,
+  NEW_NOVEL_CHAPTER_TITLE,
+  NEW_NOVEL_SCENE_TITLE,
+  NEW_NOVEL_VOLUME_TITLE,
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
   SAVE_FATAL_FAIL,
@@ -67,7 +70,8 @@ import {
   decodeTextBytes,
   importTitleFromFilename,
   normalizeNewlines,
-  splitChaptersInBatches,
+  splitChaptersByExampleInBatches,
+  wholeTextAsOneChapter,
   type SplitChapter,
   type StrictDecoderFactory,
 } from '../domain/textImport';
@@ -158,7 +162,13 @@ import {
   updateCard as updateCardInList,
   type UpdateCardPatch,
 } from '../domain/cardOps';
-import { newChapterId, shapeAfterEdit } from '../domain/openManuscript';
+import {
+  newChapterId,
+  newManuscriptFirstNodeId,
+  newSceneId,
+  newVolumeId,
+  shapeAfterEdit,
+} from '../domain/openManuscript';
 import {
   addSceneUnderChapter,
   createScene,
@@ -1325,21 +1335,41 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         updatedLabel: '剛剛',
         bookGoal: isValidBookGoal(action.bookGoal) ? action.bookGoal : NEW_BOOK_GOAL_DEFAULT,
         shape: action.shape,
-        lastOpenedNodeId: chapterId,
+        lastOpenedNodeId: newManuscriptFirstNodeId(action.id, action.shape),
         lastCursor: 0,
         cards: [],
         categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
         expandedCategoriesRaw: null,
         categoriesMetaRaw: '{}',
-        nodes: [
-          {
-            id: chapterId,
-            type: 'file',
-            title: single ? title : '第一章　',
-            progress: 'Draft',
-            content: '',
-          },
-        ],
+        nodes: single
+          ? [{ id: chapterId, type: 'file', title, progress: 'Draft', content: '' }]
+          : [
+              {
+                id: newVolumeId(action.id),
+                type: 'folder',
+                title: NEW_NOVEL_VOLUME_TITLE,
+                expanded: true,
+                children: [
+                  {
+                    id: chapterId,
+                    type: 'file',
+                    title: NEW_NOVEL_CHAPTER_TITLE,
+                    progress: 'Draft',
+                    expanded: true,
+                    content: '',
+                    children: [
+                      {
+                        id: newSceneId(action.id),
+                        type: 'scene',
+                        title: NEW_NOVEL_SCENE_TITLE,
+                        progress: 'Draft',
+                        content: '',
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
       };
       return {
         ...state,
@@ -1737,6 +1767,12 @@ interface SampleActions {
   importFile: (file: File, diskFile?: DiskFile | null) => Promise<{ id: string; chapterId: string | null }>;
   /** WO-99：匯入 TXT 開成新稿子。 */
   importTextFile: (file: File) => Promise<TextImportOutcome>;
+  /** WO-126：選到檔後只讀取與解碼（統一換行），不建稿。 */
+  readImportText: (file: File) => Promise<{ kind: 'ready'; text: string } | { kind: 'unreadable' }>;
+  /** WO-126：依例子（可留白）預覽分章，不建稿、不寫紀錄。 */
+  previewImportText: (text: string, example: string) => Promise<TextImportPreview>;
+  /** WO-126：確定匯入／不分章：用給定章列建稿，成功後寫 .db（WO-102）。 */
+  confirmImportText: (input: { filename: string; chapters: readonly SplitChapter[] }) => Promise<TextImportOutcome>;
   /** WO-103：匯出全文（Word／TXT、全文／自選章節）。prepared 給手勢失效後再點「儲存檔案」用。 */
   exportFullText: (
     request: FullTextExportRequest,
@@ -2067,28 +2103,85 @@ export async function runTextImport(input: {
   /** WO-109：新稿子的全書目標；沒給就讀這台裝置的本機設定 new-book-goal（沒設過＝100,000）。 */
   newBookGoal?: number;
 }): Promise<TextImportOutcome> {
-  const { busy, store } = input;
+  const { busy } = input;
   if (busy.current) return { kind: 'busy' };
   busy.current = true;
   const yieldToUi = input.yieldToUi ?? defaultYieldToUi;
   try {
     // 先讓「處理中」畫面有機會畫出來。
     await yieldToUi();
-    let bytes: Uint8Array;
-    try {
-      bytes = await input.readBytes();
-    } catch {
-      return { kind: 'unreadable' };
-    }
-    const decoded = decodeTextBytes(bytes, input.decoder);
-    if (!decoded.ok) return { kind: 'unreadable' };
-    const text = normalizeNewlines(decoded.text);
+    const prepared = await prepareTextImport({ readBytes: input.readBytes, decoder: input.decoder });
+    if (prepared.kind === 'unreadable') return { kind: 'unreadable' };
     await yieldToUi();
-    const chapters = await splitChaptersInBatches(
-      text,
-      { prefaceTitle: IMPORT_PREFACE_TITLE, defaultTitle: IMPORT_DEFAULT_CHAPTER_TITLE },
-      yieldToUi,
-    );
+    // 一口氣匯入＝例子留白（WO-125 自動規則）。
+    const preview = await previewTextImport(prepared.text, '', yieldToUi);
+    return commitTextImport({ ...input, chapters: preview.chapters });
+  } finally {
+    busy.current = false;
+  }
+}
+
+/** WO-126：選到檔後的準備工作。只讀位元組、解碼、統一換行；不建稿、不寫任何紀錄。 */
+export async function prepareTextImport(input: {
+  readBytes: () => Promise<Uint8Array>;
+  decoder?: StrictDecoderFactory;
+}): Promise<{ kind: 'ready'; text: string } | { kind: 'unreadable' }> {
+  let bytes: Uint8Array;
+  try {
+    bytes = await input.readBytes();
+  } catch {
+    return { kind: 'unreadable' };
+  }
+  const decoded = decodeTextBytes(bytes, input.decoder);
+  if (!decoded.ok) return { kind: 'unreadable' };
+  return { kind: 'ready', text: normalizeNewlines(decoded.text) };
+}
+
+/** WO-126：匯入預覽。例子留白＝WO-125 自動規則。純計算，不建稿、不寫紀錄。 */
+export interface TextImportPreview {
+  chapters: SplitChapter[];
+  /** 實際命中的章名行數；0 代表沒找到，全文放進預設的一章。 */
+  hits: number;
+  prefaceAdded: boolean;
+  /** 作家有填非空白例子。 */
+  usedExample: boolean;
+}
+
+export async function previewTextImport(
+  text: string,
+  example: string,
+  yieldToUi: () => Promise<void> = defaultYieldToUi,
+): Promise<TextImportPreview> {
+  const result = await splitChaptersByExampleInBatches(
+    text,
+    example,
+    { prefaceTitle: IMPORT_PREFACE_TITLE, defaultTitle: IMPORT_DEFAULT_CHAPTER_TITLE },
+    yieldToUi,
+  );
+  return { ...result, usedExample: example.trim() !== '' };
+}
+
+/** WO-126：不分章時的章列（整份文字一章）。 */
+export function wholeTextImportChapters(text: string): SplitChapter[] {
+  return wholeTextAsOneChapter(text, { prefaceTitle: IMPORT_PREFACE_TITLE, defaultTitle: IMPORT_DEFAULT_CHAPTER_TITLE });
+}
+
+/**
+ * WO-126：確認後才真的建稿（同步）。以呼叫當下的狀態取新稿代號、全書目標與寫作日，
+ * 先寫本機匯入事件與稿子清單（任一失敗就復原事件），再一次 dispatch。
+ */
+export function commitTextImport(input: {
+  filename: string;
+  chapters: readonly SplitChapter[];
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  store: KeyValueStore | null;
+  now?: () => Date;
+  newEventId?: (projectId: string) => string;
+  newBookGoal?: number;
+}): TextImportOutcome {
+  const { store, chapters } = input;
+  {
     if (!store) return { kind: 'storage-failed' };
 
     const state = input.getState();
@@ -2127,6 +2220,29 @@ export async function runTextImport(input: {
     input.dispatch(importAction);
     // WO-102：afterState 給匯入後立刻寫 .db 用（畫面 state 這一刻還沒更新）。
     return { kind: 'imported', id, chapterId: project.nodes[0]!.id, afterState: reduce(state, importAction) };
+  }
+}
+
+/** WO-126：作家按「確定匯入」或「不分章」後的寫入。處理中再來一次直接回 busy，不會重複建稿。 */
+export async function runConfirmedImport(input: {
+  filename: string;
+  chapters: readonly SplitChapter[];
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  store: KeyValueStore | null;
+  busy: { current: boolean };
+  now?: () => Date;
+  yieldToUi?: () => Promise<void>;
+  newEventId?: (projectId: string) => string;
+  newBookGoal?: number;
+}): Promise<TextImportOutcome> {
+  const { busy } = input;
+  if (busy.current) return { kind: 'busy' };
+  busy.current = true;
+  try {
+    // 先讓「處理中」畫面有機會畫出來。
+    await (input.yieldToUi ?? defaultYieldToUi)();
+    return commitTextImport(input);
   } finally {
     busy.current = false;
   }
@@ -2707,6 +2823,23 @@ export function SampleProvider({
         const outcome = await runTextImport({
           filename: file.name,
           readBytes: async () => new Uint8Array(await file.arrayBuffer()),
+          getState: () => stateRef.current,
+          dispatch,
+          store: deviceStore(),
+          busy: importBusyRef,
+        });
+        if (outcome.kind === 'imported') {
+          await persistImportedRecord({ state: outcome.afterState, projectId: outcome.id, dispatch });
+        }
+        return outcome;
+      },
+      readImportText: (file) =>
+        prepareTextImport({ readBytes: async () => new Uint8Array(await file.arrayBuffer()) }),
+      previewImportText: (text, example) => previewTextImport(text, example),
+      confirmImportText: async ({ filename, chapters }) => {
+        const outcome = await runConfirmedImport({
+          filename,
+          chapters,
           getState: () => stateRef.current,
           dispatch,
           store: deviceStore(),
