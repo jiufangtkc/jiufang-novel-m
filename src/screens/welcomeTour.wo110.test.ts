@@ -577,7 +577,8 @@ describe('WO-110 焦點、鍵盤、不設 Esc、點外不關', () => {
     const src = readFileSync('src/screens/WelcomeTour.tsx', 'utf8');
     expect(src).toContain("event.key === 'Tab'");
     const home = readFileSync('src/screens/HomeScreen.tsx', 'utf8');
-    expect(home.match(/inert=\{welcome\.show\}/g)?.length).toBe(3);
+    // WO-126：匯入視窗開啟時同樣 inert；歡迎導覽仍覆蓋這三處。
+    expect(home.match(/inert=\{welcome\.show \|\| importText\.open\}/g)?.length).toBe(3);
   });
 });
 
