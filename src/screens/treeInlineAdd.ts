@@ -16,17 +16,15 @@ export function inlineAddKindFor(parent: ChapterNode | null, organizing: boolean
   if (organizing) return null;
   if (!parent) return 'volume';
   if (parent.type === 'folder') return isNodeExpanded(parent) ? 'chapter' : null;
-  if (parent.type === 'file') {
-    return isNodeExpanded(parent) && (parent.children?.length ?? 0) > 0 ? 'scene' : null;
-  }
+  if (parent.type === 'file') return isNodeExpanded(parent) ? 'scene' : null;
   return null;
 }
 
-/** 這個節點底下要不要畫子清單：有子節點，或是展開中的空卷（只放新增章行）。 */
+/** 這個節點底下要不要畫子清單：有子節點，或是展開中的空卷、空章（只放新增章／新增幕行）。 */
 export function showsChildList(node: ChapterNode, organizing: boolean): boolean {
   if (!isNodeExpanded(node)) return false;
   if (node.children?.length) return true;
-  return inlineAddKindFor(node, organizing) === 'chapter';
+  return inlineAddKindFor(node, organizing) !== null;
 }
 
 /** 卷內新增章前確認目標卷還在；不在就不要新增，避免掉到根層備援。 */
