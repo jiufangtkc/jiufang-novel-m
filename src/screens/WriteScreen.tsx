@@ -108,6 +108,7 @@ import { aliveNearId, markWriteChapterOpen, readWritePlace } from '../state/navM
 import { getCardEditSnapshot, subscribeCardEdit } from '../state/writingCardEditSession';
 import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
 import { ChapterTree } from './ChapterTree';
+import { volumeStillExists } from './treeInlineAdd';
 import { EditorPane } from './EditorPane';
 import { focusTitleInput } from './titleCaret';
 import { loadTreePlace, saveTreePlace, scrollTopForRow, type TreePlace } from './treeScroll';
@@ -350,12 +351,14 @@ export function WriteScreen() {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return;
-      const id = pickedId ?? highlightId;
       if ((event.key === 'z' || event.key === 'Z') && (event.ctrlKey || event.metaKey) && undoAction.current) {
         event.preventDefault();
         undoAction.current();
         return;
       }
+      // WO-124：復原照常；焦點在目錄內的新增按鈕時，才不拿節點快捷鍵（F2、Delete、Alt+方向）去動別的節點。
+      if (target instanceof Element && target.closest('.tree-inline-add')) return;
+      const id = pickedId ?? highlightId;
       if (!id) return;
       if (event.key === 'F2') {
         event.preventDefault();
@@ -621,8 +624,16 @@ export function WriteScreen() {
     next.splice(rootIndex, 0, node);
     commit(next, treeAddedToast(TREE_NEW_VOLUME), { structure: { kind: 'add', id } });
     pendingScroll.current = id;
+    // WO-124：新卷改名後留在目錄，不要沿用新章的 write 意圖而跳進正文。
+    setRenameIntent('stay');
     setRenameId(id);
     setMenu(null);
+  }
+
+  // WO-124：卷內「＋ 在這卷新增章」。目標卷不在了就停手，免得掉到根層備援。
+  function addChapterInVolume(volumeId: string) {
+    if (!volumeStillExists(book.nodes, volumeId)) return;
+    addChapter(volumeId);
   }
 
   function addScene(chapterNodeId: string) {
@@ -770,6 +781,11 @@ export function WriteScreen() {
             onInlineRename={(id) => {
               setPickedId(id);
               setInlineId(id);
+            }}
+            inlineAdd={{
+              onAddVolume: () => addVolume(null),
+              onAddChapter: addChapterInVolume,
+              onAddScene: addScene,
             }}
           />
           {archive.deleted.length > 0 ? (

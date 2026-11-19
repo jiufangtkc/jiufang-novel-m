@@ -3,12 +3,18 @@ import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { ChevronIcon, FolderIcon, GripIcon, MoreIcon } from '../components/Icons';
 import { StatusBadge } from '../components/StatusBadge';
-import { TREE_SAVE_NAME } from '../copy/userFacing';
+import {
+  TREE_INLINE_ADD_CHAPTER,
+  TREE_INLINE_ADD_SCENE,
+  TREE_INLINE_ADD_VOLUME,
+  TREE_SAVE_NAME,
+} from '../copy/userFacing';
 import { commitInlineChapterTitle, type TitleEditVia } from '../domain/bookTitle';
 import { progressLabel } from '../domain/labels';
 import { decideEnterKey } from '../editor/enterGuard';
 import { useLayout } from '../layout';
 import { focusTitleInput } from './titleCaret';
+import { inlineAddKindFor, isNodeExpanded, showsChildList, type InlineAddKind } from './treeInlineAdd';
 import type { ChapterNode } from '../data/demo';
 
 const TIP_DELAY_MS = 500;
@@ -33,6 +39,20 @@ type TreeHandlers = {
   onCancelRename: () => void;
   onDismissInline: () => void;
   onInlineRename: (id: string) => void;
+  /** 目錄樹內的新增行回呼；沒給就不畫新增行。 */
+  inlineAdd?: InlineAddHandlers;
+};
+
+export type InlineAddHandlers = {
+  onAddVolume: () => void;
+  onAddChapter: (volumeId: string) => void;
+  onAddScene: (chapterId: string) => void;
+};
+
+const INLINE_ADD_LABEL: Record<InlineAddKind, string> = {
+  volume: TREE_INLINE_ADD_VOLUME,
+  chapter: TREE_INLINE_ADD_CHAPTER,
+  scene: TREE_INLINE_ADD_SCENE,
 };
 
 export function ChapterTree({
@@ -55,11 +75,13 @@ export function ChapterTree({
   onCancelRename,
   onDismissInline,
   onInlineRename,
-}: TreeHandlers & { nodes: readonly ChapterNode[] }) {
+  inlineAdd,
+  parent = null,
+}: TreeHandlers & { nodes: readonly ChapterNode[]; parent?: ChapterNode | null }) {
+  const addKind = inlineAdd ? inlineAddKindFor(parent, organizing) : null;
   return (
     <ul className="tree-list">
       {nodes.map((node) => {
-        const hasChildren = Boolean(node.children?.length);
         return (
           <li key={node.id}>
             <TreeRow
@@ -83,7 +105,7 @@ export function ChapterTree({
               onDismissInline={onDismissInline}
               onInlineRename={onInlineRename}
             />
-            {hasChildren && node.expanded !== false && (
+            {showsChildList(node, organizing || !inlineAdd) && (
               <ChapterTree
                 projectId={projectId}
                 nodes={node.children ?? []}
@@ -104,11 +126,28 @@ export function ChapterTree({
                 onCancelRename={onCancelRename}
                 onDismissInline={onDismissInline}
                 onInlineRename={onInlineRename}
+                inlineAdd={inlineAdd}
+                parent={node}
               />
             )}
           </li>
         );
       })}
+      {addKind && inlineAdd ? (
+        <li className="tree-inline-add-item" data-inline-add={addKind} style={{ '--tree-depth': depth } as CSSProperties}>
+          <button
+            type="button"
+            className="tree-inline-add"
+            onClick={() => {
+              if (addKind === 'volume') inlineAdd.onAddVolume();
+              else if (parent && addKind === 'chapter') inlineAdd.onAddChapter(parent.id);
+              else if (parent) inlineAdd.onAddScene(parent.id);
+            }}
+          >
+            {INLINE_ADD_LABEL[addKind]}
+          </button>
+        </li>
+      ) : null}
     </ul>
   );
 }
@@ -147,6 +186,7 @@ function TreeRow({
   const dropClass = drop?.id === node.id ? (drop.after ? 'drop-after' : 'drop-before') : '';
   const selected = node.id === selectedId;
   const compact = pointer === 'mouse';
+  const expanded = isNodeExpanded(node);
 
   function clearTipTimer() {
     if (tipTimer.current != null) window.clearTimeout(tipTimer.current);
@@ -270,11 +310,11 @@ function TreeRow({
         <button
           type="button"
           className="tree-chevron"
-          aria-expanded={Boolean(node.expanded)}
-          aria-label={node.expanded ? `收合${node.title}` : `展開${node.title}`}
+          aria-expanded={expanded}
+          aria-label={expanded ? `收合${node.title}` : `展開${node.title}`}
           onClick={() => onToggle(node.id)}
         >
-          <ChevronIcon expanded={Boolean(node.expanded)} size={compact ? 16 : 18} />
+          <ChevronIcon expanded={expanded} size={compact ? 16 : 18} />
         </button>
       ) : (
         <span className="tree-chevron-spacer" />
