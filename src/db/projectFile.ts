@@ -8,6 +8,7 @@ import {
   detectLegacyVersion,
 } from './migrations';
 import { columnNames, tableNames, type Sql, type SqlValue } from './sql';
+import { readTimelineData, writeTimelineData, type TimelineRead } from './timelineMeta';
 import { readTransferData, writeTransferEvents, type TransferEvent, type TransferRead } from './transferMeta';
 
 const PROGRESS = new Set<string>(['Draft', '1st Edit', '2nd Edit', 'Final', 'Discarded']);
@@ -99,6 +100,12 @@ export interface FileCard {
   color: string;
   is_collapsed: number;
   sort_order: number;
+  /** WO-128：事件卡的故事時間（自由文字，空字串或未設時畫面不顯示）。 */
+  storyTime?: string;
+  /** WO-128：事件卡在時間線的故事順序位置（0..M-1）；null 或未設代表尚未手動排過序。 */
+  timelineOrder?: number | null;
+  /** WO-128：事件卡連到的目錄章節代號（chapters.id）；null 或未設代表還沒寫進任何章。 */
+  chapterId?: string | null;
   /** 已知 8 欄以外的未知欄位，讀入時原樣保留 */
   extraColumns?: Record<string, SqlValue>;
 }
@@ -124,6 +131,8 @@ export interface LoadedFile {
   wordCount: number;
   /** WO-100：稿子內附加表的匯入事件（只讀，不建表）。 */
   transfer: TransferRead;
+  /** WO-128：稿子內附加表的時間線資料（只讀，不建表）。 */
+  timeline: TimelineRead;
 }
 
 type ChapterNodeWithRaw = ChapterNode & {
@@ -374,11 +383,15 @@ export function readFileProject(sql: Sql): LoadedFile {
 
   const chapterRows = sql.select('SELECT * FROM chapters ORDER BY sort_order, id');
   const tree = buildTree(chapterRows);
+  const timeline = readTimelineData(sql);
+  const timelineEntries = timeline.kind === 'ok' ? timeline.entries : null;
 
   const cards = sql.select('SELECT * FROM cards ORDER BY sort_order, id').map((row): FileCard => {
+    const id = text(row.id);
     const extra = extractExtraColumns(row, KNOWN_CARD_COLUMNS);
+    const timelineEntry = timelineEntries?.[id];
     return {
-      id: text(row.id),
+      id,
       parent_id: row.parent_id == null ? null : text(row.parent_id),
       category: text(row.category),
       title: text(row.title),
@@ -386,6 +399,13 @@ export function readFileProject(sql: Sql): LoadedFile {
       color: text(row.color),
       is_collapsed: num(row.is_collapsed),
       sort_order: num(row.sort_order),
+      ...(timelineEntry
+        ? {
+            storyTime: timelineEntry.storyTime,
+            timelineOrder: timelineEntry.timelineOrder,
+            chapterId: timelineEntry.chapterId,
+          }
+        : {}),
       ...(extra ? { extraColumns: extra } : {}),
     };
   });
@@ -408,7 +428,15 @@ export function readFileProject(sql: Sql): LoadedFile {
       delete_large_count: num(row.delete_large_count),
     }));
 
-  return { info, tree, cards, logs, wordCount: treeWordCount(tree), transfer: readTransferData(sql) };
+  return {
+    info,
+    tree,
+    cards,
+    logs,
+    wordCount: treeWordCount(tree),
+    transfer: readTransferData(sql),
+    timeline,
+  };
 }
 
 function extractChapterSpecialRawColumns(
@@ -947,6 +975,8 @@ export function writeFileProject(
     writeChaptersDiff(sql, tree);
     writeCardsDiff(sql, cards);
     writeLogsDiff(sql, logs);
+    // WO-128：時間線附加表與正文、卡片在同一筆交易寫入；無時間線資料時懶建立不建表。
+    writeTimelineData(sql, cards);
     // WO-100：附加事件與正文同一筆交易；任何一步失敗整筆回復，不會只存到正文。
     // WO-103：匯出事件也在同一筆交易；兩者都沒給時完全不碰附加表。
     if (importEvents || exportEvents) writeTransferEvents(sql, importEvents ?? {}, exportEvents ?? {});
