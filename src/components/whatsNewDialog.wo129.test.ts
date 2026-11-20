@@ -143,8 +143,7 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(html).not.toContain(`v${APP_VERSION}`);
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
-    expect(html).toContain('<li>自動存檔：用電腦的 Chrome 或 Edge 存過一次後，每 5 分鐘自動存回檔案</li>');
-    expect(html).toContain('<li>還沒存成檔案時會提醒你</li>');
+    expect(html).toContain('<li>存檔提醒改成只在畫面角落顯示，不再跳出視窗</li>');
 
     const confirmMatch = html.match(
       /<button\b[^>]*data-testid="whats-new-confirm"[^>]*>[\s\S]*?<\/button>/,
@@ -153,7 +152,7 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(confirmMatch![0]).toContain('button primary whats-new-confirm');
     expect(confirmMatch![0]).toContain(WHATS_NEW_CONFIRM);
 
-    // 升版為 0.4.0（兩筆改版資料）時，預設呈現收合的「之前的版本」展開鈕
+    // 升版為 0.4.1（三筆改版資料）時，預設呈現收合的「之前的版本」展開鈕
     expect(html).toContain('data-testid="whats-new-history-toggle"');
     expect(html).toContain('aria-expanded="false"');
     expect(html).toContain(WHATS_NEW_PREVIOUS_TOGGLE);

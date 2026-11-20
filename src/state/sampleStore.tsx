@@ -143,17 +143,10 @@ import {
   resolveAutoSaveStatus,
   shouldClearDirtyAfterSave,
   shouldRunAutoSaveTick,
+  startAutoSaveScheduler,
   type AutoSaveStatus,
   type HandlePermissionState,
 } from '../domain/autoSave';
-import {
-  emptyReminderSession,
-  recordReminderNonTextEdit,
-  recordReminderTextEdit,
-  resetReminderAfterSave,
-  snoozeReminderSession,
-  type ProjectReminderSession,
-} from '../domain/saveReminder';
 import {
   applyLargeEvent,
   classifyTextDelta,
@@ -258,8 +251,6 @@ export interface SampleState {
   saveMeta: Record<string, SaveMetaEntry>;
   /** WO-130：各稿在本次開啟期間的實質內容修訂序號（只隨真正改動 .db 內容的操作遞增）。 */
   contentRevById?: Record<string, number>;
-  /** WO-130：各稿在本次開啟期間的溫和存檔提醒狀態（字數變動量、計時起點、冷卻與次數）。 */
-  reminderSessions?: Record<string, ProjectReminderSession>;
   /** WO-98：各稿在這台裝置的建立（或第一次遇到）時間，只存本機，不寫進 .db。 */
   startedById: Record<string, number>;
   /**
@@ -336,8 +327,7 @@ export type Action =
   | { type: 'record-manual-save'; projectId: string; atMs: number }
   | { type: 'record-export'; projectId: string; atMs: number }
   | { type: 'record-project-save'; projectId: string; atMs: number }
-  | { type: 'clear-dirty-after-file-save'; projectId: string; clearDirty: boolean; fromReminder?: boolean }
-  | { type: 'snooze-save-reminder'; projectId: string; nowMs: number }
+  | { type: 'clear-dirty-after-file-save'; projectId: string; clearDirty: boolean }
   | { type: 'set-filename'; projectId: string; filename: string }
   | { type: 'rename-book'; projectId: string; title: string; titleSavePending: BookFileMark['titleSavePending'] }
   | { type: 'defer-title-save'; projectId: string }
@@ -723,26 +713,12 @@ function patchSaveMeta(
   };
 }
 
-function withContentRevision(
-  state: SampleState,
-  projectId: string,
-  nowMs: number,
-  options?: { wordChurn?: number; nonTextEdit?: boolean; skipReminder?: boolean },
-): SampleState {
+function withContentRevision(state: SampleState, projectId: string): SampleState {
   const withDirty = patchSaveMeta(state, projectId, { dirtySinceFileSave: true });
   const prevRev = withDirty.contentRevById?.[projectId] ?? 0;
-  const contentRevById = { ...(withDirty.contentRevById ?? {}), [projectId]: prevRev + 1 };
-  if (options?.skipReminder) {
-    return { ...withDirty, contentRevById };
-  }
-  const prevSession = withDirty.reminderSessions?.[projectId] ?? emptyReminderSession();
-  const nextSession = options?.nonTextEdit
-    ? recordReminderNonTextEdit(prevSession, nowMs)
-    : recordReminderTextEdit(prevSession, options?.wordChurn ?? 0, nowMs);
   return {
     ...withDirty,
-    contentRevById,
-    reminderSessions: { ...(withDirty.reminderSessions ?? {}), [projectId]: nextSession },
+    contentRevById: { ...(withDirty.contentRevById ?? {}), [projectId]: prevRev + 1 },
   };
 }
 
@@ -1265,13 +1241,12 @@ const NON_TEXT_CONTENT_ACTIONS = new Set<Action['type']>([
 export function reduce(state: SampleState, action: Action): SampleState {
   let next = reduceBase(state, action);
   if (next !== state) {
-    const nowMs = Date.now();
     if (NON_TEXT_CONTENT_ACTIONS.has(action.type) && 'projectId' in action) {
-      next = withContentRevision(next, action.projectId, nowMs, { nonTextEdit: true });
+      next = withContentRevision(next, action.projectId);
     } else if (action.type === 'set-goal' && next.activeProjectId) {
-      next = withContentRevision(next, next.activeProjectId, nowMs, { nonTextEdit: true });
+      next = withContentRevision(next, next.activeProjectId);
     } else if ((action.type === 'note-large' || action.type === 'add-duration') && next.activeProjectId) {
-      next = withContentRevision(next, next.activeProjectId, nowMs, { skipReminder: true });
+      next = withContentRevision(next, next.activeProjectId);
     }
   }
   if (next.formatUndo && next.activeProjectId !== next.formatUndo.projectId) {
@@ -1339,29 +1314,10 @@ function reduceBase(state: SampleState, action: Action): SampleState {
     }
     case 'record-project-save':
       return patchSaveMeta(state, action.projectId, { lastProjectSaveMs: action.atMs });
-    case 'clear-dirty-after-file-save': {
-      const next = action.clearDirty
+    case 'clear-dirty-after-file-save':
+      return action.clearDirty
         ? patchSaveMeta(state, action.projectId, { dirtySinceFileSave: false })
         : state;
-      const prevSession = next.reminderSessions?.[action.projectId] ?? emptyReminderSession();
-      return {
-        ...next,
-        reminderSessions: {
-          ...(next.reminderSessions ?? {}),
-          [action.projectId]: resetReminderAfterSave(prevSession, Boolean(action.fromReminder)),
-        },
-      };
-    }
-    case 'snooze-save-reminder': {
-      const prevSession = state.reminderSessions?.[action.projectId] ?? emptyReminderSession();
-      return {
-        ...state,
-        reminderSessions: {
-          ...(state.reminderSessions ?? {}),
-          [action.projectId]: snoozeReminderSession(prevSession, action.nowMs),
-        },
-      };
-    }
     case 'import-text': {
       // WO-99：一次加入完整新稿子、它自己的空白結算狀態、當日紀錄列與匯入事件；代號重複就不動。
       const id = action.project.id;
@@ -1458,7 +1414,6 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         startedById: without(state.startedById),
         fileExtras: without(state.fileExtras),
         contentRevById: without(state.contentRevById ?? {}),
-        reminderSessions: without(state.reminderSessions ?? {}),
         importEvents: dropEvents(state.importEvents),
         exportEvents: dropEvents(state.exportEvents),
         activeProjectId: state.activeProjectId && ids.has(state.activeProjectId) ? null : state.activeProjectId,
@@ -1586,9 +1541,7 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         projects,
         fileExtras: extras,
       };
-      return withContentRevision(withCommit, action.projectId, now.getTime(), {
-        wordChurn: Math.abs(deltaWords),
-      });
+      return withContentRevision(withCommit, action.projectId);
     }
     case 'note-large': {
       if (!state.schedule.open) return state;
@@ -2001,10 +1954,9 @@ interface SampleActions {
   deferTitleSave: (projectId: string) => void;
   discardPreparedShare: (projectId: string) => void;
   prepareShare: (projectId: string, title: string) => Promise<void>;
-  saveProject: (options?: { fromReminder?: boolean }) => Promise<SaveOutcome | null>;
-  saveProjectAs: (options?: { fromReminder?: boolean }) => Promise<SaveOutcome | null>;
+  saveProject: () => Promise<SaveOutcome | null>;
+  saveProjectAs: () => Promise<SaveOutcome | null>;
   resumeAutoSave: () => Promise<'granted' | 'denied' | 'no-handle'>;
-  snoozeSaveReminder: (projectId: string) => void;
   toast: (message: string | null) => void;
 }
 
@@ -2802,7 +2754,7 @@ export async function executeBackgroundAutoSave(
   const snapFn = deps.snapshot ?? snapshotManuscript;
   const runPromise = (async (): Promise<AutoSaveOutcome | 'skipped'> => {
     try {
-      const snap = await snapFn(latest, live.project, true);
+      const snap = await snapFn(latest, live.project, live.hasDiff);
       const outcome = await autoSaveProjectToPlace(
         deps.env,
         snap.key,
@@ -2922,7 +2874,6 @@ export async function runManualSaveProject(input: {
   inflight: { current: { kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null };
   lastSavedRevById: Record<string, number>;
   onSaved: (projectId: string) => void;
-  options?: { fromReminder?: boolean };
   snapshot?: typeof snapshotManuscript;
   store?: KeyValueStore | null;
 }): Promise<SaveOutcome | null> {
@@ -2997,7 +2948,6 @@ export async function runManualSaveProject(input: {
           type: 'clear-dirty-after-file-save',
           projectId: project.id,
           clearDirty,
-          fromReminder: input.options?.fromReminder,
         });
         input.onSaved(project.id);
       }
@@ -3128,6 +3078,7 @@ export function SampleProvider({
         inflight: fileSaveInflightRef,
         isPreviouslyFailed: () => Boolean(autoSaveFailedRef.current[projectId]),
         onSaved: (id) => {
+          autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [id]: false };
           setAutoSaveFailedById((prev) => (prev[id] ? { ...prev, [id]: false } : prev));
           setLastSaveWasAutoById((prev) => ({ ...prev, [id]: true }));
         },
@@ -3338,10 +3289,17 @@ export function SampleProvider({
   useEffect(() => {
     const activeId = state.activeProjectId;
     if (!activeId || (activeAutoSaveStatus !== 'active' && activeAutoSaveStatus !== 'failed')) return;
-    const timer = window.setInterval(() => {
-      void performBackgroundAutoSave(activeId);
-    }, autoSaveIntervalMs);
-    return () => window.clearInterval(timer);
+    return startAutoSaveScheduler({
+      intervalMs: autoSaveIntervalMs,
+      onDue: () => {
+        void performBackgroundAutoSave(activeId);
+      },
+      host: {
+        setInterval: (handler, ms) => window.setInterval(handler, ms),
+        clearInterval: (handle) => window.clearInterval(handle),
+        now: () => Date.now(),
+      },
+    });
   }, [state.activeProjectId, activeAutoSaveStatus, autoSaveIntervalMs, performBackgroundAutoSave]);
 
   useEffect(() => {
@@ -3580,14 +3538,13 @@ export function SampleProvider({
           if (currentShareGeneration(projectId) === generation) dismissRenameSavePrompt(projectId);
         }
       },
-      saveProject: (options) =>
+      saveProject: () =>
         runManualSaveProject({
           getState: () => stateRef.current,
           dispatch,
           env: getSaveEnv(),
           inflight: fileSaveInflightRef,
           lastSavedRevById: lastSavedRevByIdRef.current,
-          options,
           onSaved: (projectId) => {
             autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [projectId]: false };
             setAutoSaveFailedById((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
@@ -3596,7 +3553,7 @@ export function SampleProvider({
             setHandlePermById((prev) => ({ ...prev, [projectId]: 'granted' }));
           },
         }),
-      saveProjectAs: async (options) => {
+      saveProjectAs: async () => {
         if (fileSaveInflightRef.current) {
           await fileSaveInflightRef.current.promise.catch(() => undefined);
         }
@@ -3640,7 +3597,6 @@ export function SampleProvider({
                 type: 'clear-dirty-after-file-save',
                 projectId: project.id,
                 clearDirty,
-                fromReminder: options?.fromReminder,
               });
               autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [project.id]: false };
               setAutoSaveFailedById((prev) => (prev[project.id] ? { ...prev, [project.id]: false } : prev));
@@ -3679,9 +3635,6 @@ export function SampleProvider({
           dispatch,
           runAutoSave: () => performBackgroundAutoSave(project.id, { forceGranted: true }),
         });
-      },
-      snoozeSaveReminder: (projectId) => {
-        dispatch({ type: 'snooze-save-reminder', projectId, nowMs: Date.now() });
       },
       toast: (message) => {
         if (message === stateRef.current.toast) return;

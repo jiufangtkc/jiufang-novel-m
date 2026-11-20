@@ -12,6 +12,13 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-131（暫定，待九方審）
+  {
+    version: '0.4.1',
+    items: [
+      '存檔提醒改成只在畫面角落顯示，不再跳出視窗',
+    ],
+  },
   // WO-130（暫定，待九方審）
   {
     version: '0.4.0',
