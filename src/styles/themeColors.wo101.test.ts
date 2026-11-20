@@ -130,8 +130,8 @@ describe('WO-101：三套主題色票（最終色票表 v1 第 2 節）', () => 
   });
 
   it('沒有 data-theme 時（:root）就是森林綠；舊青瓷色票不再出現', () => {
-    // 全部 19 個介面樣式檔都納入檢查（不含字型；WO-110 新增 screens/welcomeTour.css，WO-122 新增 components/formatTools.css，WO-128 新增 screens/timelineScreen.css，WO-129 新增 components/whatsNewDialog.css）
-    expect(CSS_FILES.length).toBe(19);
+    // 全部 20 個介面樣式檔都納入檢查（不含字型；WO-110 新增 screens/welcomeTour.css，WO-122 新增 components/formatTools.css，WO-128 新增 screens/timelineScreen.css，WO-129 新增 components/whatsNewDialog.css，WO-130 新增 components/saveReminder.css）
+    expect(CSS_FILES.length).toBe(20);
     expect(CSS_FILES.some((f) => f.endsWith('/styles/global.css'))).toBe(true);
     const rootOnly = new Map<string, string>();
     for (const rule of GLOBAL_RULES) {

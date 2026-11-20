@@ -1,5 +1,7 @@
 import type { DemoProject } from '../data/demo';
+import { createBrowserTargetStore } from '../db/browserTargetStore';
 import { removeBook } from '../db/library';
+import { forgetOpenFile } from '../db/openFileMemory';
 import { markBookRemoved, unmarkBookRemoved } from '../db/removedBooks';
 import { loadProjects, saveProjects, type KeyValueStore } from '../domain/outline';
 import { clearStoredWritingCardsView } from '../domain/writingCards';
@@ -97,13 +99,21 @@ export async function removeProjectFromDevice(input: {
   store: RemovableStore | null;
   /** 測試可替換；預設刪 App 空間（OPFS 與 IndexedDB 備援）裡該鍵的副本。 */
   removeCopy?: (key: string) => Promise<void>;
+  /** 測試可替換；預設清理 IndexedDB file-targets 裡的殘留檔案把手。 */
+  removeTarget?: (key: string) => Promise<void>;
 }): Promise<boolean> {
   const ids = deviceKeysOf(input.project);
   const removeCopy = input.removeCopy ?? removeBook;
+  const removeTarget =
+    input.removeTarget ?? ((key: string) => createBrowserTargetStore().remove?.(key) ?? Promise.resolve());
   for (const id of ids) markBookRemoved(id);
   try {
     for (const id of ids) await removeCopy(id);
     if (input.store) removeLocalStorageDataOf(input.store, ids);
+    for (const id of ids) {
+      forgetOpenFile(id);
+      await Promise.resolve(removeTarget(id)).catch(() => undefined);
+    }
     return true;
   } catch {
     for (const id of ids) unmarkBookRemoved(id);

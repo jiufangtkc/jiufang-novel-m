@@ -43,14 +43,18 @@ import {
 import { openMemoryDb } from '../db/wasmDb';
 import {
   saveNotice,
+  autoSaveProjectToPlace,
   saveProjectAsNew,
   saveProjectFromClick,
   shouldPickBeforeBuild,
+  type AutoSaveOutcome,
   type SaveEnvironment,
   type SaveOutcome,
 } from '../db/saveProject';
 import { verifyExportedDatabase } from '../db/verifyDatabase';
 import {
+  AUTOSAVE_FAILED_TOAST,
+  AUTOSAVE_RESUMED_TOAST,
   BOOK_RENAME_FAIL,
   BOOK_RENAMED_TOAST,
   IMPORT_DEFAULT_CHAPTER_TITLE,
@@ -61,6 +65,7 @@ import {
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
   SAVE_FATAL_FAIL,
+  SAVE_PERMISSION_DENIED,
   SAVE_PICKER_ABORTED_TOAST,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
@@ -126,10 +131,29 @@ import {
   bindLeaveFlush,
   clearLiveDraft,
   flushOpenDraft,
+  isLiveDraftComposing,
   loadLiveDraft,
   notePersistedDraft,
   readLiveDraftFromEditor,
 } from '../editor/liveDraft';
+import {
+  AUTOSAVE_INTERVAL_MS,
+  applyUncommittedDraftToProject,
+  hasSavedExternalFile,
+  resolveAutoSaveStatus,
+  shouldClearDirtyAfterSave,
+  shouldRunAutoSaveTick,
+  type AutoSaveStatus,
+  type HandlePermissionState,
+} from '../domain/autoSave';
+import {
+  emptyReminderSession,
+  recordReminderNonTextEdit,
+  recordReminderTextEdit,
+  resetReminderAfterSave,
+  snoozeReminderSession,
+  type ProjectReminderSession,
+} from '../domain/saveReminder';
 import {
   applyLargeEvent,
   classifyTextDelta,
@@ -198,6 +222,7 @@ import {
   saveHomeDailyGoal,
   saveTourFileGoal,
   recallTourFileGoal,
+  type SaveMetaEntry,
 } from './deviceSaveRecord';
 import { isValidBookGoal, NEW_BOOK_GOAL_DEFAULT, readNewBookGoal } from './newBookGoal';
 
@@ -212,6 +237,7 @@ export function toastDurationMs(message: string): number {
   if (message === EDITOR_PASTE_BLOCKED_TOAST) return TOAST_PASTE_BLOCKED_MS;
   if (message === OPEN_DB_FAIL) return TOAST_OPEN_FAIL_MS;
   if (message === SAVE_PICKER_ABORTED_TOAST) return TOAST_OPEN_FAIL_MS;
+  if (message === AUTOSAVE_FAILED_TOAST) return TOAST_OPEN_FAIL_MS;
   return TOAST_DEFAULT_MS;
 }
 
@@ -229,15 +255,11 @@ export interface SampleState {
   toast: string | null;
   /** 匯入檔的卡片與寫作紀錄，另存時原樣帶出。 */
   fileExtras: Record<string, FileExtras>;
-  saveMeta: Record<
-    string,
-    {
-      lastAutoSaveMs: number | null;
-      lastManualSaveMs: number | null;
-      lastExportMs: number | null;
-      lastProjectSaveMs: number | null;
-    }
-  >;
+  saveMeta: Record<string, SaveMetaEntry>;
+  /** WO-130：各稿在本次開啟期間的實質內容修訂序號（只隨真正改動 .db 內容的操作遞增）。 */
+  contentRevById?: Record<string, number>;
+  /** WO-130：各稿在本次開啟期間的溫和存檔提醒狀態（字數變動量、計時起點、冷卻與次數）。 */
+  reminderSessions?: Record<string, ProjectReminderSession>;
   /** WO-98：各稿在這台裝置的建立（或第一次遇到）時間，只存本機，不寫進 .db。 */
   startedById: Record<string, number>;
   /**
@@ -314,6 +336,8 @@ export type Action =
   | { type: 'record-manual-save'; projectId: string; atMs: number }
   | { type: 'record-export'; projectId: string; atMs: number }
   | { type: 'record-project-save'; projectId: string; atMs: number }
+  | { type: 'clear-dirty-after-file-save'; projectId: string; clearDirty: boolean; fromReminder?: boolean }
+  | { type: 'snooze-save-reminder'; projectId: string; nowMs: number }
   | { type: 'set-filename'; projectId: string; filename: string }
   | { type: 'rename-book'; projectId: string; title: string; titleSavePending: BookFileMark['titleSavePending'] }
   | { type: 'defer-title-save'; projectId: string }
@@ -685,7 +709,7 @@ export function attachActionForBook(
 function patchSaveMeta(
   state: SampleState,
   projectId: string,
-  patch: Partial<SampleState['saveMeta'][string]>,
+  patch: Partial<SaveMetaEntry>,
 ): SampleState {
   const prev = state.saveMeta[projectId] ?? {
     lastAutoSaveMs: null,
@@ -696,6 +720,29 @@ function patchSaveMeta(
   return {
     ...state,
     saveMeta: { ...state.saveMeta, [projectId]: { ...prev, ...patch } },
+  };
+}
+
+function withContentRevision(
+  state: SampleState,
+  projectId: string,
+  nowMs: number,
+  options?: { wordChurn?: number; nonTextEdit?: boolean; skipReminder?: boolean },
+): SampleState {
+  const withDirty = patchSaveMeta(state, projectId, { dirtySinceFileSave: true });
+  const prevRev = withDirty.contentRevById?.[projectId] ?? 0;
+  const contentRevById = { ...(withDirty.contentRevById ?? {}), [projectId]: prevRev + 1 };
+  if (options?.skipReminder) {
+    return { ...withDirty, contentRevById };
+  }
+  const prevSession = withDirty.reminderSessions?.[projectId] ?? emptyReminderSession();
+  const nextSession = options?.nonTextEdit
+    ? recordReminderNonTextEdit(prevSession, nowMs)
+    : recordReminderTextEdit(prevSession, options?.wordChurn ?? 0, nowMs);
+  return {
+    ...withDirty,
+    contentRevById,
+    reminderSessions: { ...(withDirty.reminderSessions ?? {}), [projectId]: nextSession },
   };
 }
 
@@ -1199,8 +1246,34 @@ export function buildPromotedFileExtras(
 /**
  * WO-122：排版復原快照只屬於目前開著的稿子；稿子換了（或被刪掉）就清掉，不跨稿保留。
  */
+const NON_TEXT_CONTENT_ACTIONS = new Set<Action['type']>([
+  'set-nodes',
+  'add-scene',
+  'set-progress',
+  'rename-book',
+  'set-book-goal',
+  'set-cards',
+  'update-card',
+  'set-card-categories',
+  'delete-card',
+  'restore-deleted-card',
+  'add-timeline-event',
+  'reorder-timeline',
+  'move-timeline-event',
+]);
+
 export function reduce(state: SampleState, action: Action): SampleState {
-  const next = reduceBase(state, action);
+  let next = reduceBase(state, action);
+  if (next !== state) {
+    const nowMs = Date.now();
+    if (NON_TEXT_CONTENT_ACTIONS.has(action.type) && 'projectId' in action) {
+      next = withContentRevision(next, action.projectId, nowMs, { nonTextEdit: true });
+    } else if (action.type === 'set-goal' && next.activeProjectId) {
+      next = withContentRevision(next, next.activeProjectId, nowMs, { nonTextEdit: true });
+    } else if ((action.type === 'note-large' || action.type === 'add-duration') && next.activeProjectId) {
+      next = withContentRevision(next, next.activeProjectId, nowMs, { skipReminder: true });
+    }
+  }
   if (next.formatUndo && next.activeProjectId !== next.formatUndo.projectId) {
     return { ...next, formatUndo: null };
   }
@@ -1266,6 +1339,29 @@ function reduceBase(state: SampleState, action: Action): SampleState {
     }
     case 'record-project-save':
       return patchSaveMeta(state, action.projectId, { lastProjectSaveMs: action.atMs });
+    case 'clear-dirty-after-file-save': {
+      const next = action.clearDirty
+        ? patchSaveMeta(state, action.projectId, { dirtySinceFileSave: false })
+        : state;
+      const prevSession = next.reminderSessions?.[action.projectId] ?? emptyReminderSession();
+      return {
+        ...next,
+        reminderSessions: {
+          ...(next.reminderSessions ?? {}),
+          [action.projectId]: resetReminderAfterSave(prevSession, Boolean(action.fromReminder)),
+        },
+      };
+    }
+    case 'snooze-save-reminder': {
+      const prevSession = state.reminderSessions?.[action.projectId] ?? emptyReminderSession();
+      return {
+        ...state,
+        reminderSessions: {
+          ...(state.reminderSessions ?? {}),
+          [action.projectId]: snoozeReminderSession(prevSession, action.nowMs),
+        },
+      };
+    }
     case 'import-text': {
       // WO-99：一次加入完整新稿子、它自己的空白結算狀態、當日紀錄列與匯入事件；代號重複就不動。
       const id = action.project.id;
@@ -1361,6 +1457,8 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         saveMeta: without(state.saveMeta),
         startedById: without(state.startedById),
         fileExtras: without(state.fileExtras),
+        contentRevById: without(state.contentRevById ?? {}),
+        reminderSessions: without(state.reminderSessions ?? {}),
         importEvents: dropEvents(state.importEvents),
         exportEvents: dropEvents(state.exportEvents),
         activeProjectId: state.activeProjectId && ids.has(state.activeProjectId) ? null : state.activeProjectId,
@@ -1483,11 +1581,14 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         nodes: updateNode(current.nodes, action.nodeId, (item) => ({ ...item, content: action.text })),
       }));
       const extras = syncFileLog(next.fileExtras, project, schedule, action.nodeId);
-      return {
+      const withCommit = {
         ...next,
         projects,
         fileExtras: extras,
       };
+      return withContentRevision(withCommit, action.projectId, now.getTime(), {
+        wordChurn: Math.abs(deltaWords),
+      });
     }
     case 'note-large': {
       if (!state.schedule.open) return state;
@@ -1900,8 +2001,10 @@ interface SampleActions {
   deferTitleSave: (projectId: string) => void;
   discardPreparedShare: (projectId: string) => void;
   prepareShare: (projectId: string, title: string) => Promise<void>;
-  saveProject: () => Promise<SaveOutcome | null>;
-  saveProjectAs: () => Promise<SaveOutcome | null>;
+  saveProject: (options?: { fromReminder?: boolean }) => Promise<SaveOutcome | null>;
+  saveProjectAs: (options?: { fromReminder?: boolean }) => Promise<SaveOutcome | null>;
+  resumeAutoSave: () => Promise<'granted' | 'denied' | 'no-handle'>;
+  snoozeSaveReminder: (projectId: string) => void;
   toast: (message: string | null) => void;
 }
 
@@ -1912,6 +2015,8 @@ interface SampleContextValue {
   isGlowing: boolean;
   stats: StatsSummary;
   bookWords: (projectId: string) => number;
+  autoSaveStatusOf: (projectId: string) => AutoSaveStatus;
+  lastSaveWasAutoOf: (projectId: string) => boolean;
   /**
    * WO-110：這台裝置的資料（含非同步回復的手機暫存稿）是否已經載入完成。
    * 首次歡迎導覽要等它為 true 才判斷是不是全新裝置，不可趁還沒載完就當作全新。
@@ -2645,13 +2750,288 @@ export async function runFullTextExport(input: {
   }
 }
 
+export interface BackgroundAutoSaveDeps {
+  projectId: string;
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  env: Pick<SaveEnvironment, 'targets' | 'verify'>;
+  getStatus: (projectId: string) => AutoSaveStatus;
+  lastSavedRevById: Record<string, number>;
+  inflight: { current: { kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null };
+  isPreviouslyFailed: () => boolean;
+  onSaved: (projectId: string) => void;
+  onNeedsPermission: (projectId: string, permission: 'prompt' | 'denied') => void;
+  onFailed: (projectId: string, showToast: boolean) => void;
+  onNoHandle: (projectId: string) => void;
+  snapshot?: typeof snapshotManuscript;
+  store?: KeyValueStore | null;
+}
+
+/**
+ * WO-130：背景自動存檔主流程（由 SampleProvider 5 分鐘計時器與恢復自動存檔共用）。
+ * 沿用與手動「儲存專案」相同的 snapshotManuscript → autoSaveProjectToPlace（verify + writeWithoutDestroying）。
+ */
+export async function executeBackgroundAutoSave(
+  deps: BackgroundAutoSaveDeps,
+): Promise<AutoSaveOutcome | 'skipped' | 'no-changes'> {
+  const { projectId } = deps;
+  if (deps.inflight.current) return 'skipped';
+  const latest = deps.getState();
+  const project = latest.projects.find((item) => item.id === projectId);
+  if (!project || isSampleBook(project) || isBookRemoved(project.id) || isBookRemoved(project.dbKey)) {
+    return 'skipped';
+  }
+  const status = deps.getStatus(projectId);
+  const live = applyUncommittedDraftToProject(project, readLiveDraftFromEditor(), isLiveDraftComposing());
+  const dirtySinceFileSave = Boolean(latest.saveMeta[projectId]?.dirtySinceFileSave);
+  const currentRev = latest.contentRevById?.[projectId] ?? 0;
+  const lastSavedRev = deps.lastSavedRevById[projectId] ?? 0;
+  if (
+    !shouldRunAutoSaveTick({
+      status,
+      dirtySinceFileSave,
+      currentRev,
+      lastSavedRev,
+      hasUncommittedDiff: live.hasDiff,
+      isInflight: false,
+    })
+  ) {
+    return 'no-changes';
+  }
+  const revAtStart = currentRev;
+  const snapFn = deps.snapshot ?? snapshotManuscript;
+  const runPromise = (async (): Promise<AutoSaveOutcome | 'skipped'> => {
+    try {
+      const snap = await snapFn(latest, live.project, true);
+      const outcome = await autoSaveProjectToPlace(
+        deps.env,
+        snap.key,
+        snap.bytes,
+        projectSaveFilename(live.project.title, live.project.filename),
+        recallOpenFile(snap.key) ?? null,
+      );
+      if (isBookRemoved(projectId) || isBookRemoved(live.project.dbKey)) return 'skipped';
+      if (outcome.kind === 'saved') {
+        const latestRevAfter = deps.getState().contentRevById?.[projectId] ?? 0;
+        const clearDirty = shouldClearDirtyAfterSave(revAtStart, latestRevAfter);
+        deps.lastSavedRevById[projectId] = revAtStart;
+        const atMs = Date.now();
+        deps.dispatch({ type: 'record-project-save', projectId, atMs });
+        deps.dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
+        deps.dispatch({ type: 'note-title-in-file', projectId });
+        deps.dispatch({ type: 'clear-dirty-after-file-save', projectId, clearDirty });
+        deps.onSaved(projectId);
+        const store = deps.store === undefined ? deviceStore() : deps.store;
+        if (store) {
+          const linked = await linkImportEventsToBytes(store, projectId, snap.bytes).catch(() => null);
+          if (linked) deps.dispatch({ type: 'set-import-events', importEvents: linked });
+          const linkedExports = await linkExportEventsToBytes(store, projectId, snap.bytes).catch(() => null);
+          if (linkedExports) deps.dispatch({ type: 'set-export-events', exportEvents: linkedExports });
+        }
+      } else if (outcome.kind === 'needs-permission') {
+        deps.onNeedsPermission(projectId, outcome.permission);
+      } else if (outcome.kind === 'write-failed' || outcome.kind === 'invalid-database') {
+        const showToast = !deps.isPreviouslyFailed();
+        deps.onFailed(projectId, showToast);
+        if (showToast) {
+          deps.dispatch({ type: 'toast', message: AUTOSAVE_FAILED_TOAST });
+        }
+      } else if (outcome.kind === 'no-handle') {
+        deps.onNoHandle(projectId);
+      }
+      return outcome;
+    } catch {
+      if (!isBookRemoved(projectId)) {
+        const showToast = !deps.isPreviouslyFailed();
+        deps.onFailed(projectId, showToast);
+        if (showToast) {
+          deps.dispatch({ type: 'toast', message: AUTOSAVE_FAILED_TOAST });
+        }
+      }
+      return { kind: 'write-failed', restored: false };
+    }
+  })();
+  const entry = { kind: 'auto' as const, projectId, promise: runPromise };
+  deps.inflight.current = entry;
+  try {
+    return await runPromise;
+  } finally {
+    if (deps.inflight.current === entry) {
+      deps.inflight.current = null;
+    }
+  }
+}
+
+/**
+ * WO-130：點擊頁首「點一下恢復自動存檔」時的權限請求與補存。
+ * 只在使用者明確點擊時呼叫 requestPermission()；未定案變更會立刻補寫，無變更則顯示簡短提示。
+ */
+export async function runResumeAutoSave(input: {
+  project: DemoProject;
+  state: SampleState;
+  env: Pick<SaveEnvironment, 'targets' | 'verify'>;
+  lastSavedRevById: Record<string, number>;
+  onPermissionChange: (projectId: string, perm: HandlePermissionState) => void;
+  dispatch: (action: Action) => void;
+  runAutoSave: () => Promise<AutoSaveOutcome | 'skipped' | 'no-changes'>;
+}): Promise<'granted' | 'denied' | 'no-handle'> {
+  const { project, state, env } = input;
+  const key = project.dbKey ?? project.id;
+  let file = recallOpenFile(key);
+  if (file === undefined) {
+    const target = await env.targets.load(key).catch(() => null);
+    file = target?.file ?? null;
+    rememberOpenFile(key, file);
+  }
+  if (!file) {
+    input.onPermissionChange(project.id, 'none');
+    return 'no-handle';
+  }
+  let perm: 'granted' | 'denied';
+  try {
+    perm = await file.requestPermission();
+  } catch {
+    perm = 'denied';
+  }
+  input.onPermissionChange(project.id, perm);
+  if (perm !== 'granted') {
+    input.dispatch({ type: 'toast', message: SAVE_PERMISSION_DENIED });
+    return 'denied';
+  }
+  const live = applyUncommittedDraftToProject(project, readLiveDraftFromEditor(), isLiveDraftComposing());
+  const hasDirty =
+    Boolean(state.saveMeta[project.id]?.dirtySinceFileSave) ||
+    (state.contentRevById?.[project.id] ?? 0) !== (input.lastSavedRevById[project.id] ?? 0) ||
+    live.hasDiff;
+  if (hasDirty) {
+    await input.runAutoSave();
+  } else {
+    input.dispatch({ type: 'toast', message: AUTOSAVE_RESUMED_TOAST });
+  }
+  return 'granted';
+}
+
+/**
+ * WO-130：手動「儲存專案」（含頁首點擊「還沒存成檔案」、檔案頁按鈕與 Ctrl/Cmd+S）主流程。
+ * 與背景自動存檔共用同一條 snapshotManuscript → saveProjectFromClick → applySaveOutcome 管線與單飛鎖。
+ */
+export async function runManualSaveProject(input: {
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  env: SaveEnvironment;
+  inflight: { current: { kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null };
+  lastSavedRevById: Record<string, number>;
+  onSaved: (projectId: string) => void;
+  options?: { fromReminder?: boolean };
+  snapshot?: typeof snapshotManuscript;
+  store?: KeyValueStore | null;
+}): Promise<SaveOutcome | null> {
+  if (input.inflight.current) {
+    await input.inflight.current.promise.catch(() => undefined);
+  }
+  const latestState = input.getState();
+  const project = latestState.projects.find((item) => item.id === latestState.activeProjectId);
+  if (!project) return null;
+  const { env, dispatch } = input;
+  const key = project.dbKey ?? project.id;
+  const remembered = recallOpenFile(key);
+  const needsNewName = shouldSaveUnderNewName({
+    hasExternalFile: Boolean(project.hasExternalFile),
+    titleInFile: project.titleInFile ?? null,
+    title: project.title,
+    filename: project.filename ?? null,
+  });
+  const pickFirst = shouldPickBeforeBuild({
+    canPick: env.canPickFiles,
+    needsNewName,
+    remembered,
+    hasExternalFile: Boolean(project.hasExternalFile),
+  });
+  const plan = needsNewName ? 'pick-new-name' : pickFirst ? 'pick-first-save' : 'write-back';
+  const revAtStart = latestState.contentRevById?.[project.id] ?? 0;
+  const snapFn = input.snapshot ?? snapshotManuscript;
+  let builtBytes: Uint8Array | null = null;
+  const runManual = async (): Promise<SaveOutcome | null> => {
+    try {
+      const outcome = await saveProjectFromClick({
+        env,
+        bookKey: key,
+        plan,
+        writeBackName: projectSaveFilename(project.title, project.filename),
+        newTitleName: `${sanitizeDbBasename(project.title)}.db`,
+        startIn: needsNewName && remembered ? remembered : null,
+        onRemember: (file) => rememberOpenFile(key, file),
+        buildBytes: async () => {
+          const snapState = input.getState();
+          const snapProject = snapState.projects.find((item) => item.id === project.id) ?? project;
+          const snap = await snapFn(snapState, snapProject, true);
+          dispatch({
+            type: 'promote-stored',
+            projectId: project.id,
+            key: snap.key,
+            filename: snapProject.filename || projectSaveFilename(snapProject.title, snapProject.filename),
+          });
+          builtBytes = snap.bytes;
+          return snap.bytes;
+        },
+      });
+      applySaveOutcome(dispatch, project.id, outcome, 'save');
+      const saved = outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title';
+      const store = input.store === undefined ? deviceStore() : input.store;
+      if (saved && store && builtBytes) {
+        // WO-99：寫出去的那份檔對上這份稿子的匯入事件，之後開回同一份檔次數不遺失、不重複。
+        const linked = await linkImportEventsToBytes(store, project.id, builtBytes).catch(() => null);
+        if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
+        const linkedExports = await linkExportEventsToBytes(store, project.id, builtBytes).catch(() => null);
+        if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
+      }
+      if (saved && recallOpenFile(key) == null) {
+        const target = await env.targets.load(key).catch(() => null);
+        if (target?.file) rememberOpenFile(key, target.file);
+      }
+      if (saved) {
+        const latestRev = input.getState().contentRevById?.[project.id] ?? 0;
+        const clearDirty = shouldClearDirtyAfterSave(revAtStart, latestRev);
+        input.lastSavedRevById[project.id] = revAtStart;
+        dispatch({
+          type: 'clear-dirty-after-file-save',
+          projectId: project.id,
+          clearDirty,
+          fromReminder: input.options?.fromReminder,
+        });
+        input.onSaved(project.id);
+      }
+      return outcome;
+    } catch {
+      dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
+      return null;
+    }
+  };
+  const promise = runManual();
+  const entry = { kind: 'manual' as const, projectId: project.id, promise };
+  input.inflight.current = entry;
+  try {
+    return await promise;
+  } finally {
+    if (input.inflight.current === entry) {
+      input.inflight.current = null;
+    }
+  }
+}
+
 export function SampleProvider({
   children,
   initialState,
+  saveEnv,
+  autoSaveIntervalMs = AUTOSAVE_INTERVAL_MS,
 }: {
   children?: ReactNode;
   /** WO-95：測試明確放入的起始狀態（例如範例書情境）；App 不傳，一律從本機儲存讀。 */
   initialState?: SampleState;
+  /** WO-130：測試用存檔環境注入（不傳時沿用瀏覽器既有環境）。 */
+  saveEnv?: SaveEnvironment;
+  /** WO-130：測試用自動存檔週期（預設 5 分鐘）。 */
+  autoSaveIntervalMs?: number;
 }) {
   const [state, dispatch] = useReducer(reduce, undefined, () => initialState ?? createState(new Date()));
   const stateRef = useRef(state);
@@ -2660,6 +3040,109 @@ export function SampleProvider({
   const exportBusyRef = useRef(false);
   // WO-110：手機暫存稿（loadStoredBooks）回復完成或確定讀不到後才是 true。
   const [deviceLoaded, setDeviceLoaded] = useState(false);
+
+  const saveEnvRef = useRef(saveEnv);
+  saveEnvRef.current = saveEnv;
+  const getSaveEnv = useCallback((): SaveEnvironment => saveEnvRef.current ?? browserSaveEnv(), []);
+  const canPickFiles = saveEnv ? saveEnv.canPickFiles : canPickLocalFiles();
+
+  const [handlePermById, setHandlePermById] = useState<Record<string, HandlePermissionState>>({});
+  const handlePermRef = useRef(handlePermById);
+  handlePermRef.current = handlePermById;
+  const [autoSaveFailedById, setAutoSaveFailedById] = useState<Record<string, boolean>>({});
+  const autoSaveFailedRef = useRef(autoSaveFailedById);
+  autoSaveFailedRef.current = autoSaveFailedById;
+  const [lastSaveWasAutoById, setLastSaveWasAutoById] = useState<Record<string, boolean>>({});
+  const lastSavedRevByIdRef = useRef<Record<string, number>>({});
+  const fileSaveInflightRef = useRef<{ kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null>(null);
+
+  const refreshHandlePermission = useCallback(
+    async (project: DemoProject | null | undefined): Promise<HandlePermissionState> => {
+      if (!project || isSampleBook(project) || isBookRemoved(project.id) || isBookRemoved(project.dbKey)) {
+        return 'none';
+      }
+      const env = getSaveEnv();
+      if (!env.canPickFiles) return 'none';
+      const key = project.dbKey ?? project.id;
+      let file = recallOpenFile(key);
+      if (file === undefined) {
+        try {
+          const target = await env.targets.load(key);
+          file = target?.file ?? null;
+          rememberOpenFile(key, file);
+        } catch {
+          file = null;
+        }
+      }
+      if (!file) {
+        setHandlePermById((prev) => (prev[project.id] === 'none' ? prev : { ...prev, [project.id]: 'none' }));
+        return 'none';
+      }
+      let perm: HandlePermissionState = 'prompt';
+      try {
+        perm = await file.queryPermission();
+      } catch {
+        perm = 'none';
+      }
+      setHandlePermById((prev) => (prev[project.id] === perm ? prev : { ...prev, [project.id]: perm }));
+      return perm;
+    },
+    [getSaveEnv],
+  );
+
+  const autoSaveStatusOf = useCallback(
+    (projectId: string, overridePerm?: HandlePermissionState): AutoSaveStatus => {
+      const current = stateRef.current;
+      const project = current.projects.find((item) => item.id === projectId);
+      const envCanPick = saveEnvRef.current ? saveEnvRef.current.canPickFiles : canPickLocalFiles();
+      if (!project) return envCanPick ? 'unsaved' : 'unsupported';
+      const meta = current.saveMeta[projectId];
+      const needsNewName = shouldSaveUnderNewName({
+        hasExternalFile: Boolean(project.hasExternalFile),
+        titleInFile: project.titleInFile ?? null,
+        title: project.title,
+        filename: project.filename ?? null,
+      });
+      return resolveAutoSaveStatus({
+        canPickFiles: envCanPick,
+        isSample: isSampleBook(project),
+        removed: isBookRemoved(project.id) || isBookRemoved(project.dbKey),
+        hasSavedFile: hasSavedExternalFile(meta),
+        needsNewName,
+        permission: overridePerm ?? handlePermRef.current[project.id] ?? 'none',
+        lastAutoSaveFailed: Boolean(autoSaveFailedRef.current[project.id]),
+      });
+    },
+    [],
+  );
+
+  const performBackgroundAutoSave = useCallback(
+    async (projectId: string, options?: { forceGranted?: boolean }): Promise<AutoSaveOutcome | 'skipped' | 'no-changes'> =>
+      executeBackgroundAutoSave({
+        projectId,
+        getState: () => stateRef.current,
+        dispatch,
+        env: getSaveEnv(),
+        getStatus: (id) => autoSaveStatusOf(id, options?.forceGranted ? 'granted' : undefined),
+        lastSavedRevById: lastSavedRevByIdRef.current,
+        inflight: fileSaveInflightRef,
+        isPreviouslyFailed: () => Boolean(autoSaveFailedRef.current[projectId]),
+        onSaved: (id) => {
+          setAutoSaveFailedById((prev) => (prev[id] ? { ...prev, [id]: false } : prev));
+          setLastSaveWasAutoById((prev) => ({ ...prev, [id]: true }));
+        },
+        onNeedsPermission: (id, permission) => {
+          setHandlePermById((prev) => ({ ...prev, [id]: permission }));
+        },
+        onFailed: (id) => {
+          setAutoSaveFailedById((prev) => ({ ...prev, [id]: true }));
+        },
+        onNoHandle: (id) => {
+          setHandlePermById((prev) => ({ ...prev, [id]: 'none' }));
+        },
+      }),
+    [autoSaveStatusOf, getSaveEnv],
+  );
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
@@ -2721,10 +3204,22 @@ export function SampleProvider({
         if (appliedDraft && typeof localStorage !== 'undefined') clearLiveDraft(localStorage);
         setDeviceLoaded(true);
         for (const book of books.filter((item) => !isBookRemoved(item.key))) {
-          void createBrowserTargetStore()
-            .load(book.key)
-            .then((target) => {
+          void getSaveEnv()
+            .targets.load(book.key)
+            .then(async (target) => {
               if (recallOpenFile(book.key) === undefined) rememberOpenFile(book.key, target?.file ?? null);
+              const file = recallOpenFile(book.key) ?? target?.file ?? null;
+              let perm: HandlePermissionState = 'none';
+              if (file && getSaveEnv().canPickFiles) {
+                try {
+                  perm = await file.queryPermission();
+                } catch {
+                  perm = 'none';
+                }
+              }
+              if (!cancelled) {
+                setHandlePermById((prev) => (prev[book.key] === perm ? prev : { ...prev, [book.key]: perm }));
+              }
             })
             .catch(() => undefined);
         }
@@ -2817,6 +3312,37 @@ export function SampleProvider({
     };
     return bindLeaveFlush(window, document, flush);
   }, []);
+
+  useEffect(() => {
+    const active = state.projects.find((item) => item.id === state.activeProjectId);
+    if (!active) return;
+    void refreshHandlePermission(active);
+  }, [state.activeProjectId, state.projects.length, refreshHandlePermission]);
+
+  useEffect(() => {
+    const onCheck = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      const current = stateRef.current;
+      const active = current.projects.find((item) => item.id === current.activeProjectId);
+      if (active) void refreshHandlePermission(active);
+    };
+    window.addEventListener('focus', onCheck);
+    document.addEventListener('visibilitychange', onCheck);
+    return () => {
+      window.removeEventListener('focus', onCheck);
+      document.removeEventListener('visibilitychange', onCheck);
+    };
+  }, [refreshHandlePermission]);
+
+  const activeAutoSaveStatus = state.activeProjectId ? autoSaveStatusOf(state.activeProjectId) : 'unsupported';
+  useEffect(() => {
+    const activeId = state.activeProjectId;
+    if (!activeId || (activeAutoSaveStatus !== 'active' && activeAutoSaveStatus !== 'failed')) return;
+    const timer = window.setInterval(() => {
+      void performBackgroundAutoSave(activeId);
+    }, autoSaveIntervalMs);
+    return () => window.clearInterval(timer);
+  }, [state.activeProjectId, activeAutoSaveStatus, autoSaveIntervalMs, performBackgroundAutoSave]);
 
   useEffect(() => {
     if (!state.toast) return;
@@ -2918,7 +3444,7 @@ export function SampleProvider({
         if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
         const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
         if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
-        await createBrowserTargetStore().save(book.key, { filename: book.filename, file: diskFile ?? null });
+        await getSaveEnv().targets.save(book.key, { filename: book.filename, file: diskFile ?? null });
         rememberOpenFile(book.key, diskFile ?? null);
         dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
         // WO-77：開回的正是這台裝置另存出去的那份檔，「上次另存」沿用當時時間。
@@ -2944,7 +3470,7 @@ export function SampleProvider({
         if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
         const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
         if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
-        await createBrowserTargetStore().save(book.key, { filename: book.filename, file: picked.file });
+        await getSaveEnv().targets.save(book.key, { filename: book.filename, file: picked.file });
         rememberOpenFile(book.key, picked.file);
         dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
         if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
@@ -3054,99 +3580,108 @@ export function SampleProvider({
           if (currentShareGeneration(projectId) === generation) dismissRenameSavePrompt(projectId);
         }
       },
-      saveProject: async () => {
-        const project = state.projects.find((item) => item.id === state.activeProjectId);
-        if (!project) return null;
-        const key = project.dbKey ?? project.id;
-        const remembered = recallOpenFile(key);
-        const needsNewName = shouldSaveUnderNewName({
-          hasExternalFile: Boolean(project.hasExternalFile),
-          titleInFile: project.titleInFile ?? null,
-          title: project.title,
-          filename: project.filename ?? null,
-        });
-        const pickFirst = shouldPickBeforeBuild({
-          canPick: canPickLocalFiles(),
-          needsNewName,
-          remembered,
-          hasExternalFile: Boolean(project.hasExternalFile),
-        });
-        const plan = needsNewName ? 'pick-new-name' : pickFirst ? 'pick-first-save' : 'write-back';
-        let builtBytes: Uint8Array | null = null;
-        try {
-          const outcome = await saveProjectFromClick({
-            env: browserSaveEnv(),
-            bookKey: key,
-            plan,
-            writeBackName: projectSaveFilename(project.title, project.filename),
-            newTitleName: `${sanitizeDbBasename(project.title)}.db`,
-            startIn: needsNewName && remembered ? remembered : null,
-            onRemember: (file) => rememberOpenFile(key, file),
-            buildBytes: async () => {
-              const snap = await snapshotManuscript(state, project);
-              dispatch({
-                type: 'promote-stored',
-                projectId: project.id,
-                key: snap.key,
-                filename: project.filename || projectSaveFilename(project.title, project.filename),
-              });
-              builtBytes = snap.bytes;
-              return snap.bytes;
-            },
-          });
-          applySaveOutcome(dispatch, project.id, outcome, 'save');
-          const saved = outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title';
-          const store = deviceStore();
-          if (saved && store && builtBytes) {
-            // WO-99：寫出去的那份檔對上這份稿子的匯入事件，之後開回同一份檔次數不遺失、不重複。
-            const linked = await linkImportEventsToBytes(store, project.id, builtBytes).catch(() => null);
-            if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
-            const linkedExports = await linkExportEventsToBytes(store, project.id, builtBytes).catch(() => null);
-            if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
-          }
-          if (
-            (outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title')
-            && recallOpenFile(key) == null
-          ) {
-            const target = await createBrowserTargetStore().load(key);
-            if (target?.file) rememberOpenFile(key, target.file);
-          }
-          return outcome;
-        } catch {
-          dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
-          return null;
+      saveProject: (options) =>
+        runManualSaveProject({
+          getState: () => stateRef.current,
+          dispatch,
+          env: getSaveEnv(),
+          inflight: fileSaveInflightRef,
+          lastSavedRevById: lastSavedRevByIdRef.current,
+          options,
+          onSaved: (projectId) => {
+            autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [projectId]: false };
+            setAutoSaveFailedById((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
+            setLastSaveWasAutoById((prev) => ({ ...prev, [projectId]: false }));
+            handlePermRef.current = { ...handlePermRef.current, [projectId]: 'granted' };
+            setHandlePermById((prev) => ({ ...prev, [projectId]: 'granted' }));
+          },
+        }),
+      saveProjectAs: async (options) => {
+        if (fileSaveInflightRef.current) {
+          await fileSaveInflightRef.current.promise.catch(() => undefined);
         }
-      },
-      saveProjectAs: async () => {
-        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        const latestState = stateRef.current;
+        const project = latestState.projects.find((item) => item.id === latestState.activeProjectId);
         if (!project) return null;
+        const env = getSaveEnv();
         const prepared = peekPreparedShare(project.id);
         dismissRenameSavePrompt(project.id);
+        const revAtStart = latestState.contentRevById?.[project.id] ?? 0;
+        const runManualAs = async (): Promise<SaveOutcome | null> => {
+          try {
+            const { snap, bytes, outcome } = await runSaveProjectAs({
+              state: latestState,
+              project,
+              dispatch,
+              env,
+              preparedBytes: prepared?.bytes ?? null,
+            });
+            const store = deviceStore();
+            if (store && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
+              await noteExportedBytes(store, bytes, Date.now()).catch(() => undefined);
+              const linked = await linkImportEventsToBytes(store, project.id, bytes).catch(() => null);
+              if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
+              const linkedExports = await linkExportEventsToBytes(store, project.id, bytes).catch(() => null);
+              if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
+            }
+            if (outcome.kind === 'saved-as') {
+              const target = await env.targets.load(snap.key).catch(() => null);
+              if (target?.file) {
+                rememberOpenFile(snap.key, target.file);
+                handlePermRef.current = { ...handlePermRef.current, [project.id]: 'granted' };
+                setHandlePermById((prev) => ({ ...prev, [project.id]: 'granted' }));
+              }
+            }
+            if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
+              const latestRev = stateRef.current.contentRevById?.[project.id] ?? 0;
+              const clearDirty = shouldClearDirtyAfterSave(revAtStart, latestRev);
+              lastSavedRevByIdRef.current[project.id] = revAtStart;
+              dispatch({
+                type: 'clear-dirty-after-file-save',
+                projectId: project.id,
+                clearDirty,
+                fromReminder: options?.fromReminder,
+              });
+              autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [project.id]: false };
+              setAutoSaveFailedById((prev) => (prev[project.id] ? { ...prev, [project.id]: false } : prev));
+              setLastSaveWasAutoById((prev) => ({ ...prev, [project.id]: false }));
+            }
+            return outcome;
+          } catch {
+            dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
+            return null;
+          }
+        };
+        const promise = runManualAs();
+        const entry = { kind: 'manual' as const, projectId: project.id, promise };
+        fileSaveInflightRef.current = entry;
         try {
-          const { snap, bytes, outcome } = await runSaveProjectAs({
-            state,
-            project,
-            dispatch,
-            env: browserSaveEnv(),
-            preparedBytes: prepared?.bytes ?? null,
-          });
-          const store = deviceStore();
-          if (store && (outcome.kind === 'saved-as' || outcome.kind === 'handed-off')) {
-            await noteExportedBytes(store, bytes, Date.now()).catch(() => undefined);
-            const linked = await linkImportEventsToBytes(store, project.id, bytes).catch(() => null);
-            if (linked) dispatch({ type: 'set-import-events', importEvents: linked });
-            const linkedExports = await linkExportEventsToBytes(store, project.id, bytes).catch(() => null);
-            if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
+          return await promise;
+        } finally {
+          if (fileSaveInflightRef.current === entry) {
+            fileSaveInflightRef.current = null;
           }
-          if (outcome.kind === 'saved-as') {
-            const target = await createBrowserTargetStore().load(snap.key);
-            if (target?.file) rememberOpenFile(snap.key, target.file);
-          }
-          return outcome;
-        } catch {
-          dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
-          return null;
         }
+      },
+      resumeAutoSave: async () => {
+        const currentState = stateRef.current;
+        const project = currentState.projects.find((item) => item.id === currentState.activeProjectId);
+        if (!project) return 'no-handle';
+        return runResumeAutoSave({
+          project,
+          state: currentState,
+          env: getSaveEnv(),
+          lastSavedRevById: lastSavedRevByIdRef.current,
+          onPermissionChange: (id, perm) => {
+            handlePermRef.current = { ...handlePermRef.current, [id]: perm };
+            setHandlePermById((prev) => ({ ...prev, [id]: perm }));
+          },
+          dispatch,
+          runAutoSave: () => performBackgroundAutoSave(project.id, { forceGranted: true }),
+        });
+      },
+      snoozeSaveReminder: (projectId) => {
+        dispatch({ type: 'snooze-save-reminder', projectId, nowMs: Date.now() });
       },
       toast: (message) => {
         if (message === stateRef.current.toast) return;
@@ -3174,9 +3709,58 @@ export function SampleProvider({
     [state.projects],
   );
 
+  const lastSaveWasAutoOf = useCallback(
+    (projectId: string) => Boolean(lastSaveWasAutoById[projectId]),
+    [lastSaveWasAutoById],
+  );
+
+  const autoSaveStatusForContext = useCallback(
+    (projectId: string) => {
+      const project = state.projects.find((item) => item.id === projectId);
+      if (!project) return canPickFiles ? 'unsaved' : 'unsupported';
+      const meta = state.saveMeta[projectId];
+      const needsNewName = shouldSaveUnderNewName({
+        hasExternalFile: Boolean(project.hasExternalFile),
+        titleInFile: project.titleInFile ?? null,
+        title: project.title,
+        filename: project.filename ?? null,
+      });
+      return resolveAutoSaveStatus({
+        canPickFiles,
+        isSample: isSampleBook(project),
+        removed: isBookRemoved(project.id) || isBookRemoved(project.dbKey),
+        hasSavedFile: hasSavedExternalFile(meta),
+        needsNewName,
+        permission: handlePermById[project.id] ?? 'none',
+        lastAutoSaveFailed: Boolean(autoSaveFailedById[project.id]),
+      });
+    },
+    [state.projects, state.saveMeta, canPickFiles, handlePermById, autoSaveFailedById],
+  );
+
   const value = useMemo(
-    () => ({ state, actions, achievementCount, isGlowing, stats, bookWords, deviceLoaded }),
-    [state, actions, achievementCount, isGlowing, stats, bookWords, deviceLoaded],
+    () => ({
+      state,
+      actions,
+      achievementCount,
+      isGlowing,
+      stats,
+      bookWords,
+      autoSaveStatusOf: autoSaveStatusForContext,
+      lastSaveWasAutoOf,
+      deviceLoaded,
+    }),
+    [
+      state,
+      actions,
+      achievementCount,
+      isGlowing,
+      stats,
+      bookWords,
+      autoSaveStatusForContext,
+      lastSaveWasAutoOf,
+      deviceLoaded,
+    ],
   );
 
   return <SampleContext.Provider value={value}>{children}</SampleContext.Provider>;
