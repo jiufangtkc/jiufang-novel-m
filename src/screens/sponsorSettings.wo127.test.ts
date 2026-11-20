@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import { SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION } from '../copy/userFacing';
+import { SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION, SPONSOR_NEW_TAB_HINT } from '../copy/userFacing';
 import { LayoutProvider, type LayoutMode } from '../layout';
 import { SampleProvider } from '../state/sampleStore';
 import { demoFixtureState } from '../state/testing/sampleFixture';
@@ -14,7 +14,8 @@ const MODES: LayoutMode[] = ['phone-portrait', 'phone-landscape', 'medium', 'wid
 const EXPECTED_SPONSOR_URL = 'https://www.paypal.com/ncp/payment/22LC8GY9JRDYL';
 const EXPECTED_BUTTON_LABEL = '贊助九方思想貓';
 const EXPECTED_DESCRIPTION =
-  '編輯器M免費使用，不營利、贊助也不會有回禮；如果它幫上你的忙，歡迎請作者喝杯咖啡。';
+  '編輯器M免費使用。如果它幫上你的忙，歡迎請作者喝杯咖啡。';
+const EXPECTED_NEW_TAB_HINT = '（另開新分頁）';
 
 function renderSettings(mode: LayoutMode): string {
   return renderToStaticMarkup(
@@ -97,20 +98,35 @@ describe('WO-127 設定頁「關於」區贊助連結', () => {
     expect(classTokens).toContain('about-sponsor-row');
   });
 
-  it('按鈕與說明文案來自 userFacing.ts，標註暫定待審且元件未硬寫文案', () => {
+  it('按鈕、說明與朗讀提示文案來自 userFacing.ts，標註暫定待審且元件未硬寫文案', () => {
     expect(SPONSOR_BUTTON_LABEL).toBe(EXPECTED_BUTTON_LABEL);
     expect(SPONSOR_DESCRIPTION).toBe(EXPECTED_DESCRIPTION);
+    expect(SPONSOR_NEW_TAB_HINT).toBe(EXPECTED_NEW_TAB_HINT);
 
     const html = renderSettings('phone-portrait');
     const link = extractSponsorLink(extractAboutSection(html));
-    expect(link).toContain(`<strong>${SPONSOR_BUTTON_LABEL}</strong>`);
+
+    const strongMatch = link.match(/<strong>([\s\S]*?)<\/strong>/);
+    expect(strongMatch).not.toBeNull();
+    expect(strongMatch![1]).toContain(SPONSOR_BUTTON_LABEL);
+    expect(strongMatch![1]).toContain('class="about-sponsor-icon"');
+    expect(strongMatch![1]).toContain('<svg');
+
     expect(link).toContain(`<small>${SPONSOR_DESCRIPTION}</small>`);
+
+    const srOnlyMatch = link.match(/<span\b[^>]*class="[^"]*\bsr-only\b[^"]*"[^>]*>([^<]*)<\/span>/);
+    expect(srOnlyMatch).not.toBeNull();
+    expect(srOnlyMatch![1]).toBe(SPONSOR_NEW_TAB_HINT);
+    expect(srOnlyMatch![1]).toBe('（另開新分頁）');
 
     const settingsSource = readFileSync(new URL('./SettingsScreen.tsx', import.meta.url), 'utf8');
     expect(settingsSource).toContain('SPONSOR_BUTTON_LABEL');
     expect(settingsSource).toContain('SPONSOR_DESCRIPTION');
+    expect(settingsSource).toContain('SPONSOR_NEW_TAB_HINT');
     expect(settingsSource).not.toContain(EXPECTED_BUTTON_LABEL);
     expect(settingsSource).not.toContain(EXPECTED_DESCRIPTION);
+    expect(settingsSource).not.toContain(EXPECTED_NEW_TAB_HINT);
+    expect(settingsSource).not.toContain('另開新分頁');
 
     const copySource = readFileSync(new URL('../copy/userFacing.ts', import.meta.url), 'utf8');
     const sponsorBlockIndex = copySource.indexOf('export const SPONSOR_BUTTON_LABEL');
@@ -118,6 +134,35 @@ describe('WO-127 設定頁「關於」區贊助連結', () => {
     const commentContext = copySource.slice(Math.max(0, sponsorBlockIndex - 120), sponsorBlockIndex);
     expect(commentContext).toContain('暫定');
     expect(commentContext).toContain('待九方審');
+    expect(copySource).toContain('export const SPONSOR_NEW_TAB_HINT');
+  });
+
+  it('連結內含內嵌 SVG 另開新分頁圖示且不含寫死色碼或外部資源', () => {
+    const html = renderSettings('phone-portrait');
+    const link = extractSponsorLink(extractAboutSection(html));
+
+    const svgMatch = link.match(/<svg\b[^>]*>/);
+    expect(svgMatch).not.toBeNull();
+    expect(svgMatch![0]).toContain('aria-hidden="true"');
+    expect(svgMatch![0]).toContain('stroke="currentColor"');
+
+    const iconsSource = readFileSync(new URL('../components/Icons.tsx', import.meta.url), 'utf8');
+    const iconStart = iconsSource.indexOf('export function ExternalLinkIcon');
+    expect(iconStart).toBeGreaterThan(0);
+    const iconSnippet = iconsSource.slice(iconStart);
+    expect(iconSnippet.toLowerCase()).not.toContain('<img');
+    expect(iconSnippet.toLowerCase()).not.toContain('url(');
+
+    const css = readFileSync('src/styles/global.css', 'utf8');
+    const iconRules = [...css.matchAll(/\.about-sponsor-icon[^{]*\{([^}]*)\}/g)];
+    expect(iconRules.length).toBeGreaterThan(0);
+    for (const rule of iconRules) {
+      const body = rule[1];
+      expect(body).not.toMatch(/#[0-9a-fA-F]{3,8}/);
+      expect(body.toLowerCase()).not.toContain('rgb(');
+      expect(body.toLowerCase()).not.toContain('rgba(');
+      expect(body.toLowerCase()).not.toContain('hsl(');
+    }
   });
 
   it('不含外部腳本、圖片、表單、追蹤參數、window.open 或 navigator.onLine 隱藏條件', () => {
