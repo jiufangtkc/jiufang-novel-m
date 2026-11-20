@@ -202,15 +202,23 @@ export async function autoSaveProjectToPlace(
   } catch {
     return { kind: 'invalid-database' };
   }
+  if (fallbackFile) {
+    const resolvedName = fallbackFile.name || fallbackName;
+    const result = await autoSaveWithFile(fallbackFile, bytes, resolvedName);
+    if (result.kind !== 'needs-permission') {
+      return result;
+    }
+    const target = await env.targets.load(bookKey).catch(() => null);
+    if (target?.file && target.file !== fallbackFile) {
+      return autoSaveWithFile(target.file, bytes, target.filename || resolvedName);
+    }
+    return result;
+  }
   const target = await env.targets.load(bookKey).catch(() => null);
-  const file = target?.file ?? fallbackFile ?? null;
+  const file = target?.file ?? null;
   if (!file) return { kind: 'no-handle' };
   const resolvedName = target?.filename || fallbackName;
-  const result = await autoSaveWithFile(file, bytes, resolvedName);
-  if (result.kind === 'needs-permission' && fallbackFile && fallbackFile !== file) {
-    return autoSaveWithFile(fallbackFile, bytes, resolvedName);
-  }
-  return result;
+  return autoSaveWithFile(file, bytes, resolvedName);
 }
 
 async function autoSaveWithFile(

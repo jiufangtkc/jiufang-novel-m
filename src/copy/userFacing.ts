@@ -710,7 +710,7 @@ export const WHATS_NEW_PREVIOUS_TOGGLE = '之前的版本';
 export const WHATS_NEW_EMPTY_CURRENT = '這一版沒有另外列出更新項目。';
 export const whatsNewVersionLabel = (version: string): string => `版本 ${version}`;
 
-// WO-130（暫定，待九方審）：自動存檔與存檔提醒用字。
+// WO-130（暫定，待九方審）：自動存檔與頁首存檔標示用字。
 export const AUTOSAVE_UNSAVED_BADGE = '還沒存成檔案';
 export function autosaveUnsavedAria(canWriteBack: boolean): string {
   return canWriteBack ? '還沒存成檔案，點一下儲存專案' : '還沒存成檔案，點一下另存專案';
@@ -725,12 +725,5 @@ export function autosavedAtLabel(timeText: string): string {
 export function lastFileSavedLabel(timeText: string): string {
   return `上次存檔 ${timeText}`;
 }
-export const SAVE_REMINDER_TITLE = '要不要先存一份？';
-export const SAVE_REMINDER_BODY_UNSAVED =
-  '這份稿子目前只放在瀏覽器裡，清掉瀏覽器資料就會不見，要不要先存一份？';
-export const SAVE_REMINDER_BODY_CHANGED =
-  '距離上次存成檔案已經改了不少內容，要不要再存一份？';
-export const SAVE_REMINDER_SAVE_NOW = '現在存';
-export const SAVE_REMINDER_LATER = '晚點再說';
 export const AUTOSAVE_RESUMED_TOAST = '已恢復自動存檔';
 export const AUTOSAVE_FAILED_TOAST = '自動存檔沒成功，稿子還在暫存空間，請手動存一次。';
