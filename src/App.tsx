@@ -10,6 +10,7 @@ import { LogsScreen } from './screens/LogsScreen';
 import { PrivacyScreen } from './screens/PrivacyScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
+import { TimelineScreen } from './screens/TimelineScreen';
 import { WelcomeRevisitScreen } from './screens/WelcomeRevisitScreen';
 import { Workspace } from './screens/Workspace';
 import { WriteScreen } from './screens/WriteScreen';
@@ -45,6 +46,7 @@ export function App() {
                 <Route index element={<Navigate to="write" replace />} />
                 <Route path="write/:chapterId?" element={<WriteScreen />} />
                 <Route path="cards" element={<CardsScreen />} />
+                <Route path="cards/timeline" element={<TimelineScreen />} />
                 <Route path="files" element={<FilesScreen />} />
                 <Route path="stats" element={<StatsScreen />} />
                 <Route path="settings" element={<SettingsScreen />} />
