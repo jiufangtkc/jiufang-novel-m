@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Link, useParams } from 'react-router-dom';
-import { BookIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import { BookIcon, ExternalLinkIcon, PencilIcon } from '../components/Icons';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION, SPONSOR_NEW_TAB_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import {
   ABOUT_SECTION,
   ABOUT_VERSION_TITLE,
@@ -202,7 +202,13 @@ export function SettingsScreen() {
             data-testid="about-sponsor-link"
           >
             <span>
-              <strong>{SPONSOR_BUTTON_LABEL}</strong>
+              <strong>
+                {SPONSOR_BUTTON_LABEL}
+                <span className="about-sponsor-icon">
+                  <ExternalLinkIcon size={16} />
+                </span>
+              </strong>
+              <span className="sr-only">{SPONSOR_NEW_TAB_HINT}</span>
               <small>{SPONSOR_DESCRIPTION}</small>
             </span>
           </a>

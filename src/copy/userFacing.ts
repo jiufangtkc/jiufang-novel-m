@@ -637,7 +637,8 @@ export const FORMAT_NOTICE_CLOSE_ARIA = '關閉排版提示';
 export const FORMAT_KIND_GROUP_ARIA = '排版方式';
 export const FORMAT_SCOPE_GROUP_ARIA = '排版範圍';
 
-// WO-127（暫定，待九方審）：設定頁「關於」區贊助連結用字。
+// WO-127（暫定，待九方審）：設定頁「關於」區贊助連結用字與朗讀提示。
 export const SPONSOR_BUTTON_LABEL = '贊助九方思想貓';
 export const SPONSOR_DESCRIPTION =
-  '編輯器M免費使用，不營利、贊助也不會有回禮；如果它幫上你的忙，歡迎請作者喝杯咖啡。';
+  '編輯器M免費使用。如果它幫上你的忙，歡迎請作者喝杯咖啡。';
+export const SPONSOR_NEW_TAB_HINT = '（另開新分頁）';

@@ -3351,3 +3351,13 @@ html[data-pointer="mouse"] .cards-subcard-button {
   outline-offset: -2px;
   border-radius: 6px;
 }
+.about-sponsor-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+  margin-left: 6px;
+  color: var(--muted);
+}
+.about-sponsor-icon svg {
+  color: currentColor;
+}
