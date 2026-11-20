@@ -10,3 +10,8 @@ export function recallOpenFile(key: string): DiskFile | null | undefined {
 export function rememberOpenFile(key: string, file: DiskFile | null): void {
   files.set(key, file);
 }
+
+/** 刪稿或清除把手時，一併移出這次開啟的記憶體快取。 */
+export function forgetOpenFile(key: string): void {
+  files.delete(key);
+}

@@ -133,7 +133,11 @@ export async function saveProjectToPlace(
     if (!picked) return { kind: 'cancelled' };
     const wrote = await writeGranted(picked, bytes);
     if (wrote !== 'ready') return wrote;
-    await env.targets.save(bookKey, { filename: picked.name, file: picked });
+    try {
+      await env.targets.save(bookKey, { filename: picked.name, file: picked });
+    } catch {
+      // 磁碟寫入已成功；IndexedDB 保存把手失敗時不否定本次存檔結果。
+    }
     return { kind: 'saved', filename: picked.name };
   }
   return { kind: 'cancelled' };
@@ -161,12 +165,75 @@ export async function saveProjectAsNew(
     if (!picked) return { kind: 'cancelled' };
     const wrote = await writeGranted(picked, bytes);
     if (wrote !== 'ready') return wrote;
-    await env.targets.save(bookKey, { filename: picked.name, file: picked });
+    try {
+      await env.targets.save(bookKey, { filename: picked.name, file: picked });
+    } catch {
+      // 磁碟寫入已成功；IndexedDB 保存把手失敗時不否定本次另存結果。
+    }
     return { kind: 'saved-as', filename: picked.name };
   }
   const via = await env.share(suggestedName, bytes);
   if (via === 'cancelled') return { kind: 'cancelled' };
   return { kind: 'handed-off', via: via === 'shared' ? 'share' : 'download', filename: suggestedName };
+}
+
+export type AutoSaveOutcome =
+  | { kind: 'saved'; filename: string }
+  | { kind: 'no-handle' }
+  | { kind: 'needs-permission'; permission: 'prompt' | 'denied' }
+  | { kind: 'invalid-database' }
+  | { kind: 'write-failed'; restored: boolean };
+
+/**
+ * WO-130：背景自動存檔寫回既有檔案把手。
+ * - 不開選檔視窗（沒有把手就回 no-handle）。
+ * - 不主動呼叫 requestPermission()（未允許就回 needs-permission）。
+ * - 沿用同一條 env.verify 與 writeWithoutDestroying 安全寫回鏈。
+ */
+export async function autoSaveProjectToPlace(
+  env: Pick<SaveEnvironment, 'targets' | 'verify'>,
+  bookKey: string,
+  bytes: Uint8Array,
+  fallbackName = '',
+  fallbackFile?: DiskFile | null,
+): Promise<AutoSaveOutcome> {
+  try {
+    await env.verify(bytes);
+  } catch {
+    return { kind: 'invalid-database' };
+  }
+  const target = await env.targets.load(bookKey).catch(() => null);
+  const file = target?.file ?? fallbackFile ?? null;
+  if (!file) return { kind: 'no-handle' };
+  const resolvedName = target?.filename || fallbackName;
+  const result = await autoSaveWithFile(file, bytes, resolvedName);
+  if (result.kind === 'needs-permission' && fallbackFile && fallbackFile !== file) {
+    return autoSaveWithFile(fallbackFile, bytes, resolvedName);
+  }
+  return result;
+}
+
+async function autoSaveWithFile(
+  file: DiskFile,
+  bytes: Uint8Array,
+  fallbackName: string,
+): Promise<AutoSaveOutcome> {
+  let permission: 'granted' | 'prompt' | 'denied';
+  try {
+    permission = await file.queryPermission();
+  } catch {
+    return { kind: 'needs-permission', permission: 'prompt' };
+  }
+  if (permission !== 'granted') {
+    return { kind: 'needs-permission', permission };
+  }
+  try {
+    const wrote = await writeWithoutDestroying(file, bytes);
+    if (wrote !== 'ok') return { kind: 'write-failed', restored: wrote.restored };
+    return { kind: 'saved', filename: file.name || fallbackName };
+  } catch {
+    return { kind: 'write-failed', restored: false };
+  }
 }
 
 /**
@@ -238,8 +305,12 @@ export async function saveProjectFromClick(input: {
   }
   const wrote = await writeGranted(picked, bytes);
   if (wrote !== 'ready') return wrote;
-  await input.env.targets.save(input.bookKey, { filename: picked.name, file: picked });
   input.onRemember?.(picked);
+  try {
+    await input.env.targets.save(input.bookKey, { filename: picked.name, file: picked });
+  } catch {
+    // 磁碟寫入已成功；IndexedDB 保存把手失敗時，本次分頁仍靠 onRemember 記憶體把手運作。
+  }
   if (input.plan === 'pick-new-name') {
     return { kind: 'saved-under-new-title', filename: picked.name };
   }
