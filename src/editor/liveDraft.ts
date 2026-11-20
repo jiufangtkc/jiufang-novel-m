@@ -11,13 +11,22 @@ export interface LiveDraft {
 }
 
 let reader: (() => Omit<LiveDraft, 'at'> | null) | null = null;
+let composingReader: (() => boolean) | null = null;
 
-export function setLiveReader(next: (() => Omit<LiveDraft, 'at'> | null) | null) {
+export function setLiveReader(
+  next: (() => Omit<LiveDraft, 'at'> | null) | null,
+  composing?: (() => boolean) | null,
+) {
   reader = next;
+  composingReader = next ? (composing ?? null) : null;
 }
 
 export function readLiveDraftFromEditor(): Omit<LiveDraft, 'at'> | null {
   return reader ? reader() : null;
+}
+
+export function isLiveDraftComposing(): boolean {
+  return composingReader ? composingReader() : false;
 }
 
 export function writeLiveDraft(store: KeyValueStore, draft: LiveDraft) {

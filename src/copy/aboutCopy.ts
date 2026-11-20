@@ -25,8 +25,8 @@ export const WELCOME_PLACEHOLDER_TITLE = '歡迎導覽';
 export const WELCOME_PLACEHOLDER_BODY = '歡迎導覽還在準備中。';
 export const WELCOME_PLACEHOLDER_BACK_ARIA = '返回設定';
 
-/** 目前版本號碼（package.json 的 version）。 */
-export const APP_VERSION: string = __APP_VERSION__;
+/** 目前版本號碼（package.json 的 version）。獨立打包環境未注入 __APP_VERSION__ 時安全退回空字串。 */
+export const APP_VERSION: string = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '';
 
 /** 精確 hostname 為正式站才是正式版；其他（分支預覽、本機、取不到網址）一律預覽版。 */
 export function channelForHostname(hostname: string | null | undefined): BuildChannel {
