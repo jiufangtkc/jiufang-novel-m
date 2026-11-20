@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import {
   ABOUT_SECTION,
   ABOUT_VERSION_TITLE,
@@ -24,6 +24,9 @@ import { useProject, useSample } from '../state/sampleStore';
 import { AppearanceSettings } from './AppearanceSettings';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
 import './halfWidth.css';
+
+/** WO-127：贊助頁面外部連結（純靜態網址，不嵌第三方程式碼）。 */
+export const SPONSOR_URL = 'https://www.paypal.com/ncp/payment/22LC8GY9JRDYL';
 
 /** 只改到的那一項才更新。只改每日目標時，不會順便說全書目標已更新。 */
 export function goalApplyPlan(
@@ -190,6 +193,19 @@ export function SettingsScreen() {
               <small>{ABOUT_WELCOME_HINT}</small>
             </span>
           </Link>
+          {/* WO-127：純外部連結，不嵌 PayPal 腳本、不載外部圖、不追蹤，離線照常顯示。 */}
+          <a
+            className="setting-row about-sponsor-row"
+            href={SPONSOR_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="about-sponsor-link"
+          >
+            <span>
+              <strong>{SPONSOR_BUTTON_LABEL}</strong>
+              <small>{SPONSOR_DESCRIPTION}</small>
+            </span>
+          </a>
         </section>
       </div>
       {editing && (
