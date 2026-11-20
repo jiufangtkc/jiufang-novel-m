@@ -23,8 +23,6 @@ import {
 
 export interface WhatsNewContextValue {
   openWhatsNew: (origin?: HTMLElement | null) => void;
-  /** WO-130：改版說明目前正開啟或尚在等待開啟檢查（用於存檔提醒禮讓）。 */
-  isWhatsNewPending?: boolean;
 }
 
 interface WhatsNewLayerContextValue {
@@ -35,7 +33,6 @@ interface WhatsNewLayerContextValue {
 
 const WhatsNewContext = createContext<WhatsNewContextValue>({
   openWhatsNew: () => {},
-  isWhatsNewPending: false,
 });
 
 const WhatsNewLayerContext = createContext<WhatsNewLayerContextValue | null>(null);
@@ -59,7 +56,6 @@ export function WhatsNewProvider({ children }: { children: ReactNode }) {
   const { state, deviceLoaded } = useSample();
   const { pathname } = useLocation();
   const [open, setOpen] = useState(false);
-  const [decided, setDecided] = useState(false);
   const [returnFocusTo, setReturnFocusTo] = useState<HTMLElement | null>(null);
   const [waitTick, setWaitTick] = useState(0);
   const decidedRef = useRef(false);
@@ -91,14 +87,12 @@ export function WhatsNewProvider({ children }: { children: ReactNode }) {
 
     if (decision === 'none') {
       decidedRef.current = true;
-      setDecided(true);
       return;
     }
 
     if (decision === 'mark-seen') {
       writeSeenVersion(APP_VERSION);
       decidedRef.current = true;
-      setDecided(true);
       return;
     }
 
@@ -123,7 +117,6 @@ export function WhatsNewProvider({ children }: { children: ReactNode }) {
           return;
         }
         decidedRef.current = true;
-        setDecided(true);
         setReturnFocusTo(null);
         setOpen(true);
       });
@@ -131,7 +124,6 @@ export function WhatsNewProvider({ children }: { children: ReactNode }) {
     }
 
     decidedRef.current = true;
-    setDecided(true);
     setReturnFocusTo(null);
     setOpen(true);
   }, [deviceLoaded, pathname, state.projects, state.recentIds, waitTick]);
@@ -143,16 +135,12 @@ export function WhatsNewProvider({ children }: { children: ReactNode }) {
 
   const closeWhatsNew = useCallback(() => {
     decidedRef.current = true;
-    setDecided(true);
     writeSeenVersion(APP_VERSION);
     setOpen(false);
     setReturnFocusTo(null);
   }, []);
 
-  const publicValue = useMemo<WhatsNewContextValue>(
-    () => ({ openWhatsNew, isWhatsNewPending: open || !decided }),
-    [openWhatsNew, open, decided],
-  );
+  const publicValue = useMemo<WhatsNewContextValue>(() => ({ openWhatsNew }), [openWhatsNew]);
   const layerValue = useMemo<WhatsNewLayerContextValue>(
     () => ({ open, returnFocusTo, closeWhatsNew }),
     [open, returnFocusTo, closeWhatsNew],

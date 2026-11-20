@@ -12,7 +12,6 @@ import '../components/formatTools.css';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
 import { SaveHeaderStatus } from '../components/SaveHeaderStatus';
-import { SaveReminderDialog } from '../components/SaveReminderDialog';
 import { StatusBadge } from '../components/StatusBadge';
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import type { BookSearchController } from '../components/BookSearchPanelState';
@@ -49,13 +48,6 @@ import { isBuiltinSampleBook } from '../domain/builtinSampleBook';
 import { neighborChapterId } from '../domain/chapterOps';
 import { sessionVersions, VERSION_INTERVAL_MS, withVersion } from '../domain/chapterVersions';
 import { latestSaveTimestamp } from '../domain/saveClock';
-import {
-  TYPING_IDLE_FOR_REMINDER_MS,
-  emptyReminderSession,
-  isSaveOutcomeCompleted,
-  nextSaveReminderOpenReason,
-  type SaveReminderReason,
-} from '../domain/saveReminder';
 import { hasBodyText, staleSaveDays } from '../domain/staleSaveReminder';
 import { countWords } from '../domain/wordCount';
 import {
@@ -94,8 +86,6 @@ import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthR
 import { useProject, useSample } from '../state/sampleStore';
 import { caretToRestore, nearIdsOf, readWritePlace, saveWritePlace, scrollTopToRestore } from '../state/navMemory';
 import { editorSaveStatus } from './editorSaveStatus';
-import { hasOpenDialog } from './saveShortcuts';
-import { isWelcomeTourActive, useWhatsNew } from './WhatsNewHost';
 import {
   HalfWidthBadge,
   HalfWidthBubble,
@@ -121,11 +111,8 @@ export function EditorPane({
   const didFocusBody = useRef(false);
   const sample = useSample();
   const { actions, state, isGlowing } = sample;
-  const bookWords = sample.bookWords;
   const autoSaveStatusOf = sample.autoSaveStatusOf;
   const lastSaveWasAutoOf = sample.lastSaveWasAutoOf;
-  const deviceLoaded = Boolean(sample.deviceLoaded);
-  const whatsNew = useWhatsNew();
   const project = useProject(projectId);
   const [focused, setFocused] = useState(false);
   const keyboard = useWritingKeyboard(focused);
@@ -175,12 +162,6 @@ export function EditorPane({
     lastFileSaveMs,
   });
   const headerHasSubRow = headerKind !== 'none';
-  const [reminderOpenReason, setReminderOpenReason] = useState<SaveReminderReason | null>(null);
-  const [savingFromReminder, setSavingFromReminder] = useState(false);
-  const savingFromReminderRef = useRef(false);
-  const [reminderEvalTick, setReminderEvalTick] = useState(0);
-  const lastInputAtRef = useRef<number | null>(null);
-  const idleReminderTimerRef = useRef<number | null>(null);
   const titleRef = useRef(chapter.title);
   titleRef.current = chapter.title;
   const rememberRef = useRef(actions.rememberPlace);
@@ -347,92 +328,6 @@ export function EditorPane({
 
   // WO-119：電腦專注模式按 Esc 離開（沿用既有 exitFocusMode，判斷見 focusEscape.ts）
   useFocusEscape({ layoutMode, pointer, focusMode, exitFocusMode, isComposingRef });
-
-  // WO-130：記住最後輸入時間並於停筆滿 3 秒後重估溫和存檔提醒；同時定期檢查時間門檻。
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const onActivity = () => {
-      lastInputAtRef.current = Date.now();
-      if (idleReminderTimerRef.current !== null) {
-        window.clearTimeout(idleReminderTimerRef.current);
-      }
-      idleReminderTimerRef.current = window.setTimeout(() => {
-        idleReminderTimerRef.current = null;
-        setReminderEvalTick((n) => n + 1);
-      }, TYPING_IDLE_FOR_REMINDER_MS + 50);
-    };
-    el.addEventListener('input', onActivity);
-    el.addEventListener('compositionend', onActivity);
-    const interval = window.setInterval(() => {
-      setReminderEvalTick((n) => n + 1);
-    }, 15_000);
-    return () => {
-      el.removeEventListener('input', onActivity);
-      el.removeEventListener('compositionend', onActivity);
-      window.clearInterval(interval);
-      if (idleReminderTimerRef.current !== null) {
-        window.clearTimeout(idleReminderTimerRef.current);
-        idleReminderTimerRef.current = null;
-      }
-    };
-  }, [ref, projectId, chapter.id]);
-
-  useEffect(() => {
-    setReminderOpenReason(null);
-  }, [projectId]);
-
-  useEffect(() => {
-    const nowMs = Date.now();
-    const session = state.reminderSessions?.[projectId] ?? emptyReminderSession();
-    const nextReason = nextSaveReminderOpenReason({
-      hasProject: Boolean(project),
-      focusMode,
-      savingFromReminder: savingFromReminder || savingFromReminderRef.current,
-      currentOpenReason: reminderOpenReason,
-      evalInput: {
-        autoSaveStatus,
-        isSample,
-        hasExternalFileSaved: lastFileSaveMs != null,
-        hasBody: project ? hasBodyText(project.nodes) : false,
-        bodyWords: bookWords ? bookWords(projectId) : 0,
-        session,
-        nowMs,
-      },
-      overlayGate: {
-        deviceLoaded,
-        pathname: location.pathname,
-        focusMode,
-        isComposing: isComposingRef.current,
-        keyboardOpen: keyboardOpen || keyboard.landscape,
-        lastInputAtMs: lastInputAtRef.current,
-        nowMs,
-        dialogOpen: hasOpenDialog(),
-        welcomeActive: isWelcomeTourActive(location.pathname),
-        whatsNewPending: Boolean(whatsNew?.isWhatsNewPending),
-      },
-    });
-    if (nextReason !== reminderOpenReason) {
-      setReminderOpenReason(nextReason);
-    }
-  }, [
-    project,
-    projectId,
-    isSample,
-    autoSaveStatus,
-    lastFileSaveMs,
-    bookWords,
-    state.reminderSessions,
-    deviceLoaded,
-    location.pathname,
-    focusMode,
-    keyboardOpen,
-    keyboard.landscape,
-    whatsNew?.isWhatsNewPending,
-    reminderOpenReason,
-    reminderEvalTick,
-    savingFromReminder,
-  ]);
 
   const clearPendingComposition = () => {
     pendingOpenAfterCompositionRef.current = false;
@@ -1141,38 +1036,6 @@ export function EditorPane({
           }}
         />
       )}
-      {reminderOpenReason && !focusMode ? (
-        <SaveReminderDialog
-          reason={reminderOpenReason}
-          onLater={() => {
-            setReminderOpenReason(null);
-            actions.snoozeSaveReminder?.(projectId);
-          }}
-          onSaveNow={() => {
-            if (savingFromReminderRef.current) return;
-            const targetProjectId = projectId;
-            savingFromReminderRef.current = true;
-            setSavingFromReminder(true);
-            setReminderOpenReason(null);
-            void (canPickLocalFiles()
-              ? actions.saveProject({ fromReminder: true })
-              : actions.saveProjectAs({ fromReminder: true })
-            )
-              .then((outcome) => {
-                if (!isSaveOutcomeCompleted(outcome)) {
-                  actions.snoozeSaveReminder?.(targetProjectId);
-                }
-              })
-              .catch(() => {
-                actions.snoozeSaveReminder?.(targetProjectId);
-              })
-              .finally(() => {
-                savingFromReminderRef.current = false;
-                setSavingFromReminder(false);
-              });
-          }}
-        />
-      ) : null}
     </div>
   );
 }
