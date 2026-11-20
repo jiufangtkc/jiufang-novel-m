@@ -67,7 +67,10 @@ export function useWritingSurface({
     const source = { current: 'type' as TextChangeSource };
     const latest = { current: textarea.value };
     const lock = { current: false };
-    setLiveReader(() => ({ projectId: bookId, chapterId, text: textarea.value }));
+    setLiveReader(
+      () => ({ projectId: bookId, chapterId, text: textarea.value }),
+      () => composing.current,
+    );
     let lastActivity = 0;
     let billedUntil = 0;
     const gate = createIdleGate(IDLE_MS);

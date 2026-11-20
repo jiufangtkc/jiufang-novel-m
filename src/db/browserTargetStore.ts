@@ -22,6 +22,14 @@ export function createBrowserTargetStore(): TargetStore {
         database.close();
       }
     },
+    async remove(bookKey) {
+      const database = await openAppDatabase();
+      try {
+        await request(database, 'readwrite', (store) => store.delete(bookKey));
+      } finally {
+        database.close();
+      }
+    },
   };
 }
 

@@ -1,0 +1,156 @@
+/*
+ * WO-130：寫作頁頁首外部存檔標示與溫和存檔提醒對話框樣式。
+ * 沿用三套主題變數與 color-mix；不使用 --editor、--warning、--hit-size、rgba 或寫死淺色碼。
+ */
+
+.editor .topbar .save-header-action {
+  order: 99;
+  flex: 1 0 100%;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  margin-bottom: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.4;
+  text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.editor .topbar .save-header-action.is-permission {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--accent);
+}
+
+.editor .topbar .save-header-action.is-failed {
+  border-color: color-mix(in srgb, var(--danger) 65%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.editor .topbar .save-header-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.editor .topbar .save-header-time {
+  order: 99;
+  flex: 1 0 100%;
+  box-sizing: border-box;
+  padding: 0 4px 6px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.save-reminder-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 340;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, var(--safe-top)) max(16px, env(safe-area-inset-right, 0px))
+    max(16px, var(--safe-bottom)) max(16px, env(safe-area-inset-left, 0px));
+  background: color-mix(in srgb, #000 50%, transparent);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.save-reminder-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(440px, 100%);
+  max-width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  color: var(--text);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+html[data-layout="wide"] .save-reminder-dialog {
+  width: min(460px, 100%);
+}
+
+.save-reminder-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 20px 14px;
+}
+
+.save-reminder-body h2 {
+  margin: 0 0 10px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
+  outline: none;
+  overflow-wrap: anywhere;
+}
+
+.save-reminder-message {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+
+.save-reminder-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.save-reminder-save,
+.save-reminder-later {
+  width: 100%;
+  min-width: 44px;
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
+
+.save-reminder-save:focus-visible,
+.save-reminder-later:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+html[data-layout="phone-landscape"] .save-reminder-backdrop {
+  padding: max(8px, var(--safe-top)) max(16px, env(safe-area-inset-right, 0px))
+    max(8px, var(--safe-bottom)) max(16px, env(safe-area-inset-left, 0px));
+}
+
+html[data-layout="phone-landscape"] .save-reminder-body {
+  padding: 14px 18px 10px;
+}
+
+html[data-layout="phone-landscape"] .save-reminder-actions {
+  flex-direction: row;
+  padding: 10px 18px 12px;
+}

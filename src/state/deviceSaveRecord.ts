@@ -27,6 +27,8 @@ export interface SaveMetaEntry {
   lastManualSaveMs: number | null;
   lastExportMs: number | null;
   lastProjectSaveMs: number | null;
+  /** WO-130：上次外部存檔後是否尚有未寫回外部檔的實質編輯（只存本機，不寫進 .db）。 */
+  dirtySinceFileSave?: boolean;
 }
 
 export interface DeviceSaveRecord {

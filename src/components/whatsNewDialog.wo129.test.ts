@@ -143,8 +143,8 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(html).not.toContain(`v${APP_VERSION}`);
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
-    expect(html).toContain('<li>事件時間線：照故事順序或章節順序排事件，電腦寬螢幕還能雙線對照</li>');
-    expect(html).toContain('<li>設定頁新增贊助按鈕</li>');
+    expect(html).toContain('<li>自動存檔：用電腦的 Chrome 或 Edge 存過一次後，每 5 分鐘自動存回檔案</li>');
+    expect(html).toContain('<li>還沒存成檔案時會提醒你</li>');
 
     const confirmMatch = html.match(
       /<button\b[^>]*data-testid="whats-new-confirm"[^>]*>[\s\S]*?<\/button>/,
@@ -153,9 +153,19 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(confirmMatch![0]).toContain('button primary whats-new-confirm');
     expect(confirmMatch![0]).toContain(WHATS_NEW_CONFIRM);
 
-    // 目前資料只有 0.3.0 一版時，不渲染空的「之前的版本」展開鈕
-    expect(html).not.toContain('data-testid="whats-new-history-toggle"');
-    expect(html).not.toContain(WHATS_NEW_PREVIOUS_TOGGLE);
+    // 升版為 0.4.0（兩筆改版資料）時，預設呈現收合的「之前的版本」展開鈕
+    expect(html).toContain('data-testid="whats-new-history-toggle"');
+    expect(html).toContain('aria-expanded="false"');
+    expect(html).toContain(WHATS_NEW_PREVIOUS_TOGGLE);
+    expect(html).not.toContain('id="whats-new-history"');
+
+    // 只有單一版本時不渲染「之前的版本」展開鈕
+    const singleVersionHtml = renderDialog({
+      version: '0.3.0',
+      notes: [{ version: '0.3.0', items: ['單版測試條目'] }],
+    });
+    expect(singleVersionHtml).not.toContain('data-testid="whats-new-history-toggle"');
+    expect(singleVersionHtml).not.toContain(WHATS_NEW_PREVIOUS_TOGGLE);
   });
 
   it('多版本時顯示具 aria-expanded／aria-controls 的「之前的版本」鈕，展開後依新版在前顯示歷版', () => {

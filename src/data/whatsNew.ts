@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-130（暫定，待九方審）
+  {
+    version: '0.4.0',
+    items: [
+      '自動存檔：用電腦的 Chrome 或 Edge 存過一次後，每 5 分鐘自動存回檔案',
+      '還沒存成檔案時會提醒你',
+    ],
+  },
   {
     version: '0.3.0',
     items: [

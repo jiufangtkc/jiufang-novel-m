@@ -17,6 +17,7 @@ export interface SaveTarget {
 export interface TargetStore {
   load(bookKey: string): Promise<SaveTarget | null>;
   save(bookKey: string, target: SaveTarget): Promise<void>;
+  remove?(bookKey: string): Promise<void>;
 }
 
 export interface StoredTargetRow {
@@ -32,6 +33,9 @@ export function createMemoryTargetStore(): TargetStore {
     },
     async save(bookKey, target) {
       rows.set(bookKey, target);
+    },
+    async remove(bookKey) {
+      rows.delete(bookKey);
     },
   };
 }
