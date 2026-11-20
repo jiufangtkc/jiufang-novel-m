@@ -1,12 +1,12 @@
 /**
- * WO-130 甲段單元測試：
+ * WO-130／WO-131 甲段單元測試：
  * - 假 FileSystemFileHandle 與 FakeDisk：每 5 分鐘有變更才自動寫回、與手動儲存位元組一致、schema v14
  * - 單飛防重疊鎖、手動儲存等待背景寫入、寫入期間新編輯維持 dirty
  * - 改書名待新名另存暫停寫回舊檔、重開分頁不自動索權、點擊恢復權限與拒絕處理
  * - 寫入失敗還原原檔且防洗版（只在首次失敗跳一次 5 秒 Toast）
  * - 刪稿清理 file-targets 與記憶體把手
- * - 溫和存檔提醒狀態機（500 字／30 分鐘、改多 1,000 字／60 分鐘、上限 3 次、冷卻、場景門檻）
- * - 0.4.0 版號與 whatsNew.ts 條目驗證
+ * - 無法自動存檔的瀏覽器（canPickFiles 為 false）頁首角落標示與另存行為
+ * - 0.4.1 版號與 whatsNew.ts 條目驗證（保留 0.4.0、0.3.0）
  * 只用記憶體假檔與範例內容，不讀寫真實書稿或 .db。
  */
 import { readFileSync } from 'node:fs';
@@ -32,7 +32,9 @@ import {
 } from '../db/saveProject';
 import { openMemoryDb } from '../db/wasmDb';
 import {
+  AUTOSAVE_HEARTBEAT_MS,
   AUTOSAVE_INTERVAL_MS,
+  advanceAutoSaveDue,
   applyUncommittedDraftToProject,
   hasSavedExternalFile,
   lastExternalFileSaveMs,
@@ -40,24 +42,8 @@ import {
   resolveHeaderSaveDisplay,
   shouldClearDirtyAfterSave,
   shouldRunAutoSaveTick,
+  startAutoSaveScheduler,
 } from '../domain/autoSave';
-import {
-  CHANGED_REMINDER_MS,
-  CHANGED_REMINDER_WORDS,
-  MAX_SAVE_REMINDERS_PER_SESSION,
-  SNOOZE_REMINDER_MS,
-  UNSAVED_REMINDER_MS,
-  UNSAVED_REMINDER_WORDS,
-  canShowSaveReminderOverlay,
-  emptyReminderSession,
-  evaluateSaveReminder,
-  isSaveOutcomeCompleted,
-  nextSaveReminderOpenReason,
-  recordReminderNonTextEdit,
-  recordReminderTextEdit,
-  resetReminderAfterSave,
-  snoozeReminderSession,
-} from '../domain/saveReminder';
 import { shouldSaveUnderNewName } from '../domain/bookTitle';
 import { setLiveReader } from '../editor/liveDraft';
 import { loadDeviceSaveRecord } from './deviceSaveRecord';
@@ -714,384 +700,6 @@ describe('WO-130 甲段：自動存檔管線、單飛鎖、權限與寫回安全
       }),
     ).toBe('none');
   });
-});
-
-describe('WO-130 甲段：溫和存檔提醒狀態機與場景保護', () => {
-  it('未存過檔：499 字不跳、500 字跳；29 分鐘不跳、30 分鐘跳；空白稿 60 分鐘不跳', () => {
-    let s = emptyReminderSession();
-    s = recordReminderTextEdit(s, 499, NOW_MS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 499,
-        session: s,
-        nowMs: NOW_MS + 1000,
-      }),
-    ).toBeNull();
-
-    // 29 分鐘不跳
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 499,
-        session: s,
-        nowMs: NOW_MS + UNSAVED_REMINDER_MS - 1,
-      }),
-    ).toBeNull();
-
-    // 滿 30 分鐘跳
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 499,
-        session: s,
-        nowMs: NOW_MS + UNSAVED_REMINDER_MS,
-      }),
-    ).toBe('unsaved');
-
-    // 滿 500 字立即達標
-    const s500 = recordReminderTextEdit(s, 1, NOW_MS + 1000);
-    expect(s500.wordChurn).toBe(UNSAVED_REMINDER_WORDS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 500,
-        session: s500,
-        nowMs: NOW_MS + 2000,
-      }),
-    ).toBe('unsaved');
-
-    // 空白稿（hasBody = false）就算 60 分鐘也不跳
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: false,
-        bodyWords: 0,
-        session: recordReminderNonTextEdit(emptyReminderSession(), NOW_MS),
-        nowMs: NOW_MS + 60 * 60 * 1000,
-      }),
-    ).toBeNull();
-  });
-
-  it('存過檔後又改很多：999 字不跳、刪 500 重寫 500（淨字數 0）跳；10 字放 60 分不跳、100 字滿 60 分跳', () => {
-    let s = emptyReminderSession();
-    s = recordReminderTextEdit(s, 500, NOW_MS); // 刪 500 字（abs）
-    s = recordReminderTextEdit(s, 499, NOW_MS + 1000); // 重寫 499 字
-    expect(s.wordChurn).toBe(999);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 1200,
-        session: s,
-        nowMs: NOW_MS + 5000,
-      }),
-    ).toBeNull();
-
-    // 再多 1 字達 1,000 字
-    s = recordReminderTextEdit(s, 1, NOW_MS + 6000);
-    expect(s.wordChurn).toBe(CHANGED_REMINDER_WORDS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 1200,
-        session: s,
-        nowMs: NOW_MS + 7000,
-      }),
-    ).toBe('changed');
-
-    // 小改 10 字放 60 分鐘不跳
-    const minor = recordReminderTextEdit(emptyReminderSession(), 10, NOW_MS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 1200,
-        session: minor,
-        nowMs: NOW_MS + CHANGED_REMINDER_MS,
-      }),
-    ).toBeNull();
-
-    // 改 100 字滿 60 分鐘跳
-    const medium = recordReminderTextEdit(emptyReminderSession(), 100, NOW_MS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 1200,
-        session: medium,
-        nowMs: NOW_MS + CHANGED_REMINDER_MS,
-      }),
-    ).toBe('changed');
-  });
-
-  it('冷卻、單次上限 3 次、存檔清零，且運作中自動存檔永不跳出', () => {
-    let s = recordReminderTextEdit(emptyReminderSession(), 500, NOW_MS);
-    // 運作中自動存檔絕不跳
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'active',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 500,
-        session: recordReminderTextEdit(s, 600, NOW_MS),
-        nowMs: NOW_MS + 1000,
-      }),
-    ).toBeNull();
-
-    // 第 1 次按「晚點再說」進入冷卻
-    s = snoozeReminderSession(s, NOW_MS + 10_000);
-    expect(s.reminderCount).toBe(1);
-
-    // 返工 2：冷卻未滿 30 分鐘即使立刻再寫 600 字仍不跳
-    s = recordReminderTextEdit(s, 600, NOW_MS + 20_000);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 1100,
-        session: s,
-        nowMs: NOW_MS + 10_000 + SNOOZE_REMINDER_MS - 1,
-      }),
-    ).toBeNull();
-
-    // 滿 30 分鐘且冷卻期間有新編輯 → 跳第 2 次
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 1100,
-        session: s,
-        nowMs: NOW_MS + 10_000 + SNOOZE_REMINDER_MS,
-      }),
-    ).toBe('unsaved');
-
-    // 第 2 次按「晚點再說」：滿 30 分鐘但沒有新編輯仍不跳；有了新編輯後才跳第 3 次
-    const secondSnoozeAt = NOW_MS + 10_000 + SNOOZE_REMINDER_MS;
-    s = snoozeReminderSession(s, secondSnoozeAt);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 1100,
-        session: s,
-        nowMs: secondSnoozeAt + SNOOZE_REMINDER_MS,
-      }),
-    ).toBeNull();
-
-    s = recordReminderTextEdit(s, 10, secondSnoozeAt + SNOOZE_REMINDER_MS + 1000);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 1110,
-        session: s,
-        nowMs: secondSnoozeAt + SNOOZE_REMINDER_MS + 1000,
-      }),
-    ).toBe('unsaved');
-
-    s = snoozeReminderSession(s, secondSnoozeAt + SNOOZE_REMINDER_MS + 5000);
-    expect(s.reminderCount).toBe(MAX_SAVE_REMINDERS_PER_SESSION);
-
-    // 達上限 3 次後，再怎麼寫都不主動跳
-    s = recordReminderTextEdit(s, 2000, NOW_MS + 30_000 + SNOOZE_REMINDER_MS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: false,
-        hasBody: true,
-        bodyWords: 3499,
-        session: s,
-        nowMs: NOW_MS + 10 * 60 * 60 * 1000,
-      }),
-    ).toBeNull();
-
-    // 存檔成功清零變動量與冷卻
-    const afterSave = resetReminderAfterSave(s, true);
-    expect(afterSave.wordChurn).toBe(0);
-    expect(afterSave.firstEditAtMs).toBeNull();
-    expect(afterSave.snoozedAtMs).toBeNull();
-  });
-
-  it('場景保護：檔案頁、專注模式、組字中、鍵盤開啟、停筆未滿 3 秒、已有對話框或改版說明皆不彈出', () => {
-    const okBase = {
-      deviceLoaded: true,
-      pathname: '/p/p-1/write/ch-1',
-      focusMode: false,
-      isComposing: false,
-      keyboardOpen: false,
-      lastInputAtMs: NOW_MS - 4000,
-      nowMs: NOW_MS,
-      dialogOpen: false,
-      welcomeActive: false,
-      whatsNewPending: false,
-    };
-    expect(canShowSaveReminderOverlay(okBase)).toBe(true);
-    expect(canShowSaveReminderOverlay({ ...okBase, deviceLoaded: false })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, pathname: '/p/p-1/files' })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, focusMode: true })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, isComposing: true })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, keyboardOpen: true })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, dialogOpen: true })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, welcomeActive: true })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, whatsNewPending: true })).toBe(false);
-    expect(canShowSaveReminderOverlay({ ...okBase, lastInputAtMs: NOW_MS - 2999 })).toBe(false);
-  });
-
-  it('返工 1：點「現在存」非同步存檔期間不重跳；unsupported 存檔成功／取消後關閉不卡住', () => {
-    const key = 'p-1763697600002';
-    const { state: initState, chapterId } = makeBookState(NOW_MS, key);
-    let state = reduce(initState, {
-      type: 'commit-text',
-      projectId: key,
-      nodeId: chapterId,
-      text: '【範例】' + '字'.repeat(520),
-    });
-
-    const overlayGate = {
-      deviceLoaded: true,
-      pathname: `/p/${key}/write/${chapterId}`,
-      focusMode: false,
-      isComposing: false,
-      keyboardOpen: false,
-      lastInputAtMs: NOW_MS - 4000,
-      nowMs: NOW_MS,
-      dialogOpen: false,
-      welcomeActive: false,
-      whatsNewPending: false,
-    };
-    const makeEvalInput = (s: SampleState) => ({
-      autoSaveStatus: 'unsupported' as const,
-      isSample: false,
-      hasExternalFileSaved: s.saveMeta[key]?.lastExportMs != null,
-      hasBody: true,
-      bodyWords: 520,
-      session: s.reminderSessions?.[key] ?? emptyReminderSession(),
-      nowMs: NOW_MS,
-    });
-
-    // 1. 達 500 字後跳出提醒
-    expect(
-      nextSaveReminderOpenReason({
-        hasProject: true,
-        focusMode: false,
-        savingFromReminder: false,
-        currentOpenReason: null,
-        evalInput: makeEvalInput(state),
-        overlayGate,
-      }),
-    ).toBe('unsaved');
-
-    // 2. 按「現在存」後同步關閉，非同步 saveProjectAs 尚未結束（savingFromReminder: true）時不可重跳
-    expect(
-      nextSaveReminderOpenReason({
-        hasProject: true,
-        focusMode: false,
-        savingFromReminder: true,
-        currentOpenReason: null,
-        evalInput: makeEvalInput(state),
-        overlayGate,
-      }),
-    ).toBeNull();
-
-    // 3. unsupported 瀏覽器另存／下載成功後清零並解除鎖 → 即使原本誤開著也立刻回 null 關閉、不再出現
-    expect(isSaveOutcomeCompleted({ kind: 'handed-off', via: 'download', filename: 'a.db' })).toBe(true);
-    expect(isSaveOutcomeCompleted({ kind: 'saved-as', filename: 'a.db' })).toBe(true);
-    expect(isSaveOutcomeCompleted({ kind: 'saved', filename: 'a.db' })).toBe(true);
-    expect(isSaveOutcomeCompleted({ kind: 'saved-under-new-title', filename: 'a.db' })).toBe(true);
-    let afterSave = reduce(state, { type: 'record-export', projectId: key, atMs: NOW_MS });
-    afterSave = reduce(afterSave, {
-      type: 'clear-dirty-after-file-save',
-      projectId: key,
-      clearDirty: true,
-      fromReminder: true,
-    });
-    expect(
-      nextSaveReminderOpenReason({
-        hasProject: true,
-        focusMode: false,
-        savingFromReminder: false,
-        currentOpenReason: 'unsaved',
-        evalInput: makeEvalInput(afterSave),
-        overlayGate,
-      }),
-    ).toBeNull();
-    expect(
-      nextSaveReminderOpenReason({
-        hasProject: true,
-        focusMode: false,
-        savingFromReminder: false,
-        currentOpenReason: null,
-        evalInput: makeEvalInput(afterSave),
-        overlayGate,
-      }),
-    ).toBeNull();
-
-    // 4. 若在選檔／分享視窗取消或寫入失敗，進入冷卻並解除鎖 → 關閉且不重跳，只扣 1 次次數
-    expect(isSaveOutcomeCompleted({ kind: 'cancelled' })).toBe(false);
-    expect(isSaveOutcomeCompleted({ kind: 'picker-aborted' })).toBe(false);
-    expect(isSaveOutcomeCompleted({ kind: 'write-failed', restored: true })).toBe(false);
-    expect(isSaveOutcomeCompleted(null)).toBe(false);
-    const afterCancel = reduce(state, {
-      type: 'snooze-save-reminder',
-      projectId: key,
-      nowMs: NOW_MS,
-    });
-    expect(afterCancel.reminderSessions?.[key]?.reminderCount).toBe(1);
-    expect(
-      nextSaveReminderOpenReason({
-        hasProject: true,
-        focusMode: false,
-        savingFromReminder: false,
-        currentOpenReason: 'unsaved',
-        evalInput: makeEvalInput(afterCancel),
-        overlayGate,
-      }),
-    ).toBeNull();
-    expect(
-      nextSaveReminderOpenReason({
-        hasProject: true,
-        focusMode: false,
-        savingFromReminder: false,
-        currentOpenReason: null,
-        evalInput: makeEvalInput(afterCancel),
-        overlayGate,
-      }),
-    ).toBeNull();
-  });
 
   it('返工 2：頁首點擊存檔成功 → 狀態變 active → 頁首改顯示時間 → 有變更 5 分鐘後寫回（含假把手無法結構化複製耐受）', async () => {
     for (const throwTargetSave of [false, true]) {
@@ -1257,95 +865,74 @@ describe('WO-130 甲段：溫和存檔提醒狀態機與場景保護', () => {
     }
   });
 
-  it('返工 2：「晚點再說」後至少 30 分鐘內不再跳（即使再寫 600 字），滿 30 分鐘且有新編輯才跳', () => {
-    const key = 'p-1763697600100';
-    const { state: initState, chapterId } = makeBookState(NOW_MS, key);
-    let state = reduce(initState, {
-      type: 'commit-text',
-      projectId: key,
-      nodeId: chapterId,
-      text: '【範例】' + '字'.repeat(520),
+  it('無法自動存檔的瀏覽器（canPickFiles 為 false）：未存過顯示「還沒存成檔案」、點按走另存、已存過顯示「上次存檔 時間」', async () => {
+    const key = 'p-1763697600101';
+    let { state } = makeBookState(NOW_MS, key, '跨瀏覽器測試稿');
+
+    const unsupportedUnsaved = resolveAutoSaveStatus({
+      canPickFiles: false,
+      isSample: false,
+      removed: false,
+      hasSavedFile: false,
+      needsNewName: false,
+      permission: 'none',
+      lastAutoSaveFailed: false,
     });
-
-    const evalAt = (s: SampleState, nowMs: number, hasExternalFileSaved = false) =>
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
+    expect(unsupportedUnsaved).toBe('unsupported');
+    expect(
+      resolveHeaderSaveDisplay({
         isSample: false,
-        hasExternalFileSaved,
-        hasBody: true,
-        bodyWords: 1200,
-        session: s.reminderSessions?.[key] ?? emptyReminderSession(),
-        nowMs,
-      });
+        autoSaveStatus: unsupportedUnsaved,
+        staleDays: null,
+        lastFileSaveMs: lastExternalFileSaveMs(state.saveMeta[key]),
+      }),
+    ).toBe('unsaved');
 
-    // 初次達 500 字跳出提醒
-    expect(evalAt(state, NOW_MS + 4000)).toBe('unsaved');
-
-    // 按「晚點再說」進入冷卻
-    const snoozedAt = NOW_MS + 5000;
-    state = reduce(state, { type: 'snooze-save-reminder', projectId: key, nowMs: snoozedAt });
-    expect(evalAt(state, snoozedAt + 100)).toBeNull();
-
-    // 馬上再寫 600 字並在 30 分鐘內多次檢查：一律不跳
-    state = reduce(state, {
-      type: 'commit-text',
-      projectId: key,
-      nodeId: chapterId,
-      text: '【範例】' + '字'.repeat(1120),
+    const calls: string[] = [];
+    await runReminderSave(false, {
+      saveProject: async () => void calls.push('save'),
+      saveProjectAs: async () => void calls.push('save-as'),
     });
-    expect(evalAt(state, snoozedAt + 5000)).toBeNull();
-    expect(evalAt(state, snoozedAt + 15 * 60 * 1000)).toBeNull();
-    expect(evalAt(state, snoozedAt + SNOOZE_REMINDER_MS - 1)).toBeNull();
+    expect(calls).toEqual(['save-as']);
 
-    // 滿 30 分鐘（因冷卻期間已有新編輯）才再次提醒
-    expect(evalAt(state, snoozedAt + SNOOZE_REMINDER_MS)).toBe('unsaved');
-
-    // 已存過檔後改多達 1000 字：按「晚點再說」後若 30 分鐘內完全沒再編輯，滿 30 分鐘仍不跳；有新編輯才跳
-    let savedSession = recordReminderTextEdit(emptyReminderSession(), 1000, NOW_MS);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 2000,
-        session: savedSession,
-        nowMs: NOW_MS + 1000,
+    state = reduce(state, { type: 'record-export', projectId: key, atMs: NOW_MS });
+    const lastMs = lastExternalFileSaveMs(state.saveMeta[key]);
+    expect(lastMs).toBe(NOW_MS);
+    const kindAfterSave = resolveHeaderSaveDisplay({
+      isSample: false,
+      autoSaveStatus: unsupportedUnsaved,
+      staleDays: null,
+      lastFileSaveMs: lastMs,
+    });
+    expect(kindAfterSave).toBe('time');
+    const html = renderToStaticMarkup(
+      createElement(SaveHeaderStatus, {
+        kind: kindAfterSave,
+        canPickFiles: false,
+        lastFileSaveMs: lastMs,
+        autoSaveActive: false,
+        lastSaveWasAuto: false,
+        onResumeAutoSave: () => {},
+        onSave: () => {},
+        now: new Date(NOW_MS),
       }),
-    ).toBe('changed');
+    );
+    expect(html).toContain('上次存檔');
+    expect(html).not.toContain('已自動存檔');
 
-    savedSession = snoozeReminderSession(savedSession, NOW_MS + 2000);
-    // 滿 30 分鐘但無新編輯 → 不跳
     expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
+      resolveHeaderSaveDisplay({
         isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 2000,
-        session: savedSession,
-        nowMs: NOW_MS + 2000 + SNOOZE_REMINDER_MS + 60_000,
+        autoSaveStatus: unsupportedUnsaved,
+        staleDays: 3,
+        lastFileSaveMs: lastMs,
       }),
-    ).toBeNull();
-
-    // 30 分鐘後出現一次新編輯（即使非正文異動或少量字數）→ 才再提醒
-    savedSession = recordReminderNonTextEdit(savedSession, NOW_MS + 2000 + SNOOZE_REMINDER_MS + 70_000);
-    expect(
-      evaluateSaveReminder({
-        autoSaveStatus: 'unsupported',
-        isSample: false,
-        hasExternalFileSaved: true,
-        hasBody: true,
-        bodyWords: 2000,
-        session: savedSession,
-        nowMs: NOW_MS + 2000 + SNOOZE_REMINDER_MS + 70_000,
-      }),
-    ).toBe('changed');
+    ).toBe('stale');
   });
 });
 
-describe('WO-130 甲段：0.4.0 版號與改版說明驗證', () => {
-  it('package.json、package-lock.json、APP_VERSION 皆為 0.4.0，whatsNew 頂端為 0.4.0 且保留 0.3.0', () => {
+describe('WO-131：0.4.1 版號與改版說明驗證', () => {
+  it('package.json、package-lock.json、APP_VERSION 皆為 0.4.1，whatsNew 頂端為 0.4.1 且保留 0.4.0、0.3.0', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
       version: string;
     };
@@ -1353,13 +940,18 @@ describe('WO-130 甲段：0.4.0 版號與改版說明驗證', () => {
       version: string;
       packages: { '': { version: string } };
     };
-    expect(pkg.version).toBe('0.4.0');
-    expect(lock.version).toBe('0.4.0');
-    expect(lock.packages[''].version).toBe('0.4.0');
-    expect(APP_VERSION).toBe('0.4.0');
+    const whatsNewSrc = readFileSync(new URL('../data/whatsNew.ts', import.meta.url), 'utf8');
+    expect(pkg.version).toBe('0.4.1');
+    expect(lock.version).toBe('0.4.1');
+    expect(lock.packages[''].version).toBe('0.4.1');
+    expect(APP_VERSION).toBe('0.4.1');
+    expect(whatsNewSrc).toContain('WO-131（暫定，待九方審）');
 
-    expect(RELEASE_NOTES[0]?.version).toBe('0.4.0');
+    expect(RELEASE_NOTES[0]?.version).toBe('0.4.1');
     expect(RELEASE_NOTES[0]?.items).toEqual([
+      '存檔提醒改成只在畫面角落顯示，不再跳出視窗',
+    ]);
+    expect(findReleaseNote('0.4.0')?.items).toEqual([
       '自動存檔：用電腦的 Chrome 或 Edge 存過一次後，每 5 分鐘自動存回檔案',
       '還沒存成檔案時會提醒你',
     ]);
@@ -1367,5 +959,295 @@ describe('WO-130 甲段：0.4.0 版號與改版說明驗證', () => {
       '事件時間線：照故事順序或章節順序排事件，電腦寬螢幕還能雙線對照',
       '設定頁新增贊助按鈕',
     ]);
+  });
+});
+
+function createPlaywrightLikeClock(startMs: number) {
+  let nowMs = startMs;
+  let nextId = 1;
+  const intervals = new Map<number, { handler: () => void; intervalMs: number; nextAt: number }>();
+  const yieldMacro = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+  const setTime = (ms: number) => {
+    nowMs = ms;
+    vi.setSystemTime(ms);
+  };
+
+  return {
+    now: () => nowMs,
+    setInterval(handler: () => void, ms: number) {
+      const id = nextId++;
+      const step = Math.max(1, ms);
+      intervals.set(id, { handler, intervalMs: step, nextAt: nowMs + step });
+      return id;
+    },
+    clearInterval(id: number) {
+      intervals.delete(id);
+    },
+    async runFor(durationMs: number) {
+      const target = nowMs + durationMs;
+      while (true) {
+        let earliestAt = Infinity;
+        let chosenId = 0;
+        for (const [id, entry] of intervals) {
+          if (entry.nextAt <= target && entry.nextAt < earliestAt) {
+            earliestAt = entry.nextAt;
+            chosenId = id;
+          }
+        }
+        if (chosenId === 0) break;
+        setTime(earliestAt);
+        const entry = intervals.get(chosenId);
+        if (entry) {
+          entry.nextAt += entry.intervalMs;
+          entry.handler();
+        }
+        await yieldMacro();
+      }
+      setTime(target);
+      await Promise.resolve();
+    },
+  };
+}
+
+describe('WO-131 返工 1：自動存檔排程心跳與記憶體把手優先', () => {
+  it('WO-131 返工 1：手動存檔後沒變更 5 分鐘不寫，接著打字 40 字再過 5 分 5 秒，在無額外等待的非同步假時鐘下能完成自動寫回並顯示「已自動存檔」', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(NOW_MS);
+    const yieldMacro = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+    const clock = createPlaywrightLikeClock(NOW_MS);
+
+    const key = 'p-1763697600201';
+    touchedKeys.push(key);
+    const env = createFakeEnv({ canPickFiles: true });
+    const fakeHandle = new FakeHandleDisk('霧港旅館.db');
+    const origWrite = fakeHandle.write.bind(fakeHandle);
+    fakeHandle.write = async (bytes: Uint8Array) => {
+      await yieldMacro();
+      await yieldMacro();
+      await origWrite(bytes);
+    };
+    env.setPickedFile(fakeHandle);
+
+    const { state: initState, chapterId } = makeBookState(NOW_MS, key, '霧港旅館');
+    let state = reduce(initState, {
+      type: 'commit-text',
+      projectId: key,
+      nodeId: chapterId,
+      text: '【範例】霧港的夜裡，旅館的燈還亮著，櫃檯後面的老闆娘正在數著今天的帳本，窗外的雨一直沒有停。',
+    });
+    const dispatch = (action: Action) => {
+      state = reduce(state, action);
+    };
+
+    let handlePerm: 'none' | 'granted' | 'prompt' | 'denied' = 'none';
+    let lastSaveWasAuto = false;
+    let autoSaveFailed = false;
+    const lastSavedRevById: Record<string, number> = {};
+    const inflight = {
+      current: null as { kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null,
+    };
+    const computeAutoSaveStatus = () => {
+      const project = state.projects.find((p) => p.id === key)!;
+      return resolveAutoSaveStatus({
+        canPickFiles: true,
+        isSample: false,
+        removed: false,
+        hasSavedFile: hasSavedExternalFile(state.saveMeta[key]),
+        needsNewName: shouldSaveUnderNewName({
+          hasExternalFile: Boolean(project.hasExternalFile),
+          titleInFile: project.titleInFile ?? null,
+          title: project.title,
+          filename: project.filename ?? null,
+        }),
+        permission: handlePerm,
+        lastAutoSaveFailed: autoSaveFailed,
+      });
+    };
+    const renderHeader = () => {
+      const autoSaveStatus = computeAutoSaveStatus();
+      const lastFileSaveMs = lastExternalFileSaveMs(state.saveMeta[key]);
+      const kind = resolveHeaderSaveDisplay({
+        isSample: false,
+        autoSaveStatus,
+        staleDays: null,
+        lastFileSaveMs,
+      });
+      return renderToStaticMarkup(
+        createElement(SaveHeaderStatus, {
+          kind,
+          canPickFiles: true,
+          lastFileSaveMs,
+          autoSaveActive: autoSaveStatus === 'active',
+          lastSaveWasAuto,
+          onResumeAutoSave: () => {},
+          onSave: () => {},
+          now: new Date(),
+        }),
+      );
+    };
+
+    const manualSnapshot = async (s: SampleState, p: SampleState['projects'][number]) => ({
+      key: p.dbKey ?? p.id,
+      bytes: await manuscriptBytesOn(s, p, null),
+    });
+
+    const manualOutcome = await runManualSaveProject({
+      getState: () => state,
+      dispatch,
+      env,
+      inflight,
+      lastSavedRevById,
+      snapshot: manualSnapshot,
+      onSaved: () => {
+        autoSaveFailed = false;
+        lastSaveWasAuto = false;
+        handlePerm = 'granted';
+      },
+      store: null,
+    });
+    expect(manualOutcome).toEqual({ kind: 'saved', filename: '霧港旅館.db' });
+    expect(fakeHandle.writeCalls).toBe(1);
+    expect(state.saveMeta[key]?.dirtySinceFileSave).toBe(false);
+    expect(renderHeader()).toContain('上次存檔');
+
+    const revAfterManual = state.contentRevById?.[key] ?? 0;
+    const persistCalls: boolean[] = [];
+    const snapshot = async (s: SampleState, p: SampleState['projects'][number], persist = true) => {
+      persistCalls.push(persist);
+      await yieldMacro();
+      await yieldMacro();
+      return {
+        key: p.dbKey ?? p.id,
+        bytes: await manuscriptBytesOn(s, p, null),
+      };
+    };
+
+    const stop = startAutoSaveScheduler({
+      intervalMs: AUTOSAVE_INTERVAL_MS,
+      onDue: () => {
+        if (computeAutoSaveStatus() !== 'active' && computeAutoSaveStatus() !== 'failed') return;
+        void executeBackgroundAutoSave({
+          projectId: key,
+          getState: () => state,
+          dispatch,
+          env,
+          getStatus: computeAutoSaveStatus,
+          lastSavedRevById,
+          inflight,
+          isPreviouslyFailed: () => autoSaveFailed,
+          onSaved: () => {
+            autoSaveFailed = false;
+            lastSaveWasAuto = true;
+          },
+          onNeedsPermission: (_id, perm) => {
+            handlePerm = perm;
+          },
+          onFailed: () => {
+            autoSaveFailed = true;
+          },
+          onNoHandle: () => {
+            handlePerm = 'none';
+          },
+          snapshot,
+          store: null,
+        });
+      },
+      host: clock,
+    });
+
+    try {
+      await clock.runFor(9000);
+      await clock.runFor(AUTOSAVE_INTERVAL_MS + 5000);
+      expect(fakeHandle.writeCalls).toBe(1);
+      expect(persistCalls).toEqual([]);
+
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: key,
+        nodeId: chapterId,
+        text: '【範例】霧港的夜裡，旅館的燈還亮著，櫃檯後面的老闆娘正在數著今天的帳本，窗外的雨一直沒有停。接著補上四十字的新增內容段落。',
+      });
+      expect(state.saveMeta[key]?.dirtySinceFileSave).toBe(true);
+      expect(state.contentRevById?.[key] ?? 0).toBeGreaterThan(revAfterManual);
+
+      await clock.runFor(4000);
+      await clock.runFor(AUTOSAVE_INTERVAL_MS + 5000);
+
+      expect(fakeHandle.writeCalls).toBe(2);
+      expect(state.saveMeta[key]?.dirtySinceFileSave).toBe(false);
+      expect(lastSaveWasAuto).toBe(true);
+      expect(persistCalls).toEqual([false]);
+      const headerHtml = renderHeader();
+      expect(headerHtml).toContain('已自動存檔');
+      expect(headerHtml).not.toContain('上次存檔');
+
+      // 若編輯框仍有尚未送出至 state 的正文，寫前快照須維持 persist = true
+      setLiveReader(
+        () => ({
+          projectId: key,
+          chapterId,
+          text: '【範例】霧港的夜裡，旅館的燈還亮著，櫃檯後面的老闆娘正在數著今天的帳本，窗外的雨一直沒有停。接著補上四十字的新增內容段落。還有未送出正文。',
+        }),
+        () => false,
+      );
+      await clock.runFor(AUTOSAVE_INTERVAL_MS + 5000);
+      expect(fakeHandle.writeCalls).toBe(3);
+      expect(persistCalls).toEqual([false, true]);
+    } finally {
+      stop();
+      setLiveReader(null);
+    }
+  });
+
+  it('WO-131 返工 1：advanceAutoSaveDue 週期對齊與休眠跳躍單次觸發，且 autoSaveProjectToPlace 優先使用記憶體把手', async () => {
+    expect(AUTOSAVE_HEARTBEAT_MS).toBe(3000);
+    expect(AUTOSAVE_INTERVAL_MS % AUTOSAVE_HEARTBEAT_MS).toBe(0);
+
+    const base = 1_700_000_000_000;
+    const dueAt = base + AUTOSAVE_INTERVAL_MS;
+    expect(advanceAutoSaveDue(dueAt - 1, dueAt)).toEqual({ due: false, nextDueAtMs: dueAt });
+    expect(advanceAutoSaveDue(dueAt, dueAt)).toEqual({
+      due: true,
+      nextDueAtMs: dueAt + AUTOSAVE_INTERVAL_MS,
+    });
+    expect(advanceAutoSaveDue(base + 17 * 60 * 1000, dueAt)).toEqual({
+      due: true,
+      nextDueAtMs: base + 20 * 60 * 1000,
+    });
+
+    const key = 'p-1763697600202';
+    const { state } = makeBookState(NOW_MS, key, '記憶體把手測試稿');
+    const bytes = await manuscriptBytesOn(state, state.projects[0]!, null);
+
+    const memHandle = new FakeHandleDisk('記憶體把手.db');
+    const diskHandle = new FakeHandleDisk('磁碟備援把手.db');
+    const loadSpy = vi.fn(async () => ({ filename: '磁碟備援把手.db', file: diskHandle }));
+    const env: Pick<SaveEnvironment, 'targets' | 'verify'> = {
+      targets: {
+        load: loadSpy,
+        save: async () => {},
+      },
+      verify: verifyBytesForSave,
+    };
+
+    // 1. 有活體記憶體把手且有權限：不呼叫 targets.load 直接寫回
+    const memOutcome = await autoSaveProjectToPlace(env, key, bytes, 'fallback.db', memHandle);
+    expect(memOutcome).toEqual({ kind: 'saved', filename: '記憶體把手.db' });
+    expect(loadSpy).not.toHaveBeenCalled();
+    expect(memHandle.writeCalls).toBe(1);
+
+    // 2. 記憶體把手回 needs-permission 時，才備援讀取 targets.load 並改用不同磁碟把手
+    memHandle.permission = 'prompt';
+    const fallbackOutcome = await autoSaveProjectToPlace(env, key, bytes, 'fallback.db', memHandle);
+    expect(fallbackOutcome).toEqual({ kind: 'saved', filename: '磁碟備援把手.db' });
+    expect(loadSpy).toHaveBeenCalledTimes(1);
+    expect(diskHandle.writeCalls).toBe(1);
+
+    // 3. 未傳入記憶體把手時，維持從 targets.load 取得把手寫回
+    const diskOnlyOutcome = await autoSaveProjectToPlace(env, key, bytes, 'fallback.db', null);
+    expect(diskOnlyOutcome).toEqual({ kind: 'saved', filename: '磁碟備援把手.db' });
+    expect(loadSpy).toHaveBeenCalledTimes(2);
+    expect(diskHandle.writeCalls).toBe(2);
   });
 });
