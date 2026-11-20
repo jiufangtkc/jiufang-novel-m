@@ -78,6 +78,18 @@ export function readTheme(store: ThemeReadStore | null | undefined): ThemeId {
   }
 }
 
+/** 檢查本機是否曾存過主題偏好鍵。只讀不寫，讀取失敗回傳 false。 */
+export function hasStoredDeviceTheme(
+  store: ThemeReadStore | null | undefined = defaultStore(),
+): boolean {
+  if (!store) return false;
+  try {
+    return store.getItem(THEME_STORAGE_KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
 /** 寫入本機主題。只寫這一把鍵。寫不進去回傳 false，不丟錯。 */
 export function commitTheme(store: ThemeWriteStore | null | undefined, theme: ThemeId): boolean {
   if (!store || !isThemeId(theme)) return false;
