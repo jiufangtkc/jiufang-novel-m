@@ -700,3 +700,12 @@ export const timelineDragHandleAria = (title: string): string =>
 export const timelineMovedLiveAnnouncement = (title: string, pos: number, total: number): string =>
   `已將「${title}」移到故事裡第 ${pos} 件，共 ${total} 件`;
 export const timelineSelectedDockLabel = (title: string): string => `已選「${title}」`;
+
+// WO-129（暫定，待九方審）：改版說明視窗與設定頁入口用字。
+export const WHATS_NEW_TITLE = '這一版新增了什麼';
+export const WHATS_NEW_CONFIRM = '知道了';
+export const WHATS_NEW_SETTINGS_TITLE = '看改版內容';
+export const WHATS_NEW_SETTINGS_HINT = '看看這一版和之前改了什麼';
+export const WHATS_NEW_PREVIOUS_TOGGLE = '之前的版本';
+export const WHATS_NEW_EMPTY_CURRENT = '這一版沒有另外列出更新項目。';
+export const whatsNewVersionLabel = (version: string): string => `版本 ${version}`;
