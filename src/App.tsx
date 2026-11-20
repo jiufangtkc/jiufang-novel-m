@@ -12,6 +12,7 @@ import { SettingsScreen } from './screens/SettingsScreen';
 import { StatsScreen } from './screens/StatsScreen';
 import { TimelineScreen } from './screens/TimelineScreen';
 import { WelcomeRevisitScreen } from './screens/WelcomeRevisitScreen';
+import { WhatsNewLayer, WhatsNewProvider } from './screens/WhatsNewHost';
 import { Workspace } from './screens/Workspace';
 import { WriteScreen } from './screens/WriteScreen';
 import { SampleProvider } from './state/sampleStore';
@@ -39,25 +40,28 @@ export function App() {
     <SampleProvider>
       <LayoutProvider>
         <BrowserRouter>
-          <div className="app-shell">
-            <Routes>
-              <Route path="/" element={<HomeScreen />} />
-              <Route path="/p/:projectId" element={<Workspace />}>
-                <Route index element={<Navigate to="write" replace />} />
-                <Route path="write/:chapterId?" element={<WriteScreen />} />
-                <Route path="cards" element={<CardsScreen />} />
-                <Route path="cards/timeline" element={<TimelineScreen />} />
-                <Route path="files" element={<FilesScreen />} />
-                <Route path="stats" element={<StatsScreen />} />
-                <Route path="settings" element={<SettingsScreen />} />
-                <Route path="font-license" element={<FontLicenseScreen />} />
-                <Route path="privacy" element={<PrivacyScreen />} />
-                <Route path="welcome" element={<WelcomeRevisitScreen />} />
-                <Route path="logs" element={<LogsScreen />} />
-              </Route>
-            </Routes>
-            <Toast />
-          </div>
+          <WhatsNewProvider>
+            <div className="app-shell">
+              <Routes>
+                <Route path="/" element={<HomeScreen />} />
+                <Route path="/p/:projectId" element={<Workspace />}>
+                  <Route index element={<Navigate to="write" replace />} />
+                  <Route path="write/:chapterId?" element={<WriteScreen />} />
+                  <Route path="cards" element={<CardsScreen />} />
+                  <Route path="cards/timeline" element={<TimelineScreen />} />
+                  <Route path="files" element={<FilesScreen />} />
+                  <Route path="stats" element={<StatsScreen />} />
+                  <Route path="settings" element={<SettingsScreen />} />
+                  <Route path="font-license" element={<FontLicenseScreen />} />
+                  <Route path="privacy" element={<PrivacyScreen />} />
+                  <Route path="welcome" element={<WelcomeRevisitScreen />} />
+                  <Route path="logs" element={<LogsScreen />} />
+                </Route>
+              </Routes>
+              <Toast />
+            </div>
+            <WhatsNewLayer />
+          </WhatsNewProvider>
         </BrowserRouter>
       </LayoutProvider>
     </SampleProvider>

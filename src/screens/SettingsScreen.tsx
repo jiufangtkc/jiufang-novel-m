@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ManuscriptNotFound } from '../components/ManuscriptNotFound';
 import { Link, useParams } from 'react-router-dom';
 import { BookIcon, ExternalLinkIcon, PencilIcon } from '../components/Icons';
-import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION, SPONSOR_NEW_TAB_HINT, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
+import { BOOK_GOAL_LABEL, BOOK_SECTION, PRIVACY_TITLE, SETTINGS_EDIT_GOAL_ARIA, SETTINGS_WRITING_LOG_HINT, SPONSOR_BUTTON_LABEL, SPONSOR_DESCRIPTION, SPONSOR_NEW_TAB_HINT, WHATS_NEW_SETTINGS_HINT, WHATS_NEW_SETTINGS_TITLE, settingsBookGoalLine, settingsDailyGoalLine } from '../copy/userFacing';
 import {
   ABOUT_SECTION,
   ABOUT_VERSION_TITLE,
@@ -23,7 +23,9 @@ import { useHalfWidthReminder } from '../state/halfWidthReminder';
 import { useProject, useSample } from '../state/sampleStore';
 import { AppearanceSettings } from './AppearanceSettings';
 import { BookTitleSettingRow, useBookRename } from './bookTitleUi';
+import { useWhatsNew } from './WhatsNewHost';
 import './halfWidth.css';
+import '../components/whatsNewDialog.css';
 
 /** WO-127：贊助頁面外部連結（純靜態網址，不嵌第三方程式碼）。 */
 export const SPONSOR_URL = 'https://www.paypal.com/ncp/payment/22LC8GY9JRDYL';
@@ -71,6 +73,7 @@ export function SettingsScreen() {
   const [book, setBook] = useState(String(project?.bookGoal ?? 100000));
   const [error, setError] = useState('');
   const [halfWidthOn, setHalfWidthOn] = useHalfWidthReminder();
+  const { openWhatsNew } = useWhatsNew();
   const channel = currentChannel();
   if (!project) return <ManuscriptNotFound />;
 
@@ -182,6 +185,18 @@ export function SettingsScreen() {
               {settingsVersionText(APP_VERSION, channel)}
             </span>
           </div>
+          {/* WO-129：開啟改版說明視窗，與 App 自動跳出共用同一元件。 */}
+          <button
+            type="button"
+            className="setting-row about-whats-new-row"
+            data-testid="about-whats-new-button"
+            onClick={(event) => openWhatsNew(event.currentTarget)}
+          >
+            <span>
+              <strong>{WHATS_NEW_SETTINGS_TITLE}</strong>
+              <small>{WHATS_NEW_SETTINGS_HINT}</small>
+            </span>
+          </button>
           <Link
             className="setting-row about-welcome-row"
             to={`/p/${project.id}/welcome`}
