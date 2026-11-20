@@ -52,6 +52,10 @@ export interface CardDraft {
   title: string;
   content: string;
   color: string;
+  /** WO-128：時間軸事件卡未完成編輯的故事時間（可選，舊草稿無此欄則退回卡片原值）。 */
+  storyTime?: string;
+  /** WO-128：時間軸事件卡未完成編輯的連章代號（可選，null 代表「還沒寫進任何章」）。 */
+  chapterId?: string | null;
 }
 
 export interface NavMemory {
@@ -144,9 +148,16 @@ function parseDrafts(raw: unknown): Record<string, CardDraft> {
   const drafts: Record<string, CardDraft> = {};
   for (const [cardId, value] of Object.entries(raw)) {
     if (!cardId || !isObject(value)) continue;
-    const { title, content, color } = value;
+    const { title, content, color, storyTime, chapterId } = value;
     if (typeof title !== 'string' || typeof content !== 'string' || typeof color !== 'string') continue;
-    drafts[cardId] = { title, content, color };
+    const draft: CardDraft = { title, content, color };
+    if (typeof storyTime === 'string') {
+      draft.storyTime = storyTime;
+    }
+    if (chapterId === null || typeof chapterId === 'string') {
+      draft.chapterId = chapterId === '' ? null : chapterId;
+    }
+    drafts[cardId] = draft;
   }
   return drafts;
 }

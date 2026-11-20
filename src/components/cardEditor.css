@@ -516,3 +516,241 @@
   top: calc(100% + 4px);
   z-index: 5;
 }
+
+/* WO-128：時間軸事件卡新欄位（故事時間、出現在哪一章、跳章連結），樣式對齊樣張且全數沿用主題變數 */
+.card-editor-label-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.card-editor-jump-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 28px;
+  max-width: 60%;
+  padding: 2px 4px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.85rem;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.card-editor-jump-link:hover {
+  background-color: var(--accent-soft);
+}
+
+/* 觸控模式下放大「跳到第○章」點擊熱區至至少 44px，並以負外距維持標籤列視覺緊湊 */
+html[data-pointer="touch"] .card-editor-jump-link,
+:root:not([data-pointer="mouse"]) .card-editor-jump-link {
+  min-height: var(--hit-size, 44px);
+  margin: -8px 0;
+}
+
+.card-editor-jump-link span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-editor-story-time-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.card-editor-field-help {
+  margin: 0;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+.card-editor-chapter-picker {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--input-bg);
+  overflow: hidden;
+}
+
+.card-editor-chapter-picker.is-open {
+  border-color: var(--accent);
+  border-radius: 10px;
+  background-color: var(--panel);
+}
+
+.card-editor-chapter-trigger {
+  width: 100%;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.card-editor-chapter-trigger:hover {
+  background-color: var(--button-hover);
+}
+
+.card-editor-chapter-picker.is-open .card-editor-chapter-trigger {
+  border-bottom: 1px solid var(--border);
+}
+
+.card-editor-chapter-trigger.is-unassigned .card-editor-chapter-trigger-text {
+  color: var(--muted);
+}
+
+.card-editor-chapter-trigger-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-editor-chapter-chevron {
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.card-editor-chapter-picker.is-open .card-editor-chapter-chevron {
+  transform: rotate(180deg);
+}
+
+.card-editor-chapter-options {
+  display: flex;
+  flex-direction: column;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.card-editor-chapter-option {
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text);
+  border: none;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.card-editor-chapter-option:hover {
+  background-color: var(--button-hover);
+}
+
+.card-editor-chapter-option.is-selected {
+  background-color: var(--accent-soft);
+  color: var(--accent);
+}
+
+.card-editor-chapter-option.is-none {
+  color: var(--muted);
+  border-top: 1px dashed var(--border);
+}
+
+.card-editor-chapter-option.is-none.is-selected {
+  background-color: var(--accent-soft);
+  color: var(--accent);
+}
+
+.card-editor-chapter-radio {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--muted);
+  flex: none;
+  box-sizing: border-box;
+}
+
+.card-editor-chapter-option.is-selected .card-editor-chapter-radio {
+  border-color: var(--accent);
+  background: radial-gradient(var(--accent) 45%, transparent 50%);
+}
+
+.card-editor-chapter-option-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.card-editor-chapter-option-note {
+  color: var(--muted);
+  margin-left: auto;
+  font-size: 0.78rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.card-timeline-preview-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background-color: var(--input-bg);
+}
+
+.card-timeline-preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-timeline-preview-value {
+  font-size: 0.98rem;
+  color: var(--final);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.card-timeline-preview-value.is-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.card-timeline-preview-chapter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.95rem;
+  color: var(--accent);
+  min-width: 0;
+}
+
+.card-timeline-preview-chapter.is-unassigned {
+  color: var(--muted);
+}
+
+.card-timeline-preview-chapter-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

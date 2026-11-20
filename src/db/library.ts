@@ -5,6 +5,7 @@ import { isBookRemoved, markBookRemoved } from './removedBooks';
 import type { StoredBook } from './appSpace';
 import { externalFileFromStored, type BookFileMark } from '../domain/bookTitle';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
+import type { TimelineRead } from './timelineMeta';
 import type { TransferEvent, TransferRead } from './transferMeta';
 import { openMemoryDb } from './wasmDb';
 
@@ -72,6 +73,8 @@ export interface ImportedBook {
   titleSavePending: BookFileMark['titleSavePending'];
   /** WO-100：檔內附加表的匯入事件。 */
   transfer: TransferRead;
+  /** WO-128：檔內附加表的時間線資料狀態。 */
+  timeline: TimelineRead;
 }
 
 /** 從檔案裡的寫作紀錄排出每日目標結算狀態（WO-69 單元測試也用來核對重開結果）。 */
@@ -124,6 +127,7 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         titleInFile: mark.titleInFile,
         titleSavePending: mark.titleSavePending,
         transfer: loaded.transfer,
+        timeline: loaded.timeline,
       });
     } finally {
       db.close();
@@ -157,6 +161,7 @@ export async function readBookBytes(filename: string, bytes: Uint8Array, key: st
       titleInFile: loaded.info.title,
       titleSavePending: null,
       transfer: loaded.transfer,
+      timeline: loaded.timeline,
     };
   } finally {
     db.close();

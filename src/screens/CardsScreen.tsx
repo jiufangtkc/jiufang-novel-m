@@ -26,6 +26,8 @@ import {
   CLOSE_CARDS_ARIA,
   displayCardTitle,
   SAMPLE_CARDS_NOTICE,
+  TIMELINE_VIEW_CARDS,
+  TIMELINE_VIEW_TIMELINE,
   TREE_UNDO_HINT,
 } from '../copy/userFacing';
 import {
@@ -67,6 +69,7 @@ import {
 } from '../domain/cards';
 import {
   addCustomCategory,
+  CATEGORY_TIMELINE,
   deleteCustomCategory,
   moveCategoryInOrder,
   renameCustomCategory,
@@ -75,6 +78,7 @@ import {
 } from '../domain/cardCategories';
 import { addCard, addSubCard } from '../domain/cardOps';
 import { deletedFromCard, type DeletedCardRecord } from '../domain/cardArchive';
+import { extractTimelineChapters } from '../domain/timeline';
 import { type FileCard } from '../db/projectFile';
 import { bookArchive } from '../db/chapterArchive';
 import { useLayout } from '../layout';
@@ -87,6 +91,7 @@ import {
   clearCardDraft,
   emptyCardsPlace,
   getCardDraft,
+  patchCardsPlace,
   readCardsPlace,
   resolveRememberedCard,
   saveCardDraft,
@@ -557,6 +562,46 @@ function CardsScreenBody(props: CardsScreenProps) {
     </p>
   ) : null;
 
+  const renderTimelineViewSwitch = () => {
+    if (!currentCategory || currentCategory.id !== CATEGORY_TIMELINE) return null;
+    return (
+      <div
+        className="timeline-entry-switch"
+        role="tablist"
+        aria-label={currentCategory.name}
+        data-testid="timeline-entry-switch"
+      >
+        <button
+          type="button"
+          role="tab"
+          aria-selected="true"
+          className="timeline-entry-tab is-active"
+          data-testid="timeline-entry-cards-btn"
+        >
+          {TIMELINE_VIEW_CARDS}
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected="false"
+          className="timeline-entry-tab"
+          data-testid="timeline-entry-timeline-btn"
+          onClick={() => {
+            if (!projectId) return;
+            patchCardsPlace(projectId, {
+              categoryId: CATEGORY_TIMELINE,
+              cardId: null,
+              collapsedIds: [...collapsedIds],
+            });
+            navigate(`/p/${projectId}/cards/timeline`);
+          }}
+        >
+          {TIMELINE_VIEW_TIMELINE}
+        </button>
+      </div>
+    );
+  };
+
   const renderCategoryCardsPane = (
     rows: readonly VisibleCardRow[],
     selectedId: string | null,
@@ -838,13 +883,16 @@ function CardsScreenBody(props: CardsScreenProps) {
     </ul>
   );
 
+  const timelineChapters = extractTimelineChapters(project.nodes);
+
   // 輔助渲染：卡片內容（整合 CardEditor、挑色、⋯選單與刪除）
-  const renderCardDetail = (card: DemoCard | { id: string; title: string; content: string; color: string; parent_id: string | null; sort_order: number; category: string }) => {
+  const renderCardDetail = (card: FileCard | DemoCard) => {
     const cardSubcards = cards
       .filter((c) => c.parent_id === card.id)
       .sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id));
 
     const draft = fromProps ? null : getCardDraft(projectId, card.id);
+    const isTopLevelTimeline = card.category === CATEGORY_TIMELINE && !card.parent_id;
     return (
       <CardEditor
         key={`${card.id}:${editorMode}`}
@@ -853,6 +901,14 @@ function CardsScreenBody(props: CardsScreenProps) {
         initialPickingColor={pickingColor}
         mode={editorMode}
         initialDraft={draft}
+        chapters={timelineChapters}
+        onJumpToChapter={(chapterId, draftPayload) => {
+          if (!projectId) return;
+          if (editorMode === 'edit' && !fromProps) {
+            saveCardDraft(projectId, card.id, draftPayload);
+          }
+          navigate(`/p/${projectId}/write/${chapterId}`);
+        }}
         onDraftChange={
           fromProps ? undefined : (next) => saveCardDraft(projectId, card.id, next)
         }
@@ -863,6 +919,12 @@ function CardsScreenBody(props: CardsScreenProps) {
               title: card.title,
               content: card.content,
               color: formatCardColorForSave(card.color || DEFAULT_CARD_COLOR),
+              ...(isTopLevelTimeline
+                ? {
+                    storyTime: card.storyTime ?? '',
+                    chapterId: card.chapterId ?? null,
+                  }
+                : {}),
             });
           }
           setEditorMode(nextMode);
@@ -1107,6 +1169,7 @@ function CardsScreenBody(props: CardsScreenProps) {
                   </>
                 )}
               </header>
+              {renderTimelineViewSwitch()}
               <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>
                 {currentCategory ? (
                   renderCategoryCardsPane(listCards, selectedCardId)
@@ -1224,6 +1287,7 @@ function CardsScreenBody(props: CardsScreenProps) {
                 </span>
                 {renderAddCardButton()}
               </header>
+              {renderTimelineViewSwitch()}
               <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>
                 {renderCategoryCardsPane(listCards, selectedCardId)}
               </div>
@@ -1360,6 +1424,7 @@ function CardsScreenBody(props: CardsScreenProps) {
                   {SAMPLE_CARDS_NOTICE}
                 </div>
               )}
+              {renderTimelineViewSwitch()}
               <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>
                 {renderCategoryCardsPane(listCards, selectedCardId)}
               </div>
@@ -1525,6 +1590,8 @@ function CardsScreenBody(props: CardsScreenProps) {
             {SAMPLE_CARDS_NOTICE}
           </div>
         )}
+
+        {renderTimelineViewSwitch()}
 
         <div className="scroll-pane" key={`list-${selectedCategoryId ?? ''}`} {...placeMemory.bind('list')}>{renderCategoryCardsPane(rows, selectedCardId)}</div>
 

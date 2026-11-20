@@ -1,4 +1,5 @@
 import type { FileCard } from '../db/projectFile';
+import { CATEGORY_TIMELINE } from './cardCategories';
 
 export const DEFAULT_CARD_COLOR = '#3C3F41';
 export const CARD_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
@@ -153,6 +154,26 @@ export interface AddCardInput {
   content?: string;
   color?: string;
   isCollapsed?: boolean | number;
+  storyTime?: string;
+  timelineOrder?: number | null;
+  chapterId?: string | null;
+}
+
+/**
+ * 計算新增頂層時間軸卡時的預設 timelineOrder：
+ * - 若既有頂層時間軸卡皆無 timelineOrder（尚未在時間線手動排過序），回傳 null（由 addCard 略過欄位，不主動建時間線附加表）。
+ * - 若既有頂層時間軸卡已有任何一張具備數字 timelineOrder，則新卡補上 max + 1（已排過序的卡片皆具連續編號），
+ *   確保無論從「卡片清單」新增時間軸卡或從「時間線」新增事件，新卡一律排在既有故事順序的最後面且彼此順序一致。
+ */
+function inferNextTimelineOrderForTopCard(cards: readonly FileCard[]): number | null {
+  const topTimelineCards = buildFileCardTree(cards, CATEGORY_TIMELINE).map((node) => node.card);
+  let maxOrder: number | null = null;
+  for (const card of topTimelineCards) {
+    if (typeof card.timelineOrder === 'number' && Number.isFinite(card.timelineOrder)) {
+      maxOrder = maxOrder === null ? card.timelineOrder : Math.max(maxOrder, card.timelineOrder);
+    }
+  }
+  return maxOrder === null ? null : maxOrder + 1;
 }
 
 /**
@@ -161,6 +182,8 @@ export interface AddCardInput {
  * - 子卡片強制繼承上層（父卡）的 category
  * - 預設顏色 #3C3F41；若傳入不合格色碼則使用預設色 #3C3F41
  * - 排在同層最後，既有卡片完全不變動
+ * - 支援可選的時間線欄位 storyTime、timelineOrder、chapterId；
+ *   頂層時間軸卡若未顯式傳入 timelineOrder 且該分類已有排過序的事件，自動補上排在最後的 timelineOrder
  */
 export function addCard(cards: readonly FileCard[], input: AddCardInput): FileCard[] {
   const parentId = input.parentId ?? null;
@@ -191,6 +214,13 @@ export function addCard(cards: readonly FileCard[], input: AddCardInput): FileCa
   const nextSortOrder =
     siblings.length === 0 ? 0 : Math.max(...siblings.map((s) => s.sort_order)) + 1;
 
+  const inferredTimelineOrder =
+    input.timelineOrder !== undefined
+      ? input.timelineOrder
+      : parentId === null && category === CATEGORY_TIMELINE
+        ? inferNextTimelineOrderForTopCard(cards)
+        : undefined;
+
   const newCard: FileCard = {
     id,
     parent_id: parentId,
@@ -200,6 +230,12 @@ export function addCard(cards: readonly FileCard[], input: AddCardInput): FileCa
     color,
     is_collapsed,
     sort_order: nextSortOrder,
+    ...(input.storyTime !== undefined ? { storyTime: input.storyTime } : {}),
+    ...(inferredTimelineOrder !== undefined &&
+    (input.timelineOrder !== undefined || inferredTimelineOrder !== null)
+      ? { timelineOrder: inferredTimelineOrder }
+      : {}),
+    ...(input.chapterId !== undefined ? { chapterId: input.chapterId } : {}),
   };
 
   return [...cards, newCard];
@@ -219,10 +255,13 @@ export interface UpdateCardPatch {
   content?: string;
   color?: string;
   is_collapsed?: number | boolean;
+  storyTime?: string;
+  timelineOrder?: number | null;
+  chapterId?: string | null;
 }
 
 /**
- * 更新指定卡片的標題、內容、顏色或收合狀態：
+ * 更新指定卡片的標題、內容、顏色、收合狀態或時間線欄位（storyTime、timelineOrder、chapterId）：
  * - 色碼只接受 #rrggbb（大小寫原樣保留），不合格色碼不寫入
  * - 只動目標卡片，其他卡片（包含 ai_chat 卡片）原物件參照與欄位完全不動
  */
@@ -241,12 +280,19 @@ export function updateCard(
       patch.color !== undefined && isValidCardColor(patch.color) ? patch.color : card.color;
     const nextCollapsed =
       patch.is_collapsed !== undefined ? (patch.is_collapsed ? 1 : 0) : card.is_collapsed;
+    const nextStoryTime = patch.storyTime !== undefined ? patch.storyTime : card.storyTime;
+    const nextTimelineOrder =
+      patch.timelineOrder !== undefined ? patch.timelineOrder : card.timelineOrder;
+    const nextChapterId = patch.chapterId !== undefined ? patch.chapterId : card.chapterId;
 
     if (
       nextTitle === card.title &&
       nextContent === card.content &&
       nextColor === card.color &&
-      nextCollapsed === card.is_collapsed
+      nextCollapsed === card.is_collapsed &&
+      nextStoryTime === card.storyTime &&
+      nextTimelineOrder === card.timelineOrder &&
+      nextChapterId === card.chapterId
     ) {
       return card;
     }
@@ -258,6 +304,9 @@ export function updateCard(
       content: nextContent,
       color: nextColor,
       is_collapsed: nextCollapsed,
+      ...(nextStoryTime !== undefined ? { storyTime: nextStoryTime } : {}),
+      ...(nextTimelineOrder !== undefined ? { timelineOrder: nextTimelineOrder } : {}),
+      ...(nextChapterId !== undefined ? { chapterId: nextChapterId } : {}),
     };
   });
 

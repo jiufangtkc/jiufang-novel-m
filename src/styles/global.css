@@ -58,6 +58,8 @@
 [data-theme] {
   --success: #98C379;
   --warning: #E89A5C;
+  /* WO-128：時間線倒敘標記專用橘色，不是警告 */
+  --flashback: #E89A5C;
   --danger: #E06C75;
   --folder: #B9AD8C;
   --code-text: #C5BEE0;
