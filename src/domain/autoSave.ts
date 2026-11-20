@@ -9,6 +9,61 @@ import type { SaveMetaEntry } from '../state/deviceSaveRecord';
 /** 每 5 分鐘檢查並自動寫回一次（有變更才寫）。 */
 export const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000;
 
+/**
+ * 自動存檔心跳間隔（3 秒，可整除 5 分鐘）。
+ * 只做純記憶體時間比對，不觸發元件重繪，可在假時鐘與休眠喚醒後快速補齊寫回。
+ */
+export const AUTOSAVE_HEARTBEAT_MS = 3 * 1000;
+
+/** 依目前時間與下次到期時間推進自動存檔週期；跨越休眠或節流僅觸發一次並對齊週期。 */
+export function advanceAutoSaveDue(
+  nowMs: number,
+  nextDueAtMs: number,
+  intervalMs: number = AUTOSAVE_INTERVAL_MS,
+): { due: boolean; nextDueAtMs: number } {
+  if (nowMs < nextDueAtMs) {
+    return { due: false, nextDueAtMs };
+  }
+  const step = Math.max(1, intervalMs);
+  const missedSteps = Math.floor((nowMs - nextDueAtMs) / step) + 1;
+  return {
+    due: true,
+    nextDueAtMs: nextDueAtMs + missedSteps * step,
+  };
+}
+
+export interface AutoSaveTimerHost<THandle = ReturnType<typeof setInterval>> {
+  setInterval(handler: () => void, ms: number): THandle;
+  clearInterval(handle: THandle): void;
+  now(): number;
+}
+
+const DEFAULT_TIMER_HOST: AutoSaveTimerHost<ReturnType<typeof setInterval>> = {
+  setInterval: (handler, ms) => setInterval(handler, ms),
+  clearInterval: (handle) => clearInterval(handle),
+  now: () => Date.now(),
+};
+
+/** 啟動短心跳自動存檔排程器，回傳停止函式。 */
+export function startAutoSaveScheduler<THandle = ReturnType<typeof setInterval>>(input: {
+  intervalMs: number;
+  heartbeatMs?: number;
+  onDue: () => void;
+  host?: AutoSaveTimerHost<THandle>;
+}): () => void {
+  const host = (input.host ?? DEFAULT_TIMER_HOST) as AutoSaveTimerHost<THandle>;
+  const intervalMs = Math.max(1, input.intervalMs);
+  const heartbeatMs = Math.max(1, Math.min(intervalMs, input.heartbeatMs ?? AUTOSAVE_HEARTBEAT_MS));
+  let nextDueAtMs = host.now() + intervalMs;
+  const timer = host.setInterval(() => {
+    const stepped = advanceAutoSaveDue(host.now(), nextDueAtMs, intervalMs);
+    if (!stepped.due) return;
+    nextDueAtMs = stepped.nextDueAtMs;
+    input.onDue();
+  }, heartbeatMs);
+  return () => host.clearInterval(timer);
+}
+
 export type AutoSaveStatus =
   | 'unsupported'
   | 'unsaved'
