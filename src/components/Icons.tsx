@@ -273,3 +273,14 @@ export function FocusIcon(props: IconProps) {
     </Stroke>
   );
 }
+
+/** 另開新分頁外部連結圖示（方框加右上箭頭）。 */
+export function ExternalLinkIcon({ size = 16 }: IconProps) {
+  return (
+    <Stroke size={size}>
+      <path d="M14 4h6v6" />
+      <path d="M10 14L20 4" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </Stroke>
+  );
+}

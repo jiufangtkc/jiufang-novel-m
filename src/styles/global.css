@@ -3337,3 +3337,27 @@ html[data-pointer="mouse"] .cards-subcard-button {
   margin-top: 12px;
 }
 .import-text-actions .button { min-height: 44px; width: 100%; }
+
+/* WO-127：設定頁「關於」區贊助連結列（沿用 .setting-row，高度至少 64px ≥ 44px） */
+.about-sponsor-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.about-sponsor-row small {
+  line-height: 1.5;
+}
+.about-sponsor-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+  border-radius: 6px;
+}
+.about-sponsor-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: -0.15em;
+  margin-left: 6px;
+  color: var(--muted);
+}
+.about-sponsor-icon svg {
+  color: currentColor;
+}
