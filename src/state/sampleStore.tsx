@@ -120,6 +120,7 @@ import {
 import { isBookRemoved, removedBookIds } from '../db/removedBooks';
 import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
 import type { FormatChange, FormatSnapshot, FormatSnapshotEntry } from '../editor/formatScope';
+import { assertTimelineDataWritable, type TimelineRead } from '../db/timelineMeta';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
 import {
   bindLeaveFlush,
@@ -156,12 +157,23 @@ import {
   placeRecoveredCard,
   type DeletedCardRecord,
 } from '../domain/cardArchive';
-import { isHiddenCategory, resolveVisibleCategories } from '../domain/cardCategories';
+import { isHiddenCategory, CATEGORY_TIMELINE, resolveVisibleCategories } from '../domain/cardCategories';
 import {
+  addCard as addCardToList,
   deleteCard as deleteCardFromList,
   updateCard as updateCardInList,
+  type AddCardInput,
   type UpdateCardPatch,
 } from '../domain/cardOps';
+import {
+  collectAliveChapterIds,
+  moveTimelineCardByDelta,
+  moveTimelineCardByDrop,
+  moveTimelineCardToIndex,
+  nextTimelineOrderForNewEvent,
+  reorderTimelineByOrderedIds,
+  type TimelineDropTarget,
+} from '../domain/timeline';
 import {
   newChapterId,
   newManuscriptFirstNodeId,
@@ -250,6 +262,8 @@ export interface FileExtras {
   logs: FileLog[];
   /** WO-100：開檔時讀到的檔內附加資料（匯入事件）。沒有代表不是從檔案讀來的（例如剛升格的新稿）。 */
   transfer?: TransferRead;
+  /** WO-128：開檔時讀到的時間線附加資料狀態（absent / ok / invalid）。 */
+  timeline?: TimelineRead;
 }
 
 export type Action =
@@ -326,6 +340,27 @@ export type Action =
        * （basis）與現在仍是同一份時才直接套用，不再重算；清單已變就由 reducer 依最新狀態計算。
        */
       placed?: { basis: readonly FileCard[]; cards: FileCard[] };
+    }
+  /** WO-128：新增時間線事件（頂層時間軸卡，依 nextTimelineOrderForNewEvent 排在最後）。 */
+  | {
+      type: 'add-timeline-event';
+      projectId: string;
+      input?: Omit<AddCardInput, 'category' | 'parentId'>;
+    }
+  /** WO-128：依指定頂層事件 id 順序重排時間線故事順序（0..M-1）。 */
+  | {
+      type: 'reorder-timeline';
+      projectId: string;
+      orderedIds: readonly string[];
+    }
+  /** WO-128：移動單一時間線事件（上移／下移 delta、目標索引 targetIndex、或拖曳落點 drop）。 */
+  | {
+      type: 'move-timeline-event';
+      projectId: string;
+      cardId: string;
+      delta?: -1 | 1;
+      targetIndex?: number;
+      drop?: TimelineDropTarget;
     };
 
 
@@ -637,7 +672,13 @@ export function attachActionForBook(
       titleSavePending: book.titleSavePending,
     },
     schedule: book.schedule,
-    extras: { info: book.info, cards: book.cards, logs: book.logs, transfer: book.transfer },
+    extras: {
+      info: book.info,
+      cards: book.cards,
+      logs: book.logs,
+      transfer: book.transfer,
+      timeline: book.timeline,
+    },
   };
 }
 
@@ -1670,8 +1711,43 @@ function reduceBase(state: SampleState, action: Action): SampleState {
       });
       return applyProjectCards(state, action.projectId, () => restored);
     }
-    case 'set-nodes':
-      return {
+    case 'add-timeline-event': {
+      const currentCards = getProjectCards(state, action.projectId);
+      const nextOrder =
+        action.input?.timelineOrder !== undefined
+          ? action.input.timelineOrder
+          : nextTimelineOrderForNewEvent(currentCards);
+      const nextCards = addCardToList(currentCards, {
+        ...action.input,
+        category: CATEGORY_TIMELINE,
+        parentId: null,
+        ...(nextOrder !== null ? { timelineOrder: nextOrder } : {}),
+      });
+      return applyProjectCards(state, action.projectId, () => nextCards);
+    }
+    case 'reorder-timeline': {
+      const currentCards = getProjectCards(state, action.projectId);
+      const reordered = reorderTimelineByOrderedIds(currentCards, action.orderedIds);
+      const changed = reordered.some((card, idx) => card !== currentCards[idx]);
+      if (!changed) return state;
+      return applyProjectCards(state, action.projectId, () => reordered);
+    }
+    case 'move-timeline-event': {
+      const currentCards = getProjectCards(state, action.projectId);
+      let moved: FileCard[] = [...currentCards];
+      if (action.drop !== undefined) {
+        moved = moveTimelineCardByDrop(currentCards, action.cardId, action.drop);
+      } else if (action.delta !== undefined) {
+        moved = moveTimelineCardByDelta(currentCards, action.cardId, action.delta);
+      } else if (action.targetIndex !== undefined) {
+        moved = moveTimelineCardToIndex(currentCards, action.cardId, action.targetIndex);
+      }
+      const changed = moved.some((card, idx) => card !== currentCards[idx]);
+      if (!changed) return state;
+      return applyProjectCards(state, action.projectId, () => moved);
+    }
+    case 'set-nodes': {
+      const nextWithNodes: SampleState = {
         ...state,
         projects: mapProject(state.projects, action.projectId, (project) => ({
           ...project,
@@ -1680,6 +1756,28 @@ function reduceBase(state: SampleState, action: Action): SampleState {
           nodes: action.nodes,
         })),
       };
+      // WO-128：刪章或刪卷（連帶刪掉卷下所有子章）時，把連到已不存在章節的事件 chapterId 改為 null（事件本身不刪）。
+      const aliveChapterIds = collectAliveChapterIds(action.nodes);
+      const currentCards = getProjectCards(nextWithNodes, action.projectId);
+      let unlinked = false;
+      const cleanedCards = currentCards.map((card) => {
+        if (
+          card.chapterId !== undefined &&
+          card.chapterId !== null &&
+          card.chapterId !== '' &&
+          !aliveChapterIds.has(card.chapterId)
+        ) {
+          unlinked = true;
+          return {
+            ...card,
+            chapterId: null,
+          };
+        }
+        return card;
+      });
+      if (!unlinked) return nextWithNodes;
+      return applyProjectCards(nextWithNodes, action.projectId, () => cleanedCards);
+    }
     case 'add-scene': {
       const project = state.projects.find((item) => item.id === action.projectId);
       const chapter = project ? findNode(project.nodes, action.chapterId) : null;
@@ -1758,6 +1856,19 @@ interface SampleActions {
       archive?: ArchiveClient;
     },
   ) => Promise<FileCard[] | null>;
+  /** WO-128：新增時間線事件（頂層時間軸卡，依 nextTimelineOrderForNewEvent 排在最後）。 */
+  addTimelineEvent: (
+    projectId: string,
+    input?: Omit<AddCardInput, 'category' | 'parentId'>,
+  ) => FileCard | null;
+  /** WO-128：依指定頂層事件 id 順序重排時間線故事順序（0..M-1）。 */
+  reorderTimeline: (projectId: string, orderedIds: readonly string[]) => void;
+  /** WO-128：移動單一時間線事件（上移／下移 delta、目標索引 targetIndex、或拖曳落點 drop）。 */
+  moveTimelineEvent: (
+    projectId: string,
+    cardId: string,
+    move: { delta?: -1 | 1; targetIndex?: number; drop?: TimelineDropTarget },
+  ) => void;
   focusProject: (id: string) => void;
   attachImported: (payload: {
     project: DemoProject;
@@ -1813,12 +1924,14 @@ const SampleContext = createContext<SampleContextValue | null>(null);
 /**
  * 交給外部（儲存、另存、分享／下載、預備分享）前的檢查。
  * WO-100：附加資料有破壞疑慮（損壞、衝突、不支援的修訂值）就不交出去，沿用既有存檔失敗提示。
+ * WO-128：時間線附加資料有破壞疑慮同樣擋下外部存檔。
  */
 export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
   await verifyExportedDatabase(bytes, async (payload) => {
     const db = await openMemoryDb(payload);
     try {
       assertTransferDataWritable(db.sql);
+      assertTimelineDataWritable(db.sql);
       return currentSchemaVersion(db.sql);
     } finally {
       db.close();
@@ -2764,6 +2877,27 @@ export function SampleProvider({
         deleteProjectCardWithArchive(stateRef.current, dispatch, projectId, cardId, options),
       restoreDeletedCard: (projectId, recordOrId, options) =>
         restoreProjectCardFromArchive(stateRef.current, dispatch, projectId, recordOrId, options),
+      addTimelineEvent: (projectId, input) => {
+        const currentCards = getProjectCards(stateRef.current, projectId);
+        const nextOrder =
+          input?.timelineOrder !== undefined
+            ? input.timelineOrder
+            : nextTimelineOrderForNewEvent(currentCards);
+        const nextCards = addCardToList(currentCards, {
+          ...input,
+          category: CATEGORY_TIMELINE,
+          parentId: null,
+          ...(nextOrder !== null ? { timelineOrder: nextOrder } : {}),
+        });
+        const created = nextCards[nextCards.length - 1] ?? null;
+        if (!created || nextCards.length === currentCards.length) return null;
+        dispatch({ type: 'set-cards', projectId, cards: nextCards });
+        return created;
+      },
+      reorderTimeline: (projectId, orderedIds) =>
+        dispatch({ type: 'reorder-timeline', projectId, orderedIds }),
+      moveTimelineEvent: (projectId, cardId, move) =>
+        dispatch({ type: 'move-timeline-event', projectId, cardId, ...move }),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {

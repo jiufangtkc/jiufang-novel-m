@@ -1,4 +1,5 @@
 import React, { useEffect, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useInRouterContext, useNavigate, type NavigateFunction } from 'react-router-dom';
 import { BackIcon, ChevronIcon, CloseIcon } from './Icons';
 import {
   BACK_TO_CARDS_ARIA,
@@ -23,7 +24,9 @@ import {
   flattenVisibleCards,
 } from '../domain/cards';
 import { ADD_CARD_BUTTON, savedCardToast } from '../copy/cardEditCopy';
+import { CATEGORY_TIMELINE } from '../domain/cardCategories';
 import { addCard } from '../domain/cardOps';
+import { extractTimelineChapters } from '../domain/timeline';
 import {
   WRITING_CARD_MORE_CLOSE,
   WRITING_CARD_MORE_TITLE,
@@ -73,6 +76,17 @@ export interface WritingCardsDrawerProps {
    * 讓游標與鍵盤先回正文（卡片顯示「還沒按完成」的提示，按「編輯」接著改）。
    */
   resumeEditing?: boolean;
+  /** WO-128：事件卡點擊「跳到{章短名}」的自訂導航回呼（選填，未傳時若位於 Router 內則自動跳往寫作頁該章）。 */
+  onJumpToChapter?: (chapterId: string) => void;
+}
+
+function RouterNavigateBridge({
+  navigateRef,
+}: {
+  navigateRef: React.MutableRefObject<NavigateFunction | null>;
+}) {
+  navigateRef.current = useNavigate();
+  return null;
 }
 
 /**
@@ -96,9 +110,12 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   onSaved,
   onOpenInDataset,
   resumeEditing = true,
+  onJumpToChapter,
 }) => {
   const { state: sampleState, actions } = useSample();
   const { mode: layoutMode } = useLayout();
+  const inRouter = useInRouterContext();
+  const navigateRef = useRef<NavigateFunction | null>(null);
   const edit = useSyncExternalStore(subscribeCardEdit, getCardEditSnapshot, getCardEditSnapshot);
   const draftRef = useRef<(() => CardEditorSavePayload) | null>(null);
   const [savedNotice, setSavedNotice] = useState<string | undefined>(undefined);
@@ -106,6 +123,7 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
   const swipeStart = useRef<{ x: number; y: number } | null>(null);
   const [viewportHeight, setViewportHeight] = useState<number | null>(null);
   const project = useProject(projectId);
+  const timelineChapters = project ? extractTimelineChapters(project.nodes) : [];
   const { cards: bookCards, categories, isSample } = readWritingCardsData(
     sampleState,
     projectId,
@@ -168,6 +186,9 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
         title: newCard.title,
         content: newCard.content,
         color: formatCardColorForSave(newCard.color || DEFAULT_CARD_COLOR),
+        ...(newCard.category === CATEGORY_TIMELINE && !newCard.parent_id
+          ? { storyTime: newCard.storyTime ?? '', chapterId: newCard.chapterId ?? null }
+          : {}),
       });
     }
     startCardEdit();
@@ -317,8 +338,23 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
 
     const placeLabel = edit.placeLabel;
     const pendingDraft = fromProps ? null : getCardDraft(projectId, currentCard.id);
+    const isTopLevelTimeline = currentCard.category === CATEGORY_TIMELINE && !currentCard.parent_id;
+    const handleJumpToChapter = (chapterId: string, draftPayload: CardEditorSavePayload) => {
+      if (editing) {
+        if (!fromProps) saveCardDraft(projectId, currentCard.id, draftPayload);
+        endCardEdit('close');
+      }
+      const nav = navigateRef.current;
+      onClose();
+      if (onJumpToChapter) {
+        onJumpToChapter(chapterId);
+        return;
+      }
+      nav?.(`/p/${projectId}/write/${chapterId}`);
+    };
     return (
       <>
+        {inRouter && <RouterNavigateBridge navigateRef={navigateRef} />}
         <div
           className="writing-cards-overlay"
           data-testid="writing-cards-overlay"
@@ -398,6 +434,8 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
               card={currentCard}
               mode={editing ? 'edit' : 'preview'}
               initialDraft={pendingDraft}
+              chapters={timelineChapters}
+              onJumpToChapter={handleJumpToChapter}
               onDraftChange={
                 fromProps ? undefined : (next) => saveCardDraft(projectId, currentCard.id, next)
               }
@@ -410,6 +448,12 @@ export const WritingCardsDrawer: React.FC<WritingCardsDrawerProps> = ({
                       title: currentCard.title,
                       content: currentCard.content,
                       color: formatCardColorForSave(currentCard.color || DEFAULT_CARD_COLOR),
+                      ...(isTopLevelTimeline
+                        ? {
+                            storyTime: currentCard.storyTime ?? '',
+                            chapterId: currentCard.chapterId ?? null,
+                          }
+                        : {}),
                     });
                   }
                   startCardEdit();

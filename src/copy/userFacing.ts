@@ -636,3 +636,76 @@ export const FORMAT_NOTICE_CLOSE = '關閉';
 export const FORMAT_NOTICE_CLOSE_ARIA = '關閉排版提示';
 export const FORMAT_KIND_GROUP_ARIA = '排版方式';
 export const FORMAT_SCOPE_GROUP_ARIA = '排版範圍';
+
+// WO-127（暫定，待九方審）：設定頁「關於」區贊助連結用字與朗讀提示。
+export const SPONSOR_BUTTON_LABEL = '贊助九方思想貓';
+export const SPONSOR_DESCRIPTION =
+  '編輯器M免費使用。如果它幫上你的忙，歡迎請作者喝杯咖啡。';
+export const SPONSOR_NEW_TAB_HINT = '（另開新分頁）';
+
+// WO-128（暫定，待九方審）：事件時間線與事件卡新欄位用字（樣張「新」標籤僅示意，正式版不輸出）。
+export const TIMELINE_VIEW_CARDS = '卡片清單';
+export const TIMELINE_VIEW_TIMELINE = '時間線';
+export const TIMELINE_HEADING = '時間線';
+export const timelineBookCrumb = (title: string): string => `・${title}`;
+export const TIMELINE_ADD_EVENT = '新增事件';
+export const TIMELINE_TAB_STORY = '故事順序';
+export const TIMELINE_TAB_READING = '章節順序';
+export const TIMELINE_TAB_DUAL = '雙軸對照';
+export const TIMELINE_STORY_HINT = '照故事裡真正發生的先後排。按住右邊 ⠿ 拖曳換順序，點卡片打開。';
+export const TIMELINE_READING_HINT = '照讀者讀到的先後排，跟著目錄的章走。';
+export const TIMELINE_BADGE_FLASHBACK = '倒敘';
+export const TIMELINE_BADGE_UNREVEALED = '尚未揭露';
+export const TIMELINE_UNASSIGNED_LABEL = '還沒寫進任何章';
+export const TIMELINE_LEGEND_FLASHBACK = '往回講更早的事';
+export const TIMELINE_LEGEND_UNREVEALED = '還沒寫進章';
+export const timelineStoryOrderPhone = (n: number): string => `故事裡第 ${n} 件`;
+export const timelineStoryOrderWide = (n: number): string => `故事第 ${n} 件`;
+export const timelineReadingOrderWide = (n: number): string => `讀者第 ${n} 件`;
+export const TIMELINE_READER_NOT_YET = '讀者還沒讀到';
+export const timelineUnassignedSectionCount = (n: number): string => `（${n}）`;
+export const EVENT_STORY_TIME_LABEL = '故事時間';
+export const EVENT_STORY_TIME_PLACEHOLDER = '例如：十年前・冬';
+export const EVENT_STORY_TIME_HELP =
+  '隨你寫，例如「第三年春」「案發當晚 23:40」。只是標示，先後順序在時間線上拖曳決定。';
+export const EVENT_STORY_TIME_EMPTY = '尚未填寫';
+export const EVENT_CHAPTER_LABEL = '出現在哪一章';
+export const EVENT_CHAPTER_NONE_NOTE = '先記著，之後再放';
+export const timelineJumpToChapter = (label: string): string => `跳到${label}`;
+export const TIMELINE_DUAL_TOP_TITLE = '故事真實順序';
+export const TIMELINE_DUAL_TOP_DESC = '左到右＝故事裡發生的先後，拖曳卡片換順序';
+export const TIMELINE_DUAL_BOTTOM_TITLE = '讀者讀到的順序';
+export const TIMELINE_DUAL_BOTTOM_DESC =
+  '左到右＝章節順序，跟著目錄走；改章請到卡片裡選「出現在哪一章」';
+export const TIMELINE_DUAL_LEGEND_NORMAL = '照順序往下讀';
+export const TIMELINE_DUAL_LEGEND_FLASHBACK = '倒敘：讀者後讀到、故事裡更早發生';
+export const TIMELINE_DUAL_LEGEND_UNASSIGNED = '還沒寫進任何章（尚未揭露）';
+export const TIMELINE_DUAL_LEGEND_CROSSING = '線交叉越多，敘事跳得越多';
+export const TIMELINE_DUAL_TIP_INTRO = '點一下卡片，兩邊同一件事一起亮起來。';
+export const timelineDualTipDetail = (
+  title: string,
+  storyN: number,
+  chapterLabel?: string | null,
+): string =>
+  chapterLabel && chapterLabel.trim() !== ''
+    ? `「${title}」故事裡第 ${storyN} 件，讀者到${chapterLabel}才讀到。`
+    : `「${title}」故事裡第 ${storyN} 件，還沒寫進任何章。`;
+export const TIMELINE_OPEN_CARD = '開啟卡片';
+export const TIMELINE_EMPTY_HINT = '這個時間軸還沒有事件。按右上角「新增事件」開始排時間線。';
+export const TIMELINE_BACK_ARIA = '返回時間軸卡片清單';
+// WO-128（暫定，待九方審）
+export const TIMELINE_BACK_TO_TIMELINE_ARIA = '返回時間線';
+export const timelineDragHandleAria = (title: string): string =>
+  `「${title}」的拖曳把手，按一下可用上移或下移調整順序`;
+export const timelineMovedLiveAnnouncement = (title: string, pos: number, total: number): string =>
+  `已將「${title}」移到故事裡第 ${pos} 件，共 ${total} 件`;
+export const timelineSelectedDockLabel = (title: string): string => `已選「${title}」`;
+
+// WO-129（暫定，待九方審）：改版說明視窗與設定頁入口用字。
+export const WHATS_NEW_TITLE = '這一版新增了什麼';
+export const WHATS_NEW_CONFIRM = '知道了';
+export const WHATS_NEW_SETTINGS_TITLE = '看改版內容';
+export const WHATS_NEW_SETTINGS_HINT = '看看這一版和之前改了什麼';
+export const WHATS_NEW_PREVIOUS_TOGGLE = '之前的版本';
+export const WHATS_NEW_EMPTY_CURRENT = '這一版沒有另外列出更新項目。';
+export const whatsNewVersionLabel = (version: string): string => `版本 ${version}`;

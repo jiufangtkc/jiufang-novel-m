@@ -273,3 +273,59 @@ export function FocusIcon(props: IconProps) {
     </Stroke>
   );
 }
+
+/** 另開新分頁外部連結圖示（方框加右上箭頭）。 */
+export function ExternalLinkIcon({ size = 16 }: IconProps) {
+  return (
+    <Stroke size={size}>
+      <path d="M14 4h6v6" />
+      <path d="M10 14L20 4" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </Stroke>
+  );
+}
+
+/** 時間線 6 點拖曳把手圖示（WO-128，對應樣張 grip）。 */
+export function GripDotsIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <circle cx="9" cy="6" r="1" />
+      <circle cx="15" cy="6" r="1" />
+      <circle cx="9" cy="12" r="1" />
+      <circle cx="15" cy="12" r="1" />
+      <circle cx="9" cy="18" r="1" />
+      <circle cx="15" cy="18" r="1" />
+    </Stroke>
+  );
+}
+
+/** 倒敘箭頭圖示（WO-128，對應樣張 undo）。 */
+export function UndoArrowIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h11a5 5 0 0 1 0 10h-3" />
+    </Stroke>
+  );
+}
+
+/** 未揭露斜線眼睛圖示（WO-128，對應樣張 eyeoff）。 */
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M9.9 4.2A10 10 0 0 1 12 4c7 0 10 8 10 8a17 17 0 0 1-2.2 3.4" />
+      <path d="M6.6 6.6A17 17 0 0 0 2 12s3 8 10 8a9.7 9.7 0 0 0 5.4-1.6" />
+      <path d="m2 2 20 20" />
+    </Stroke>
+  );
+}
+
+/** 書本外框圖示（WO-128，對應樣張 book）。 */
+export function BookOutlineIcon(props: IconProps) {
+  return (
+    <Stroke {...props}>
+      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5Z" />
+      <path d="M4 19.5V21h16" />
+    </Stroke>
+  );
+}

@@ -16,6 +16,12 @@ export interface DemoCard {
   color: string;
   is_collapsed: number;
   sort_order: number;
+  /** WO-128：事件卡的故事時間（自由文字，空字串或未設時畫面不顯示）。 */
+  storyTime?: string;
+  /** WO-128：事件卡在時間線的故事順序位置（0..M-1）；null 或未設代表尚未手動排過序。 */
+  timelineOrder?: number | null;
+  /** WO-128：事件卡連到的目錄章節代號（chapters.id）；null 或未設代表還沒寫進任何章。 */
+  chapterId?: string | null;
 }
 
 export interface CardCategory {

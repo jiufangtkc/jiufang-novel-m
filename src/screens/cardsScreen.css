@@ -438,3 +438,35 @@ html[data-layout="wide"] .cards-wide-view .card-detail-article.is-color-picker-b
   max-width: none !important;
   width: 100% !important;
 }
+
+/* WO-128：資料集「時間軸」分類頂端切換（卡片清單／時間線） */
+.timeline-entry-switch {
+  display: flex;
+  margin: 10px 16px 4px;
+  padding: 3px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  flex-shrink: 0;
+}
+
+.timeline-entry-tab {
+  flex: 1;
+  min-height: var(--hit-size, 44px);
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.timeline-entry-tab:hover {
+  color: var(--text);
+}
+
+.timeline-entry-tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}

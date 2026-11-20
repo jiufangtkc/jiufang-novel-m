@@ -1,0 +1,89 @@
+/**
+ * WO-129（暫定，待九方審）：改版說明資料檔（新版排最前面）。
+ * 長期規則：每次上正式站附改版說明；新增功能升中間碼（0.3.0 → 0.4.0），
+ * 修錯誤或小修升最後一碼（0.3.0 → 0.3.1）。
+ */
+
+export interface ReleaseNote {
+  /** 對應 package.json 的版號（X.Y.Z，不寫 v）。 */
+  readonly version: string;
+  /** 給使用者看的臺灣繁體白話條列（每版至少 1 條）。 */
+  readonly items: readonly string[];
+}
+
+export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  {
+    version: '0.3.0',
+    items: [
+      '事件時間線：照故事順序或章節順序排事件，電腦寬螢幕還能雙線對照',
+      '設定頁新增贊助按鈕',
+    ],
+  },
+];
+
+const VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
+
+/** 嚴格解析 X.Y.Z 三段版號為非負安全整數；格式不符回傳 null。 */
+export function parseVersion(raw: string): readonly [number, number, number] | null {
+  if (typeof raw !== 'string') return null;
+  const match = VERSION_PATTERN.exec(raw);
+  if (!match) return null;
+  const major = Number(match[1]);
+  const minor = Number(match[2]);
+  const patch = Number(match[3]);
+  if (!Number.isSafeInteger(major) || !Number.isSafeInteger(minor) || !Number.isSafeInteger(patch)) {
+    return null;
+  }
+  return [major, minor, patch];
+}
+
+/** 依數值比較兩組版號；任一側無法解析時回傳 null。 */
+export function compareVersions(a: string, b: string): -1 | 0 | 1 | null {
+  const parsedA = parseVersion(a);
+  const parsedB = parseVersion(b);
+  if (!parsedA || !parsedB) return null;
+  for (let i = 0; i < 3; i += 1) {
+    if (parsedA[i]! < parsedB[i]!) return -1;
+    if (parsedA[i]! > parsedB[i]!) return 1;
+  }
+  return 0;
+}
+
+/** 判斷目前版本是否高於上次看過的版本；舊值損壞無法解析時，只要字串不同就視為需要重記一次。 */
+export function isNewerVersion(current: string, seen: string): boolean {
+  const cmp = compareVersions(current, seen);
+  if (cmp !== null) return cmp > 0;
+  return current !== seen;
+}
+
+function normalizeNote(note: ReleaseNote): ReleaseNote | null {
+  const validItems = note.items.filter((item) => item.trim() !== '');
+  if (validItems.length === 0) return null;
+  return { version: note.version, items: validItems };
+}
+
+/** 查詢指定版號的改版條目；找不到或過濾空白後沒有有效條目時回傳 null。 */
+export function findReleaseNote(
+  version: string,
+  notes: readonly ReleaseNote[] = RELEASE_NOTES,
+): ReleaseNote | null {
+  const found = notes.find((note) => note.version === version);
+  if (!found) return null;
+  return normalizeNote(found);
+}
+
+/** 取出早於目前版本的歷版有效條目，維持新版在前順序。 */
+export function previousReleaseNotes(
+  currentVersion: string,
+  notes: readonly ReleaseNote[] = RELEASE_NOTES,
+): readonly ReleaseNote[] {
+  const out: ReleaseNote[] = [];
+  for (const note of notes) {
+    if (note.version === currentVersion) continue;
+    const cmp = compareVersions(note.version, currentVersion);
+    if (cmp !== null && cmp >= 0) continue;
+    const normalized = normalizeNote(note);
+    if (normalized) out.push(normalized);
+  }
+  return out;
+}
