@@ -13,7 +13,7 @@
 
 export type CardEditEndKind = 'done' | 'cancel' | 'close' | 'body' | 'leave';
 
-/** WO-65：這些結束方式只把字暫存在這台裝置，不正式存卡片。 */
+/** WO-65：這些結束方式只把字暫存在這個裝置，不正式存卡片。 */
 export type CardEditLeaveKind = Extract<CardEditEndKind, 'close' | 'body' | 'leave'>;
 
 export interface CardEditSnapshot {
