@@ -17,7 +17,9 @@ import {
   CATEGORY_TIMELINE,
 } from '../domain/cardCategories';
 import { addCard, addSubCard, updateCard } from '../domain/cardOps';
-import { renameNode, withoutNode } from '../domain/chapterOps';
+import { expandToNode, placeRecovered, renameNode, withoutNode } from '../domain/chapterOps';
+import { deletedFromNode } from '../domain/chapterVersions';
+import { nodesAfterDeleteUndo } from '../domain/undoDelete';
 import { saveProjects } from '../domain/outline';
 import {
   buildChapterIndex,
@@ -855,6 +857,124 @@ describe('WO-128 9.3 狀態管理、章刪除連動、草稿記憶與審查 1 �
       writeFileProject(countingSql, parts.info, project.nodes, parts.cards, parts.logs);
       expect(statements).toEqual([]);
       expect(readTimelineData(sql)).toEqual({ kind: 'absent' });
+    });
+  });
+
+  it('8. WO-132 嚴-5：刪章後立即按 10 秒復原與從「最近刪除」救回（放回原位／最後面），時間線事件皆連回原章', () => {
+    const sample = createSampleCards();
+    const tree = createVolumeTreeFixture();
+    let state = demoFixtureState(new Date('2026-11-23T17:15:00Z'));
+    const bookId = 'p-wo132-restore-ch';
+    state = reduce(state, { type: 'add-project', id: bookId, title: '【範例】刪章復原時間線', shape: 'novel' });
+    state = reduce(state, { type: 'set-nodes', projectId: bookId, nodes: tree });
+    state = reduce(state, { type: 'set-cards', projectId: bookId, cards: sample.all });
+
+    // 刪除 ch-1（ev-2 原本連到 ch-1）
+    const record = deletedFromNode(tree, 'ch-1', 1000, 'del-1000-ch-1', getProjectCards(state, bookId))!;
+    expect(record.unlinkedTimelineEvents).toEqual([{ cardId: 'ev-2', chapterId: 'ch-1' }]);
+    const nodesAfterDel = withoutNode(tree, 'ch-1')!;
+    state = reduce(state, { type: 'set-nodes', projectId: bookId, nodes: nodesAfterDel });
+    expect(getProjectCards(state, bookId).find((c) => c.id === 'ev-2')?.chapterId).toBeNull();
+
+    // (a) 走 10 秒復原路徑
+    const restoredUndoNodes = expandToNode(
+      nodesAfterDeleteUndo(nodesAfterDel, { snapshot: [], deleted: record }),
+      record.node.id,
+    );
+    const stateAfterUndo = reduce(state, {
+      type: 'set-nodes',
+      projectId: bookId,
+      nodes: restoredUndoNodes,
+      restoreTimelineLinks: record.unlinkedTimelineEvents,
+    });
+    expect(getProjectCards(stateAfterUndo, bookId).find((c) => c.id === 'ev-2')?.chapterId).toBe('ch-1');
+
+    // (b) 模擬重開頁面後從「最近刪除」救回（放回原位置 與 放到最後面）
+    const placedOriginal = expandToNode(placeRecovered(nodesAfterDel, record, false), record.node.id);
+    const stateRecoverOriginal = reduce(state, {
+      type: 'set-nodes',
+      projectId: bookId,
+      nodes: placedOriginal,
+      restoreTimelineLinks: record.unlinkedTimelineEvents,
+    });
+    expect(getProjectCards(stateRecoverOriginal, bookId).find((c) => c.id === 'ev-2')?.chapterId).toBe('ch-1');
+
+    const placedEnd = expandToNode(placeRecovered(nodesAfterDel, record, true), record.node.id);
+    const stateRecoverEnd = reduce(state, {
+      type: 'set-nodes',
+      projectId: bookId,
+      nodes: placedEnd,
+      restoreTimelineLinks: record.unlinkedTimelineEvents,
+    });
+    expect(getProjectCards(stateRecoverEnd, bookId).find((c) => c.id === 'ev-2')?.chapterId).toBe('ch-1');
+  });
+
+  it('9. WO-132 嚴-5：刪整卷後復原整卷，多章各自連回對應事件，不覆蓋已改連他章的事件且不動 ai_chat／角色卡', async () => {
+    const sample = createSampleCards();
+    const tree = createVolumeTreeFixture();
+    const rawBytes = await generateDesktopSampleBytes();
+    const book = await readBookBytes('【範例】刪卷復原時間線', rawBytes, 'file-wo132-restore-vol');
+    let state = demoFixtureState(new Date('2026-11-23T17:16:00Z'));
+    state = reduce(
+      state,
+      attachActionForBook(
+        {
+          ...book,
+          tree,
+          cards: sample.all,
+        },
+        { updatedLabel: '剛剛' },
+      ),
+    );
+
+    const beforeCards = getProjectCards(state, 'file-wo132-restore-vol');
+    const aiRef = beforeCards.find((c) => c.id === 'ai-chat-keep')!;
+    const charRef = beforeCards.find((c) => c.id === 'char-keep')!;
+
+    // 刪除 vol-1（包含 ch-1 -> ev-2 與 ch-2 -> ev-3）
+    const record = deletedFromNode(tree, 'vol-1', 2000, 'del-2000-vol-1', beforeCards)!;
+    expect(record.unlinkedTimelineEvents).toEqual([
+      { cardId: 'ev-2', chapterId: 'ch-1' },
+      { cardId: 'ev-3', chapterId: 'ch-2' },
+    ]);
+    const nodesAfterDelVol = withoutNode(tree, 'vol-1')!;
+    state = reduce(state, { type: 'set-nodes', projectId: 'file-wo132-restore-vol', nodes: nodesAfterDelVol });
+    expect(getProjectCards(state, 'file-wo132-restore-vol').find((c) => c.id === 'ev-2')?.chapterId).toBeNull();
+    expect(getProjectCards(state, 'file-wo132-restore-vol').find((c) => c.id === 'ev-3')?.chapterId).toBeNull();
+
+    // 作家在復原前先把 ev-2 改連到仍存在的 ch-3
+    state = reduce(state, {
+      type: 'update-card',
+      projectId: 'file-wo132-restore-vol',
+      cardId: 'ev-2',
+      patch: { chapterId: 'ch-3' },
+    });
+
+    // 復原整卷 vol-1：ev-2 維持改連後的 ch-3，未改連的 ev-3 自動連回 ch-2
+    const restoredVolNodes = expandToNode(placeRecovered(nodesAfterDelVol, record, false), record.node.id);
+    state = reduce(state, {
+      type: 'set-nodes',
+      projectId: 'file-wo132-restore-vol',
+      nodes: restoredVolNodes,
+      restoreTimelineLinks: record.unlinkedTimelineEvents,
+    });
+    const afterRestoreCards = getProjectCards(state, 'file-wo132-restore-vol');
+    expect(afterRestoreCards.find((c) => c.id === 'ev-2')?.chapterId).toBe('ch-3');
+    expect(afterRestoreCards.find((c) => c.id === 'ev-3')?.chapterId).toBe('ch-2');
+    expect(afterRestoreCards.find((c) => c.id === 'ai-chat-keep')).toBe(aiRef);
+    expect(afterRestoreCards.find((c) => c.id === 'char-keep')).toBe(charRef);
+
+    // 寫回 .db 再重開，驗證 schema 維持 v14 且 jiufangm_timeline_events.chapter_id 完整保存
+    const fileProject = state.projects.find((p) => p.id === 'file-wo132-restore-vol')!;
+    const savedBytes = await manuscriptBytesOn(state, fileProject, rawBytes);
+    await withDb(savedBytes, (sql) => {
+      expect(currentSchemaVersion(sql)).toBe(14);
+      expect(CURRENT_SCHEMA_VERSION).toBe(14);
+      const rows = sql.select(`SELECT card_id, chapter_id FROM ${TIMELINE_EVENTS_TABLE}`);
+      const byCard = new Map(rows.map((r) => [String(r.card_id), r.chapter_id == null ? null : String(r.chapter_id)]));
+      expect(byCard.get('ev-1')).toBe('ch-3');
+      expect(byCard.get('ev-2')).toBe('ch-3');
+      expect(byCard.get('ev-3')).toBe('ch-2');
     });
   });
 });

@@ -4,12 +4,17 @@ import {
   AUTOSAVE_RESUME_ARIA,
   AUTOSAVE_RESUME_BADGE,
   AUTOSAVE_UNSAVED_BADGE,
+  SAVE_CONFLICT_ARIA,
+  SAVE_CONFLICT_BADGE,
+  STASH_FAILED_BADGE,
   autosaveUnsavedAria,
   autosavedAtLabel,
   lastFileSavedLabel,
+  stashFailedAria,
 } from '../copy/userFacing';
 import type { HeaderSaveDisplayKind } from '../domain/autoSave';
 import { formatLastProjectSave } from '../domain/saveClock';
+import { SaveIcon } from './Icons';
 import './saveReminder.css';
 
 export interface SaveHeaderStatusProps {
@@ -20,6 +25,7 @@ export interface SaveHeaderStatusProps {
   lastSaveWasAuto: boolean;
   onResumeAutoSave: () => void;
   onSave: () => void;
+  onSaveAs?: () => void;
   now?: Date;
 }
 
@@ -35,52 +41,94 @@ export function SaveHeaderStatus({
   lastSaveWasAuto,
   onResumeAutoSave,
   onSave,
+  onSaveAs,
   now,
 }: SaveHeaderStatusProps) {
   if (kind === 'none' || kind === 'stale') return null;
 
+  if (kind === 'conflict') {
+    return (
+      <span className="save-header-slot">
+        <button
+          type="button"
+          className="save-header-action is-failed"
+          aria-label={SAVE_CONFLICT_ARIA}
+          onClick={onSaveAs ?? onSave}
+          data-testid="save-header-status"
+          data-save-header-kind="conflict"
+        >
+          {SAVE_CONFLICT_BADGE}
+        </button>
+      </span>
+    );
+  }
+
+  if (kind === 'stash-failed') {
+    return (
+      <span className="save-header-slot">
+        <button
+          type="button"
+          className="save-header-action is-failed"
+          aria-label={stashFailedAria(canPickFiles)}
+          onClick={onSave}
+          data-testid="save-header-status"
+          data-save-header-kind="stash-failed"
+        >
+          {STASH_FAILED_BADGE}
+        </button>
+      </span>
+    );
+  }
+
   if (kind === 'needs-permission') {
     return (
-      <button
-        type="button"
-        className="save-header-action is-permission"
-        aria-label={AUTOSAVE_RESUME_ARIA}
-        onClick={onResumeAutoSave}
-        data-testid="save-header-status"
-        data-save-header-kind="needs-permission"
-      >
-        {AUTOSAVE_RESUME_BADGE}
-      </button>
+      <span className="save-header-slot">
+        <button
+          type="button"
+          className="save-header-action is-permission"
+          aria-label={AUTOSAVE_RESUME_ARIA}
+          onClick={onResumeAutoSave}
+          data-testid="save-header-status"
+          data-save-header-kind="needs-permission"
+        >
+          {AUTOSAVE_RESUME_BADGE}
+        </button>
+      </span>
     );
   }
 
   if (kind === 'failed') {
     return (
-      <button
-        type="button"
-        className="save-header-action is-failed"
-        aria-label={AUTOSAVE_FAILED_ARIA}
-        onClick={onSave}
-        data-testid="save-header-status"
-        data-save-header-kind="failed"
-      >
-        {AUTOSAVE_FAILED_BADGE}
-      </button>
+      <span className="save-header-slot">
+        <button
+          type="button"
+          className="save-header-action is-failed"
+          aria-label={AUTOSAVE_FAILED_ARIA}
+          onClick={onSave}
+          data-testid="save-header-status"
+          data-save-header-kind="failed"
+        >
+          {AUTOSAVE_FAILED_BADGE}
+        </button>
+      </span>
     );
   }
 
   if (kind === 'unsaved') {
     return (
-      <button
-        type="button"
-        className="save-header-action is-unsaved"
-        aria-label={autosaveUnsavedAria(canPickFiles)}
-        onClick={onSave}
-        data-testid="save-header-status"
-        data-save-header-kind="unsaved"
-      >
-        {AUTOSAVE_UNSAVED_BADGE}
-      </button>
+      <span className="save-header-slot">
+        <button
+          type="button"
+          className="save-header-action is-unsaved"
+          aria-label={autosaveUnsavedAria(canPickFiles)}
+          onClick={onSave}
+          data-testid="save-header-status"
+          data-save-header-kind="unsaved"
+        >
+          <SaveIcon size={14} />
+          {AUTOSAVE_UNSAVED_BADGE}
+        </button>
+      </span>
     );
   }
 
@@ -88,12 +136,14 @@ export function SaveHeaderStatus({
   const timeText = formatLastProjectSave(lastFileSaveMs, now ?? new Date());
   const text = autoSaveActive && lastSaveWasAuto ? autosavedAtLabel(timeText) : lastFileSavedLabel(timeText);
   return (
-    <span
-      className="save-header-time"
-      data-testid="save-header-status"
-      data-save-header-kind="time"
-    >
-      {text}
+    <span className="save-header-slot">
+      <span
+        className="save-header-time"
+        data-testid="save-header-status"
+        data-save-header-kind="time"
+      >
+        {text}
+      </span>
     </span>
   );
 }

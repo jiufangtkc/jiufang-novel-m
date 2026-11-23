@@ -1,11 +1,14 @@
 import {
+  SAVE_CONFLICT_TOAST,
   SAVE_FATAL_FAIL,
   SAVE_PARTIAL_FAIL,
   SAVE_PERMISSION_DENIED,
   TOAST_SAVED_UNDER_NEW_TITLE,
 } from '../copy/userFacing';
 import { SAVE_PICKER_ABORTED_TOAST } from '../copy/userFacing';
-import type { DiskFile, TargetStore } from './fileTarget';
+import type { DiskFile, SaveTarget, TargetStore } from './fileTarget';
+import { sha256Hex } from './fingerprint';
+import { recallOpenFileFingerprint, rememberOpenFileFingerprint } from './openFileMemory';
 import { isSavePickerAborted } from './savePickerAbort';
 
 export type SaveOutcome =
@@ -14,6 +17,7 @@ export type SaveOutcome =
   | { kind: 'saved-as'; filename: string }
   | { kind: 'saved-under-new-title'; filename: string }
   | { kind: 'handed-off'; via: 'share' | 'download'; filename: string }
+  | { kind: 'external-conflict'; filename: string }
   | { kind: 'cancelled' }
   | { kind: 'permission-denied' }
   | { kind: 'write-failed'; restored: boolean }
@@ -40,6 +44,8 @@ export function saveNotice(outcome: SaveOutcome): string | null {
       return TOAST_SAVED_UNDER_NEW_TITLE;
     case 'handed-off':
       return outcome.via === 'share' ? '已另存' : '已下載，請自行放到想放的位置';
+    case 'external-conflict':
+      return SAVE_CONFLICT_TOAST;
     case 'cancelled':
       return null;
     case 'picker-aborted':
@@ -83,9 +89,19 @@ async function ensurePermission(file: DiskFile): Promise<boolean> {
   return (await file.requestPermission()) === 'granted';
 }
 
-/** 先讀出原檔。寫入失敗時若內容已變，再把原檔寫回去。 */
-export async function writeWithoutDestroying(file: DiskFile, bytes: Uint8Array): Promise<'ok' | { restored: boolean }> {
+/** 先讀出原檔。若有基準指紋且原檔已變，立刻停手回傳 'conflict'；寫入失敗時若內容已變，再把原檔寫回去。 */
+export async function writeWithoutDestroying(
+  file: DiskFile,
+  bytes: Uint8Array,
+  expectedFingerprint?: string | null,
+): Promise<'ok' | 'conflict' | { restored: boolean }> {
   const backup = await file.read();
+  if (expectedFingerprint && backup.byteLength > 0) {
+    const actualFingerprint = sha256Hex(backup);
+    if (actualFingerprint !== expectedFingerprint) {
+      return 'conflict';
+    }
+  }
   try {
     await file.write(bytes);
     return 'ok';
@@ -101,11 +117,49 @@ export async function writeWithoutDestroying(file: DiskFile, bytes: Uint8Array):
   }
 }
 
-async function writeGranted(file: DiskFile, bytes: Uint8Array): Promise<SaveOutcome | 'ready'> {
+async function writeGranted(
+  file: DiskFile,
+  bytes: Uint8Array,
+  expectedFingerprint?: string | null,
+): Promise<SaveOutcome | 'ready'> {
   if (!(await ensurePermission(file))) return { kind: 'permission-denied' };
-  const wrote = await writeWithoutDestroying(file, bytes);
+  const wrote = await writeWithoutDestroying(file, bytes, expectedFingerprint);
+  if (wrote === 'conflict') return { kind: 'external-conflict', filename: file.name };
   if (wrote !== 'ok') return { kind: 'write-failed', restored: wrote.restored };
   return 'ready';
+}
+
+async function rememberTargetFingerprint(
+  targets: TargetStore,
+  bookKey: string,
+  file: DiskFile,
+  filename: string,
+  bytes: Uint8Array,
+): Promise<void> {
+  const fp = sha256Hex(bytes);
+  rememberOpenFileFingerprint(bookKey, file, fp);
+  try {
+    await targets.save(bookKey, {
+      filename,
+      file,
+      lastKnownFingerprint: fp,
+    });
+  } catch {
+    // 磁碟寫入已成功；IndexedDB 保存把手或指紋失敗時不否定本次存檔結果。
+  }
+}
+
+async function resolveExpectedFingerprint(
+  targets: TargetStore,
+  bookKey: string,
+  file: DiskFile,
+  loadedTarget?: SaveTarget | null,
+): Promise<string | null> {
+  const inMemory = recallOpenFileFingerprint(bookKey, file);
+  if (inMemory !== undefined) return inMemory;
+  if (loadedTarget !== undefined) return loadedTarget?.lastKnownFingerprint ?? null;
+  const target = await targets.load(bookKey).catch(() => null);
+  return target?.lastKnownFingerprint ?? null;
 }
 
 /** 存回開啟時的位置。僅在已有檔案把手或支援選檔寫回時可用；手機請改用另存專案。 */
@@ -123,9 +177,17 @@ export async function saveProjectToPlace(
   const target = await env.targets.load(bookKey);
   const filename = target?.filename || suggestedName;
   if (target?.file) {
-    const wrote = await writeGranted(target.file, bytes);
-    if (wrote !== 'ready') return wrote;
-    return { kind: 'saved', filename: target.file.name || filename };
+    const expectedFp = await resolveExpectedFingerprint(env.targets, bookKey, target.file, target);
+    const wrote = await writeGranted(target.file, bytes, expectedFp);
+    if (wrote !== 'ready') {
+      if (wrote.kind === 'external-conflict') {
+        return { kind: 'external-conflict', filename: target.file.name || filename };
+      }
+      return wrote;
+    }
+    const savedName = target.file.name || filename;
+    await rememberTargetFingerprint(env.targets, bookKey, target.file, savedName, bytes);
+    return { kind: 'saved', filename: savedName };
   }
   if (env.canPickFiles) {
     const picked = await pickLocation(env, filename);
@@ -133,11 +195,7 @@ export async function saveProjectToPlace(
     if (!picked) return { kind: 'cancelled' };
     const wrote = await writeGranted(picked, bytes);
     if (wrote !== 'ready') return wrote;
-    try {
-      await env.targets.save(bookKey, { filename: picked.name, file: picked });
-    } catch {
-      // 磁碟寫入已成功；IndexedDB 保存把手失敗時不否定本次存檔結果。
-    }
+    await rememberTargetFingerprint(env.targets, bookKey, picked, picked.name, bytes);
     return { kind: 'saved', filename: picked.name };
   }
   return { kind: 'cancelled' };
@@ -165,11 +223,7 @@ export async function saveProjectAsNew(
     if (!picked) return { kind: 'cancelled' };
     const wrote = await writeGranted(picked, bytes);
     if (wrote !== 'ready') return wrote;
-    try {
-      await env.targets.save(bookKey, { filename: picked.name, file: picked });
-    } catch {
-      // 磁碟寫入已成功；IndexedDB 保存把手失敗時不否定本次另存結果。
-    }
+    await rememberTargetFingerprint(env.targets, bookKey, picked, picked.name, bytes);
     return { kind: 'saved-as', filename: picked.name };
   }
   const via = await env.share(suggestedName, bytes);
@@ -179,6 +233,7 @@ export async function saveProjectAsNew(
 
 export type AutoSaveOutcome =
   | { kind: 'saved'; filename: string }
+  | { kind: 'external-conflict'; filename: string }
   | { kind: 'no-handle' }
   | { kind: 'needs-permission'; permission: 'prompt' | 'denied' }
   | { kind: 'invalid-database' }
@@ -204,13 +259,23 @@ export async function autoSaveProjectToPlace(
   }
   if (fallbackFile) {
     const resolvedName = fallbackFile.name || fallbackName;
-    const result = await autoSaveWithFile(fallbackFile, bytes, resolvedName);
+    const expectedFp = await resolveExpectedFingerprint(env.targets, bookKey, fallbackFile);
+    const result = await autoSaveWithFile(fallbackFile, bytes, resolvedName, expectedFp);
+    if (result.kind === 'saved') {
+      await rememberTargetFingerprint(env.targets, bookKey, fallbackFile, result.filename, bytes);
+      return result;
+    }
     if (result.kind !== 'needs-permission') {
       return result;
     }
     const target = await env.targets.load(bookKey).catch(() => null);
     if (target?.file && target.file !== fallbackFile) {
-      return autoSaveWithFile(target.file, bytes, target.filename || resolvedName);
+      const targetFp = await resolveExpectedFingerprint(env.targets, bookKey, target.file, target);
+      const retry = await autoSaveWithFile(target.file, bytes, target.filename || resolvedName, targetFp);
+      if (retry.kind === 'saved') {
+        await rememberTargetFingerprint(env.targets, bookKey, target.file, retry.filename, bytes);
+      }
+      return retry;
     }
     return result;
   }
@@ -218,13 +283,19 @@ export async function autoSaveProjectToPlace(
   const file = target?.file ?? null;
   if (!file) return { kind: 'no-handle' };
   const resolvedName = target?.filename || fallbackName;
-  return autoSaveWithFile(file, bytes, resolvedName);
+  const expectedFp = await resolveExpectedFingerprint(env.targets, bookKey, file, target);
+  const result = await autoSaveWithFile(file, bytes, resolvedName, expectedFp);
+  if (result.kind === 'saved') {
+    await rememberTargetFingerprint(env.targets, bookKey, file, result.filename, bytes);
+  }
+  return result;
 }
 
 async function autoSaveWithFile(
   file: DiskFile,
   bytes: Uint8Array,
   fallbackName: string,
+  expectedFingerprint?: string | null,
 ): Promise<AutoSaveOutcome> {
   let permission: 'granted' | 'prompt' | 'denied';
   try {
@@ -236,7 +307,10 @@ async function autoSaveWithFile(
     return { kind: 'needs-permission', permission };
   }
   try {
-    const wrote = await writeWithoutDestroying(file, bytes);
+    const wrote = await writeWithoutDestroying(file, bytes, expectedFingerprint);
+    if (wrote === 'conflict') {
+      return { kind: 'external-conflict', filename: file.name || fallbackName };
+    }
     if (wrote !== 'ok') return { kind: 'write-failed', restored: wrote.restored };
     return { kind: 'saved', filename: file.name || fallbackName };
   } catch {
@@ -314,11 +388,7 @@ export async function saveProjectFromClick(input: {
   const wrote = await writeGranted(picked, bytes);
   if (wrote !== 'ready') return wrote;
   input.onRemember?.(picked);
-  try {
-    await input.env.targets.save(input.bookKey, { filename: picked.name, file: picked });
-  } catch {
-    // 磁碟寫入已成功；IndexedDB 保存把手失敗時，本次分頁仍靠 onRemember 記憶體把手運作。
-  }
+  await rememberTargetFingerprint(input.env.targets, input.bookKey, picked, picked.name, bytes);
   if (input.plan === 'pick-new-name') {
     return { kind: 'saved-under-new-title', filename: picked.name };
   }

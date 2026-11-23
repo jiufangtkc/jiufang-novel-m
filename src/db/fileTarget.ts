@@ -12,6 +12,8 @@ export interface DiskFile {
 export interface SaveTarget {
   filename: string;
   file: DiskFile | null;
+  /** WO-132 嚴-2：最近一次開啟或寫回該外部檔時的 SHA-256 指紋基準。 */
+  lastKnownFingerprint?: string | null;
 }
 
 export interface TargetStore {
@@ -23,6 +25,7 @@ export interface TargetStore {
 export interface StoredTargetRow {
   filename: string;
   handle: unknown | null;
+  lastKnownFingerprint?: string | null;
 }
 
 export function createMemoryTargetStore(): TargetStore {
@@ -49,9 +52,14 @@ export function restoreTarget(
   return {
     filename: row.filename,
     file: row.handle ? wrap(row.handle, row.filename) : null,
+    ...(row.lastKnownFingerprint !== undefined ? { lastKnownFingerprint: row.lastKnownFingerprint } : {}),
   };
 }
 
 export function targetRow(target: SaveTarget, handle: unknown | null): StoredTargetRow {
-  return { filename: target.filename, handle };
+  return {
+    filename: target.filename,
+    handle,
+    ...(target.lastKnownFingerprint !== undefined ? { lastKnownFingerprint: target.lastKnownFingerprint } : {}),
+  };
 }

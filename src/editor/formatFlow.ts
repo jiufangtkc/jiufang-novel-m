@@ -96,14 +96,19 @@ export function executeUndo(
   deps: FormatFlowDeps,
   input: { projectId: string; currentId: string; snapshot: FormatSnapshot | null | undefined },
 ): UndoOutcome {
-  const plan = planUndo(input.snapshot, input.projectId, deps.getNodes());
+  const live = deps.readLive();
+  const plan = planUndo(
+    input.snapshot,
+    input.projectId,
+    deps.getNodes(),
+    live !== null ? { nodeId: input.currentId, text: live } : null,
+  );
   if (plan.status === 'none') return { status: 'none' };
   if (plan.status === 'invalid') {
     deps.clearSnapshot();
     return { status: 'invalid' };
   }
   if (deps.isComposing()) return { status: 'composing' };
-  const live = deps.readLive();
   const currentEntry = live === null ? undefined : plan.entries.find((e) => e.nodeId === input.currentId);
   const others = plan.entries.filter((e) => e !== currentEntry);
   if (currentEntry && !deps.syncCurrent(currentEntry.before)) return { status: 'composing' };

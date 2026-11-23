@@ -12,6 +12,7 @@ export interface LiveDraft {
 
 let reader: (() => Omit<LiveDraft, 'at'> | null) | null = null;
 let composingReader: (() => boolean) | null = null;
+let flusher: (() => void) | null = null;
 
 export function setLiveReader(
   next: (() => Omit<LiveDraft, 'at'> | null) | null,
@@ -19,6 +20,14 @@ export function setLiveReader(
 ) {
   reader = next;
   composingReader = next ? (composing ?? null) : null;
+}
+
+export function setLiveFlusher(next: (() => void) | null) {
+  flusher = next;
+}
+
+export function flushLiveDraftNow(): void {
+  flusher?.();
 }
 
 export function readLiveDraftFromEditor(): Omit<LiveDraft, 'at'> | null {

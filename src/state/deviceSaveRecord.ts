@@ -259,16 +259,5 @@ export function recallExportedFile(store: KeyValueStore, fingerprint: string): n
   return typeof atMs === 'number' ? atMs : null;
 }
 
-/** 檔案內容指紋（SHA-256）。瀏覽器不提供時回傳 null，只是開回時對不上另存時間。 */
-export async function fingerprintBytes(bytes: Uint8Array): Promise<string | null> {
-  const subtle = globalThis.crypto?.subtle;
-  if (!subtle) return null;
-  try {
-    const copy = new Uint8Array(bytes.byteLength);
-    copy.set(bytes);
-    const digest = await subtle.digest('SHA-256', copy);
-    return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
-  } catch {
-    return null;
-  }
-}
+import { fingerprintBytes } from '../db/fingerprint';
+export { fingerprintBytes };
