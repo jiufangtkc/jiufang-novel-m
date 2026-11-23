@@ -32,7 +32,11 @@ import { canPickLocalFiles, pickExistingDatabase, pickSaveFile } from '../db/bro
 import { createBrowserTargetStore } from '../db/browserTargetStore';
 import type { DiskFile } from '../db/fileTarget';
 import { currentSchemaVersion } from '../db/migrations';
-import { recallOpenFile, rememberOpenFile } from '../db/openFileMemory';
+import {
+  recallOpenFile,
+  rememberOpenFile,
+  rememberOpenFileFingerprint,
+} from '../db/openFileMemory';
 import {
   currentShareGeneration,
   dismissRenameSavePrompt,
@@ -64,9 +68,12 @@ import {
   NEW_NOVEL_VOLUME_TITLE,
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
+  SAVE_AND_STASH_FAIL,
+  SAVE_CONFLICT_TOAST,
   SAVE_FATAL_FAIL,
   SAVE_PERMISSION_DENIED,
   SAVE_PICKER_ABORTED_TOAST,
+  STASH_AUTO_FAILED_TOAST,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
   TOAST_NEW_BOOK,
@@ -130,11 +137,13 @@ import { assertTransferDataWritable, TransferDataError, type TransferRead } from
 import {
   bindLeaveFlush,
   clearLiveDraft,
+  flushLiveDraftNow,
   flushOpenDraft,
   isLiveDraftComposing,
   loadLiveDraft,
   notePersistedDraft,
   readLiveDraftFromEditor,
+  type LiveDraft,
 } from '../editor/liveDraft';
 import {
   AUTOSAVE_INTERVAL_MS,
@@ -167,6 +176,7 @@ import { isBuiltinSampleBook } from '../domain/builtinSampleBook';
 import { navMemoryKey, readNavMemory } from './navMemory';
 import { dropUntouchedSamples } from './sampleCleanup';
 import { bookArchive, type ArchiveClient } from '../db/chapterArchive';
+import type { TimelineChapterLink } from '../domain/chapterVersions';
 import {
   archiveCardDeletion,
   archiveCardRestore,
@@ -231,6 +241,9 @@ export function toastDurationMs(message: string): number {
   if (message === OPEN_DB_FAIL) return TOAST_OPEN_FAIL_MS;
   if (message === SAVE_PICKER_ABORTED_TOAST) return TOAST_OPEN_FAIL_MS;
   if (message === AUTOSAVE_FAILED_TOAST) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_CONFLICT_TOAST) return TOAST_OPEN_FAIL_MS;
+  if (message === STASH_AUTO_FAILED_TOAST) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_AND_STASH_FAIL) return TOAST_OPEN_FAIL_MS;
   return TOAST_DEFAULT_MS;
 }
 
@@ -313,7 +326,12 @@ export type Action =
   | { type: 'set-hour'; hour: number }
   | { type: 'set-book-goal'; projectId: string; bookGoal: number }
   | { type: 'add-scene'; projectId: string; chapterId: string; sceneId: string }
-  | { type: 'set-nodes'; projectId: string; nodes: DemoProject['nodes'] }
+  | {
+      type: 'set-nodes';
+      projectId: string;
+      nodes: DemoProject['nodes'];
+      restoreTimelineLinks?: ReadonlyArray<TimelineChapterLink>;
+    }
   | { type: 'focus-project'; id: string }
   | {
       type: 'attach-file';
@@ -1540,6 +1558,7 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         ...next,
         projects,
         fileExtras: extras,
+        formatUndo: state.formatUndo?.projectId === action.projectId ? null : state.formatUndo,
       };
       return withContentRevision(withCommit, action.projectId);
     }
@@ -1811,26 +1830,46 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         })),
       };
       // WO-128：刪章或刪卷（連帶刪掉卷下所有子章）時，把連到已不存在章節的事件 chapterId 改為 null（事件本身不刪）。
+      // WO-132 嚴-5：復原被刪章節／卷時，若事件目前尚未改連他章（chapterId 為空）且目標章節已存在，自動連回原章。
       const aliveChapterIds = collectAliveChapterIds(action.nodes);
+      const restoreByCardId = new Map<string, string>();
+      if (action.restoreTimelineLinks) {
+        for (const link of action.restoreTimelineLinks) {
+          if (aliveChapterIds.has(link.chapterId)) {
+            restoreByCardId.set(link.cardId, link.chapterId);
+          }
+        }
+      }
       const currentCards = getProjectCards(nextWithNodes, action.projectId);
-      let unlinked = false;
-      const cleanedCards = currentCards.map((card) => {
+      let cardsChanged = false;
+      const updatedCards = currentCards.map((card) => {
         if (
           card.chapterId !== undefined &&
           card.chapterId !== null &&
           card.chapterId !== '' &&
           !aliveChapterIds.has(card.chapterId)
         ) {
-          unlinked = true;
+          cardsChanged = true;
           return {
             ...card,
             chapterId: null,
           };
         }
+        if (
+          card.category === CATEGORY_TIMELINE &&
+          (card.chapterId === undefined || card.chapterId === null || card.chapterId === '') &&
+          restoreByCardId.has(card.id)
+        ) {
+          cardsChanged = true;
+          return {
+            ...card,
+            chapterId: restoreByCardId.get(card.id)!,
+          };
+        }
         return card;
       });
-      if (!unlinked) return nextWithNodes;
-      return applyProjectCards(nextWithNodes, action.projectId, () => cleanedCards);
+      if (!cardsChanged) return nextWithNodes;
+      return applyProjectCards(nextWithNodes, action.projectId, () => updatedCards);
     }
     case 'add-scene': {
       const project = state.projects.find((item) => item.id === action.projectId);
@@ -1881,7 +1920,11 @@ interface SampleActions {
   setHour: (hour: number) => void;
   setBookGoal: (projectId: string, bookGoal: number) => void;
   addScene: (projectId: string, chapterId: string) => void;
-  setNodes: (projectId: string, nodes: DemoProject['nodes']) => void;
+  setNodes: (
+    projectId: string,
+    nodes: DemoProject['nodes'],
+    options?: { restoreTimelineLinks?: ReadonlyArray<TimelineChapterLink> },
+  ) => void;
   setCards: (projectId: string, cards: FileCard[]) => void;
   updateCard: (projectId: string, cardId: string, patch: UpdateCardPatch) => void;
   setCardCategories: (
@@ -1969,6 +2012,7 @@ interface SampleContextValue {
   bookWords: (projectId: string) => number;
   autoSaveStatusOf: (projectId: string) => AutoSaveStatus;
   lastSaveWasAutoOf: (projectId: string) => boolean;
+  stashFailedOf?: (projectId: string) => boolean;
   /**
    * WO-110：這台裝置的資料（含非同步回復的手機暫存稿）是否已經載入完成。
    * 首次歡迎導覽要等它為 true 才判斷是不是全新裝置，不可趁還沒載完就當作全新。
@@ -2088,6 +2132,59 @@ export function applySaveOutcome(
 }
 
 /**
+ * WO-132 嚴-1：存檔或暫存前，若編輯框有非組字中且尚未送出的正文變更，
+ * 同步透過 reducer 送出 commit-text，確保快照與當日字數紀錄皆包含最後一段。
+ */
+export function withLiveDraftCommitted(
+  state: SampleState,
+  projectId: string,
+  live: Omit<LiveDraft, 'at'> | null,
+  isComposing: boolean,
+): { state: SampleState; project: DemoProject; action: Extract<Action, { type: 'commit-text' }> | null } {
+  const project = state.projects.find((item) => item.id === projectId)!;
+  if (isComposing || !live || live.projectId !== projectId || !project) {
+    return { state, project, action: null };
+  }
+  const node = findNode(project.nodes, live.chapterId);
+  if (!node || (node.content ?? '') === live.text) {
+    return { state, project, action: null };
+  }
+  const action: Extract<Action, { type: 'commit-text' }> = {
+    type: 'commit-text',
+    projectId,
+    nodeId: live.chapterId,
+    text: live.text,
+  };
+  const nextState = reduce(state, action);
+  if (nextState === state) return { state, project, action: null };
+  const nextProject = nextState.projects.find((item) => item.id === projectId) ?? project;
+  return { state: nextState, project: nextProject, action };
+}
+
+function commitLiveDraft(
+  state: SampleState,
+  projectId: string,
+  dispatch: (action: Action) => void,
+): { state: SampleState; project: DemoProject; committed: boolean } {
+  flushLiveDraftNow();
+  const result = withLiveDraftCommitted(state, projectId, readLiveDraftFromEditor(), isLiveDraftComposing());
+  if (result.action) dispatch(result.action);
+  return { state: result.state, project: result.project, committed: Boolean(result.action) };
+}
+
+function rememberLoadedTarget(
+  bookKey: string,
+  target: { file: DiskFile | null; lastKnownFingerprint?: string | null } | null | undefined,
+): DiskFile | null {
+  const file = target?.file ?? null;
+  rememberOpenFile(bookKey, file);
+  if (file && target?.lastKnownFingerprint !== undefined) {
+    rememberOpenFileFingerprint(bookKey, file, target.lastKnownFingerprint);
+  }
+  return file;
+}
+
+/**
  * 另存專案的主體（actions.saveProjectAs 呼叫）。
  * WO-98 返工 1：交出去之前只備好內容，不存本機副本、不升格稿子；
  * 取消或沒有成功交付時，稿子與本機儲存都維持點擊前原樣。
@@ -2100,23 +2197,38 @@ export async function runSaveProjectAs(input: {
   env: SaveEnvironment;
   preparedBytes: Uint8Array | null;
   snapshot?: typeof snapshotManuscript;
-}): Promise<{ snap: { key: string; bytes: Uint8Array }; bytes: Uint8Array; outcome: SaveOutcome }> {
+}): Promise<{
+  snap: { key: string; bytes: Uint8Array };
+  bytes: Uint8Array;
+  outcome: SaveOutcome;
+  revAtStart: number;
+  rememberedFile: DiskFile | null;
+}> {
   const { state, project, dispatch, env } = input;
   const snapshot = input.snapshot ?? snapshotManuscript;
-  const snap = await snapshot(state, project, false);
-  const bytes = shareBytesForSaveAs({ prepared: input.preparedBytes, latest: snap.bytes });
-  const outcome = await saveProjectAsNew(env, snap.key, bytes, exportDbFilename(project.title));
+  const { state: committedState, project: committedProject, committed } = commitLiveDraft(state, project.id, dispatch);
+  const revAtStart = committedState.contentRevById?.[project.id] ?? 0;
+  const snap = await snapshot(committedState, committedProject, false);
+  const bytes = shareBytesForSaveAs({ prepared: committed ? null : input.preparedBytes, latest: snap.bytes });
+  const outcome = await saveProjectAsNew(env, snap.key, bytes, exportDbFilename(committedProject.title));
   if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
-    await snapshot(state, project, true);
+    await snapshot(committedState, committedProject, true);
     dispatch({
       type: 'promote-stored',
       projectId: project.id,
       key: snap.key,
-      filename: projectSaveFilename(project.title, project.filename),
+      filename: projectSaveFilename(committedProject.title, committedProject.filename),
     });
   }
+  let rememberedFile: DiskFile | null = null;
+  if (outcome.kind === 'saved-as') {
+    const target = await env.targets.load(snap.key).catch(() => null);
+    if (target?.file) {
+      rememberedFile = rememberLoadedTarget(snap.key, target);
+    }
+  }
   applySaveOutcome(dispatch, project.id, outcome, 'save-as');
-  return { snap, bytes, outcome };
+  return { snap, bytes, outcome, revAtStart, rememberedFile };
 }
 
 export type TextImportOutcome =
@@ -2714,6 +2826,7 @@ export interface BackgroundAutoSaveDeps {
   onSaved: (projectId: string) => void;
   onNeedsPermission: (projectId: string, permission: 'prompt' | 'denied') => void;
   onFailed: (projectId: string, showToast: boolean) => void;
+  onConflict?: (projectId: string) => void;
   onNoHandle: (projectId: string) => void;
   snapshot?: typeof snapshotManuscript;
   store?: KeyValueStore | null;
@@ -2780,6 +2893,9 @@ export async function executeBackgroundAutoSave(
           const linkedExports = await linkExportEventsToBytes(store, projectId, snap.bytes).catch(() => null);
           if (linkedExports) deps.dispatch({ type: 'set-export-events', exportEvents: linkedExports });
         }
+      } else if (outcome.kind === 'external-conflict') {
+        deps.onConflict?.(projectId);
+        deps.dispatch({ type: 'toast', message: SAVE_CONFLICT_TOAST });
       } else if (outcome.kind === 'needs-permission') {
         deps.onNeedsPermission(projectId, outcome.permission);
       } else if (outcome.kind === 'write-failed' || outcome.kind === 'invalid-database') {
@@ -2832,8 +2948,7 @@ export async function runResumeAutoSave(input: {
   let file = recallOpenFile(key);
   if (file === undefined) {
     const target = await env.targets.load(key).catch(() => null);
-    file = target?.file ?? null;
-    rememberOpenFile(key, file);
+    file = rememberLoadedTarget(key, target);
   }
   if (!file) {
     input.onPermissionChange(project.id, 'none');
@@ -2874,6 +2989,9 @@ export async function runManualSaveProject(input: {
   inflight: { current: { kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null };
   lastSavedRevById: Record<string, number>;
   onSaved: (projectId: string) => void;
+  onConflict?: (projectId: string) => void;
+  onStashFailed?: (projectId: string) => void;
+  isStashFailed?: (projectId: string) => boolean;
   snapshot?: typeof snapshotManuscript;
   store?: KeyValueStore | null;
 }): Promise<SaveOutcome | null> {
@@ -2899,9 +3017,10 @@ export async function runManualSaveProject(input: {
     hasExternalFile: Boolean(project.hasExternalFile),
   });
   const plan = needsNewName ? 'pick-new-name' : pickFirst ? 'pick-first-save' : 'write-back';
-  const revAtStart = latestState.contentRevById?.[project.id] ?? 0;
+  let revAtStart = latestState.contentRevById?.[project.id] ?? 0;
   const snapFn = input.snapshot ?? snapshotManuscript;
   let builtBytes: Uint8Array | null = null;
+  let stashStepFailed = false;
   const runManual = async (): Promise<SaveOutcome | null> => {
     try {
       const outcome = await saveProjectFromClick({
@@ -2914,8 +3033,16 @@ export async function runManualSaveProject(input: {
         onRemember: (file) => rememberOpenFile(key, file),
         buildBytes: async () => {
           const snapState = input.getState();
-          const snapProject = snapState.projects.find((item) => item.id === project.id) ?? project;
-          const snap = await snapFn(snapState, snapProject, true);
+          const { state: committedState, project: snapProject } = commitLiveDraft(snapState, project.id, dispatch);
+          revAtStart = committedState.contentRevById?.[project.id] ?? revAtStart;
+          let snap: { key: string; bytes: Uint8Array };
+          try {
+            snap = await snapFn(committedState, snapProject, true);
+          } catch (error) {
+            stashStepFailed = true;
+            input.onStashFailed?.(project.id);
+            throw error;
+          }
           dispatch({
             type: 'promote-stored',
             projectId: project.id,
@@ -2926,7 +3053,18 @@ export async function runManualSaveProject(input: {
           return snap.bytes;
         },
       });
-      applySaveOutcome(dispatch, project.id, outcome, 'save');
+      const localStashBroken = stashStepFailed || Boolean(input.isStashFailed?.(project.id));
+      if (
+        localStashBroken &&
+        (outcome.kind === 'invalid-database' || outcome.kind === 'write-failed')
+      ) {
+        dispatch({ type: 'toast', message: SAVE_AND_STASH_FAIL });
+      } else {
+        applySaveOutcome(dispatch, project.id, outcome, 'save');
+      }
+      if (outcome.kind === 'external-conflict') {
+        input.onConflict?.(project.id);
+      }
       const saved = outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title';
       const store = input.store === undefined ? deviceStore() : input.store;
       if (saved && store && builtBytes) {
@@ -2938,7 +3076,7 @@ export async function runManualSaveProject(input: {
       }
       if (saved && recallOpenFile(key) == null) {
         const target = await env.targets.load(key).catch(() => null);
-        if (target?.file) rememberOpenFile(key, target.file);
+        if (target?.file) rememberLoadedTarget(key, target);
       }
       if (saved) {
         const latestRev = input.getState().contentRevById?.[project.id] ?? 0;
@@ -2953,7 +3091,7 @@ export async function runManualSaveProject(input: {
       }
       return outcome;
     } catch {
-      dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
+      dispatch({ type: 'toast', message: stashStepFailed ? SAVE_AND_STASH_FAIL : SAVE_FATAL_FAIL });
       return null;
     }
   };
@@ -2966,6 +3104,85 @@ export async function runManualSaveProject(input: {
     if (input.inflight.current === entry) {
       input.inflight.current = null;
     }
+  }
+}
+
+async function refreshLoadedTargetPerm(
+  bookKey: string,
+  target: { file: DiskFile | null; lastKnownFingerprint?: string | null } | null,
+  canPick: boolean,
+): Promise<HandlePermissionState> {
+  if (recallOpenFile(bookKey) === undefined) {
+    rememberLoadedTarget(bookKey, target);
+  }
+  const file = recallOpenFile(bookKey) ?? target?.file ?? null;
+  if (!file || !canPick) return 'none';
+  try {
+    return await file.queryPermission();
+  } catch {
+    return 'none';
+  }
+}
+
+export function persistLocalAutoStash(input: {
+  store: KeyValueStore;
+  projects: readonly DemoProject[];
+  activeProjectId: string | null;
+  dispatch: (action: Action) => void;
+  onStashResult: (projectId: string, ok: boolean, showToastOnFirstFail: boolean) => void;
+  nowMs?: number;
+}): boolean {
+  const active = input.projects.find((project) => project.id === input.activeProjectId);
+  try {
+    saveProjects(
+      input.store,
+      input.projects.filter((project) => project.origin !== 'file' && !isBookRemoved(project.id)),
+    );
+    if (active && active.origin !== 'file') {
+      input.dispatch({ type: 'record-auto-save', projectId: active.id, atMs: input.nowMs ?? Date.now() });
+      input.onStashResult(active.id, true, false);
+    }
+    return true;
+  } catch {
+    if (active && active.origin !== 'file') {
+      input.onStashResult(active.id, false, true);
+    }
+    return false;
+  }
+}
+
+export async function persistFileBookStash(input: {
+  state: SampleState;
+  project: DemoProject;
+  extra: FileExtras;
+  dispatch: (action: Action) => void;
+  onStashResult: (projectId: string, ok: boolean, showToastOnFirstFail: boolean) => void;
+  saveBytes?: typeof saveBookBytes;
+  nowMs?: number;
+}): Promise<boolean> {
+  const { state, project, extra } = input;
+  if (!project.dbKey) return false;
+  const save = input.saveBytes ?? saveBookBytes;
+  try {
+    await save(
+      project.dbKey,
+      localDbFilename(project.title, project.filename),
+      project.title,
+      buildFileProjectInfo(state, project),
+      project.nodes,
+      extra.cards,
+      extra.logs,
+      bookkeepingOf(project),
+      true,
+      projectImportEventsOf(state, project.id),
+      projectExportEventsOf(state, project.id),
+    );
+    input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
+    input.onStashResult(project.id, true, false);
+    return true;
+  } catch {
+    input.onStashResult(project.id, false, true);
+    return false;
   }
 }
 
@@ -3002,6 +3219,28 @@ export function SampleProvider({
   const [autoSaveFailedById, setAutoSaveFailedById] = useState<Record<string, boolean>>({});
   const autoSaveFailedRef = useRef(autoSaveFailedById);
   autoSaveFailedRef.current = autoSaveFailedById;
+  const [autoSaveConflictById, setAutoSaveConflictById] = useState<Record<string, boolean>>({});
+  const autoSaveConflictRef = useRef(autoSaveConflictById);
+  autoSaveConflictRef.current = autoSaveConflictById;
+  const [stashFailedById, setStashFailedById] = useState<Record<string, boolean>>({});
+  const stashFailedRef = useRef(stashFailedById);
+  stashFailedRef.current = stashFailedById;
+
+  const markStashResult = useCallback((projectId: string, ok: boolean, showToastOnFirstFail: boolean) => {
+    if (ok) {
+      if (stashFailedRef.current[projectId]) {
+        stashFailedRef.current = { ...stashFailedRef.current, [projectId]: false };
+        setStashFailedById((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
+      }
+      return;
+    }
+    const wasFailed = Boolean(stashFailedRef.current[projectId]);
+    stashFailedRef.current = { ...stashFailedRef.current, [projectId]: true };
+    setStashFailedById((prev) => (prev[projectId] ? prev : { ...prev, [projectId]: true }));
+    if (showToastOnFirstFail && !wasFailed) {
+      dispatch({ type: 'toast', message: STASH_AUTO_FAILED_TOAST });
+    }
+  }, []);
   const [lastSaveWasAutoById, setLastSaveWasAutoById] = useState<Record<string, boolean>>({});
   const lastSavedRevByIdRef = useRef<Record<string, number>>({});
   const fileSaveInflightRef = useRef<{ kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null>(null);
@@ -3018,8 +3257,7 @@ export function SampleProvider({
       if (file === undefined) {
         try {
           const target = await env.targets.load(key);
-          file = target?.file ?? null;
-          rememberOpenFile(key, file);
+          file = rememberLoadedTarget(key, target);
         } catch {
           file = null;
         }
@@ -3061,6 +3299,7 @@ export function SampleProvider({
         needsNewName,
         permission: overridePerm ?? handlePermRef.current[project.id] ?? 'none',
         lastAutoSaveFailed: Boolean(autoSaveFailedRef.current[project.id]),
+        hasExternalConflict: Boolean(autoSaveConflictRef.current[project.id]),
       });
     },
     [],
@@ -3080,6 +3319,8 @@ export function SampleProvider({
         onSaved: (id) => {
           autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [id]: false };
           setAutoSaveFailedById((prev) => (prev[id] ? { ...prev, [id]: false } : prev));
+          autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [id]: false };
+          setAutoSaveConflictById((prev) => (prev[id] ? { ...prev, [id]: false } : prev));
           setLastSaveWasAutoById((prev) => ({ ...prev, [id]: true }));
         },
         onNeedsPermission: (id, permission) => {
@@ -3087,6 +3328,10 @@ export function SampleProvider({
         },
         onFailed: (id) => {
           setAutoSaveFailedById((prev) => ({ ...prev, [id]: true }));
+        },
+        onConflict: (id) => {
+          autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [id]: true };
+          setAutoSaveConflictById((prev) => ({ ...prev, [id]: true }));
         },
         onNoHandle: (id) => {
           setHandlePermById((prev) => ({ ...prev, [id]: 'none' }));
@@ -3097,19 +3342,14 @@ export function SampleProvider({
 
   useEffect(() => {
     if (typeof localStorage === 'undefined') return;
-    try {
-      saveProjects(
-        localStorage,
-        state.projects.filter((project) => project.origin !== 'file' && !isBookRemoved(project.id)),
-      );
-      const active = state.projects.find((project) => project.id === state.activeProjectId);
-      if (active && active.origin !== 'file') {
-        dispatch({ type: 'record-auto-save', projectId: active.id, atMs: Date.now() });
-      }
-    } catch {
-      // 私人瀏覽可能不准寫入，畫面仍可繼續用。
-    }
-  }, [state.projects, state.activeProjectId]);
+    persistLocalAutoStash({
+      store: localStorage,
+      projects: state.projects,
+      activeProjectId: state.activeProjectId,
+      dispatch,
+      onStashResult: markStashResult,
+    });
+  }, [state.projects, state.activeProjectId, markStashResult]);
 
   // WO-77：暫存／另存時間與新稿子的寫作紀錄跟著留在這台裝置，重新整理後還在。
   useEffect(() => {
@@ -3157,17 +3397,8 @@ export function SampleProvider({
         for (const book of books.filter((item) => !isBookRemoved(item.key))) {
           void getSaveEnv()
             .targets.load(book.key)
-            .then(async (target) => {
-              if (recallOpenFile(book.key) === undefined) rememberOpenFile(book.key, target?.file ?? null);
-              const file = recallOpenFile(book.key) ?? target?.file ?? null;
-              let perm: HandlePermissionState = 'none';
-              if (file && getSaveEnv().canPickFiles) {
-                try {
-                  perm = await file.queryPermission();
-                } catch {
-                  perm = 'none';
-                }
-              }
+            .then((target) => refreshLoadedTargetPerm(book.key, target, getSaveEnv().canPickFiles))
+            .then((perm) => {
               if (!cancelled) {
                 setHandlePermById((prev) => (prev[book.key] === perm ? prev : { ...prev, [book.key]: perm }));
               }
@@ -3190,27 +3421,19 @@ export function SampleProvider({
     const extra = state.fileExtras[project.dbKey];
     if (!extra) return;
     const save = () =>
-      saveBookBytes(
-        project.dbKey!,
-        localDbFilename(project.title, project.filename),
-        project.title,
-        buildFileProjectInfo(state, project),
-        project.nodes,
-        extra.cards,
-        extra.logs,
-        bookkeepingOf(project),
-        true,
-        projectImportEventsOf(state, project.id),
-        projectExportEventsOf(state, project.id),
-      ).then(() => {
-        dispatch({ type: 'record-auto-save', projectId: project.id, atMs: Date.now() });
+      persistFileBookStash({
+        state,
+        project,
+        extra,
+        dispatch,
+        onStashResult: markStashResult,
       });
     const timer = window.setTimeout(() => void save(), 250);
     return () => {
       window.clearTimeout(timer);
       void save();
     };
-  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents, state.exportEvents]);
+  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents, state.exportEvents, markStashResult]);
 
   useEffect(() => {
     const flush = () => {
@@ -3351,7 +3574,13 @@ export function SampleProvider({
       setBookGoal: (projectId, bookGoal) => dispatch({ type: 'set-book-goal', projectId, bookGoal }),
       addScene: (projectId, chapterId) =>
         dispatch({ type: 'add-scene', projectId, chapterId, sceneId: `sc-${Date.now()}` }),
-      setNodes: (projectId, nodes) => dispatch({ type: 'set-nodes', projectId, nodes }),
+      setNodes: (projectId, nodes, options) =>
+        dispatch({
+          type: 'set-nodes',
+          projectId,
+          nodes,
+          restoreTimelineLinks: options?.restoreTimelineLinks,
+        }),
       setCards: (projectId, cards) => dispatch({ type: 'set-cards', projectId, cards }),
       updateCard: (projectId, cardId, patch) =>
         dispatch({ type: 'update-card', projectId, cardId, patch }),
@@ -3402,8 +3631,15 @@ export function SampleProvider({
         if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
         const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
         if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
-        await getSaveEnv().targets.save(book.key, { filename: book.filename, file: diskFile ?? null });
+        await getSaveEnv().targets.save(book.key, {
+          filename: book.filename,
+          file: diskFile ?? null,
+          lastKnownFingerprint: rawFingerprint,
+        });
         rememberOpenFile(book.key, diskFile ?? null);
+        rememberOpenFileFingerprint(book.key, diskFile ?? null, rawFingerprint);
+        autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [book.key]: false };
+        setAutoSaveConflictById((prev) => (prev[book.key] ? { ...prev, [book.key]: false } : prev));
         dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
         // WO-77：開回的正是這台裝置另存出去的那份檔，「上次另存」沿用當時時間。
         if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
@@ -3428,8 +3664,15 @@ export function SampleProvider({
         if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
         const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
         if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
-        await getSaveEnv().targets.save(book.key, { filename: book.filename, file: picked.file });
+        await getSaveEnv().targets.save(book.key, {
+          filename: book.filename,
+          file: picked.file,
+          lastKnownFingerprint: rawFingerprint,
+        });
         rememberOpenFile(book.key, picked.file);
+        rememberOpenFileFingerprint(book.key, picked.file, rawFingerprint);
+        autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [book.key]: false };
+        setAutoSaveConflictById((prev) => (prev[book.key] ? { ...prev, [book.key]: false } : prev));
         dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
         if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
         return {
@@ -3479,19 +3722,23 @@ export function SampleProvider({
           isCancelled: options?.isCancelled,
         }),
       stashDraft: async () => {
-        const project = state.projects.find((item) => item.id === state.activeProjectId);
+        const latestState = stateRef.current;
+        const project = latestState.projects.find((item) => item.id === latestState.activeProjectId);
         if (!project) return;
         try {
-          const { key } = await snapshotManuscript(state, project);
+          const { state: committedState, project: committedProject } = commitLiveDraft(latestState, project.id, dispatch);
+          const { key } = await snapshotManuscript(committedState, committedProject);
           dispatch({
             type: 'promote-stored',
             projectId: project.id,
             key,
-            filename: projectSaveFilename(project.title, project.filename),
+            filename: projectSaveFilename(committedProject.title, committedProject.filename),
           });
           dispatch({ type: 'record-manual-save', projectId: project.id, atMs: Date.now() });
+          markStashResult(project.id, true, false);
           dispatch({ type: 'toast', message: '已暫存' });
         } catch {
+          markStashResult(project.id, false, false);
           dispatch({ type: 'toast', message: STASH_FAIL });
         }
       },
@@ -3548,10 +3795,21 @@ export function SampleProvider({
           onSaved: (projectId) => {
             autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [projectId]: false };
             setAutoSaveFailedById((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
+            autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [projectId]: false };
+            setAutoSaveConflictById((prev) => (prev[projectId] ? { ...prev, [projectId]: false } : prev));
+            markStashResult(projectId, true, false);
             setLastSaveWasAutoById((prev) => ({ ...prev, [projectId]: false }));
             handlePermRef.current = { ...handlePermRef.current, [projectId]: 'granted' };
             setHandlePermById((prev) => ({ ...prev, [projectId]: 'granted' }));
           },
+          onConflict: (projectId) => {
+            autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [projectId]: true };
+            setAutoSaveConflictById((prev) => ({ ...prev, [projectId]: true }));
+          },
+          onStashFailed: (projectId) => {
+            markStashResult(projectId, false, false);
+          },
+          isStashFailed: (projectId) => Boolean(stashFailedRef.current[projectId]),
         }),
       saveProjectAs: async () => {
         if (fileSaveInflightRef.current) {
@@ -3563,10 +3821,9 @@ export function SampleProvider({
         const env = getSaveEnv();
         const prepared = peekPreparedShare(project.id);
         dismissRenameSavePrompt(project.id);
-        const revAtStart = latestState.contentRevById?.[project.id] ?? 0;
         const runManualAs = async (): Promise<SaveOutcome | null> => {
           try {
-            const { snap, bytes, outcome } = await runSaveProjectAs({
+            const { bytes, outcome, revAtStart, rememberedFile } = await runSaveProjectAs({
               state: latestState,
               project,
               dispatch,
@@ -3581,13 +3838,9 @@ export function SampleProvider({
               const linkedExports = await linkExportEventsToBytes(store, project.id, bytes).catch(() => null);
               if (linkedExports) dispatch({ type: 'set-export-events', exportEvents: linkedExports });
             }
-            if (outcome.kind === 'saved-as') {
-              const target = await env.targets.load(snap.key).catch(() => null);
-              if (target?.file) {
-                rememberOpenFile(snap.key, target.file);
-                handlePermRef.current = { ...handlePermRef.current, [project.id]: 'granted' };
-                setHandlePermById((prev) => ({ ...prev, [project.id]: 'granted' }));
-              }
+            if (outcome.kind === 'saved-as' && rememberedFile) {
+              handlePermRef.current = { ...handlePermRef.current, [project.id]: 'granted' };
+              setHandlePermById((prev) => ({ ...prev, [project.id]: 'granted' }));
             }
             if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
               const latestRev = stateRef.current.contentRevById?.[project.id] ?? 0;
@@ -3600,11 +3853,17 @@ export function SampleProvider({
               });
               autoSaveFailedRef.current = { ...autoSaveFailedRef.current, [project.id]: false };
               setAutoSaveFailedById((prev) => (prev[project.id] ? { ...prev, [project.id]: false } : prev));
+              autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [project.id]: false };
+              setAutoSaveConflictById((prev) => (prev[project.id] ? { ...prev, [project.id]: false } : prev));
+              markStashResult(project.id, true, false);
               setLastSaveWasAutoById((prev) => ({ ...prev, [project.id]: false }));
             }
             return outcome;
           } catch {
-            dispatch({ type: 'toast', message: SAVE_FATAL_FAIL });
+            dispatch({
+              type: 'toast',
+              message: stashFailedRef.current[project.id] ? SAVE_AND_STASH_FAIL : SAVE_FATAL_FAIL,
+            });
             return null;
           }
         };
@@ -3686,9 +3945,15 @@ export function SampleProvider({
         needsNewName,
         permission: handlePermById[project.id] ?? 'none',
         lastAutoSaveFailed: Boolean(autoSaveFailedById[project.id]),
+        hasExternalConflict: Boolean(autoSaveConflictById[project.id]),
       });
     },
-    [state.projects, state.saveMeta, canPickFiles, handlePermById, autoSaveFailedById],
+    [state.projects, state.saveMeta, canPickFiles, handlePermById, autoSaveFailedById, autoSaveConflictById],
+  );
+
+  const stashFailedOf = useCallback(
+    (projectId: string) => Boolean(stashFailedById[projectId]),
+    [stashFailedById],
   );
 
   const value = useMemo(
@@ -3701,6 +3966,7 @@ export function SampleProvider({
       bookWords,
       autoSaveStatusOf: autoSaveStatusForContext,
       lastSaveWasAutoOf,
+      stashFailedOf,
       deviceLoaded,
     }),
     [
@@ -3712,6 +3978,7 @@ export function SampleProvider({
       bookWords,
       autoSaveStatusForContext,
       lastSaveWasAutoOf,
+      stashFailedOf,
       deviceLoaded,
     ],
   );
