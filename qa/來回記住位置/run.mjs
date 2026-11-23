@@ -412,7 +412,7 @@ async function runLayout(L) {
     const childShown = await page.locator('[data-testid^="card-row-"]', { hasText: '測試卡01的子卡片' }).count();
     rec(L, '2-5', '回資料集：子卡片展開狀態相同（仍收合）', collapsed.includes('展開') && childShown === 0, `${collapsed}；子卡片列 ${childShown}`);
     const memRaw = await readStorage(page, `${NAV_PREFIX}${bookA}`);
-    rec(L, '2-6', '記憶存在這台裝置的 localStorage（每本書一個鍵、有版本號）', !!memRaw && JSON.parse(memRaw).version === 1, `${NAV_PREFIX}${bookA}`);
+    rec(L, '2-6', '記憶存在這個裝置的 localStorage（每本書一個鍵、有版本號）', !!memRaw && JSON.parse(memRaw).version === 1, `${NAV_PREFIX}${bookA}`);
 
     // 返工 1：同一分類連續開卡片、按「返回」兩次，清單都回到原位置（清單每次重新建立）
     if (portraitLike) {
