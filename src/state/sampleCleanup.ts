@@ -22,14 +22,14 @@ import type { DeviceSaveRecord } from './deviceSaveRecord';
  * 另外以下情況也保留：
  * - 本機有這份稿子尚未併回的正文草稿（live draft），不論草稿內容是否和範例相同。
  * - 位置記憶裡有這份稿子尚未完成的卡片草稿。
- * - 這台裝置的存檔紀錄顯示曾經暫存、另存或存回檔案，或存有這份稿子自己的每日目標或寫作紀錄。
+ * - 這個裝置的存檔紀錄顯示曾經暫存、另存或存回檔案，或存有這份稿子自己的每日目標或寫作紀錄。
  */
 export interface SampleCleanupContext {
   /** 本機尚未併回的正文草稿；沒有就是 null。 */
   liveDraft: LiveDraft | null;
   /** 這份稿子在位置記憶裡有沒有尚未完成的卡片草稿。 */
   hasCardDrafts: (projectId: string) => boolean;
-  /** 這台裝置的存檔紀錄。 */
+  /** 這個裝置的存檔紀錄。 */
   record: Pick<DeviceSaveRecord, 'saveMeta' | 'goalById' | 'logsById'>;
 }
 
