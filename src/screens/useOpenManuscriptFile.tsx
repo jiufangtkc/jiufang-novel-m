@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactElement } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { OPEN_DB_FAIL } from '../copy/userFacing';
+import { openFileErrorMessage } from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { writePath } from '../domain/openManuscript';
 import { dispatchOpen, readBrowserRouteEnv } from '../domain/openFileRoute';
@@ -72,8 +72,8 @@ export function useOpenManuscriptFile(): {
               settle('cancelled');
             }
           })
-          .catch(() => {
-            actions.toast(OPEN_DB_FAIL);
+          .catch((error) => {
+            actions.toast(openFileErrorMessage(error));
             settle('failed');
           })
           .finally(end);
@@ -103,8 +103,8 @@ export function useOpenManuscriptFile(): {
             navigate(writePath(opened.id, opened.chapterId));
             settle('opened');
           })
-          .catch(() => {
-            actions.toast(OPEN_DB_FAIL);
+          .catch((error) => {
+            actions.toast(openFileErrorMessage(error));
             settle('failed');
           })
           .finally(end);

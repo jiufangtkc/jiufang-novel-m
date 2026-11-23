@@ -21,7 +21,7 @@ function browserStore(): Store | null {
   }
 }
 
-/** 還沒寫回稿子的即時草稿也算「這台裝置有資料」。讀不到時當作沒有。 */
+/** 還沒寫回稿子的即時草稿也算「這個裝置有資料」。讀不到時當作沒有。 */
 function hasLiveDraft(store: OnboardingReadStore | null): boolean {
   if (!store) return false;
   try {
