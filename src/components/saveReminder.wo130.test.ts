@@ -152,8 +152,10 @@ describe('WO-130 乙段：頁首存檔標示狀態與四版面 DOM 恆定', () =
         now,
       }),
     );
+    expect(unsavedDesktop).toContain('class="save-header-slot"');
     expect(unsavedDesktop).toContain('data-save-header-kind="unsaved"');
     expect(unsavedDesktop).toContain(`aria-label="${autosaveUnsavedAria(true)}"`);
+    expect(unsavedDesktop).toContain('<svg');
     expect(unsavedDesktop).toContain(`>${AUTOSAVE_UNSAVED_BADGE}</button>`);
 
     const unsavedMobile = renderToStaticMarkup(
@@ -242,7 +244,9 @@ describe('WO-130 乙段：頁首存檔標示狀態與四版面 DOM 恆定', () =
       expect(html).not.toContain('data-testid="stale-save-reminder"');
       expect(html).not.toContain('save-reminder-dialog');
       expect(html).not.toContain('save-reminder-backdrop');
-      expect(html.split('data-testid="save-status"').length - 1).toBe(1);
+      // WO-132 嚴-7：非範例書頁首已顯示外部存檔狀態，底列不再重複渲染第二份 save-status，專注底列亦採同一套說法。
+      expect(html.split('data-testid="save-status"').length - 1).toBe(0);
+      expect(html).not.toContain('今天還沒另存');
     }
     expect(unsavedRenders[0]).toBe(unsavedRenders[1]);
     expect(unsavedRenders[0]).toBe(unsavedRenders[2]);
@@ -284,6 +288,15 @@ describe('WO-130／WO-131 乙段：頁首標示 CSS、清除提醒視窗與繁�
     expect(minW, '.editor .topbar .save-header-action min-width').not.toBeNull();
     expect(Number(minH![1])).toBeGreaterThanOrEqual(44);
     expect(Number(minW![1])).toBeGreaterThanOrEqual(44);
+    expect(rule).not.toContain('flex: 1 0 100%');
+    expect(rule).toContain('width: auto');
+    expect(rule).toContain('border: 0');
+    expect(rule).toContain('background: transparent');
+    expect(rule).toContain('font-size: 12px');
+
+    const landscapeSlot = cssBlock(css, 'html[data-layout="phone-landscape"] .editor .topbar .save-header-slot');
+    expect(landscapeSlot).toContain('order: 2');
+    expect(landscapeSlot).toContain('flex: 0 0 auto');
 
     const stripped = css.replace(/\/\*[\s\S]*?\*\//g, '');
     expect(stripped).not.toContain('.save-reminder-backdrop');
