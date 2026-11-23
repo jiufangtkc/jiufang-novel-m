@@ -470,8 +470,8 @@ export const IMPORT_DEFAULT_CHAPTER_TITLE = '第一章\u3000';
 export const IMPORT_TEXT_UNREADABLE = '這個文字檔讀不出來，請另存成 UTF-8 文字檔後再試一次。';
 /** WO-99：匯入處理中，按鈕下方小字改成這一句。 */
 export const IMPORT_TEXT_WORKING = '正在匯入文字檔，請稍候。';
-/** WO-99：這台裝置存不下新稿子時（不建立稿子、不計次）。 */
-export const IMPORT_TEXT_STORAGE_FAIL = '這台裝置存不下這份稿子，這次沒有匯入。';
+/** WO-99：這個裝置存不下新稿子時（不建立稿子、不計次）。 */
+export const IMPORT_TEXT_STORAGE_FAIL = '這個裝置存不下這份稿子，這次沒有匯入。';
 /** WO-126（暫定，交九方審）：匯入視窗標題。 */
 export const IMPORT_DIALOG_TITLE = IMPORT_TEXT_FILE_BUTTON;
 /** WO-126（暫定，交九方審）：例子欄位標題。 */
@@ -718,7 +718,7 @@ export function autosaveUnsavedAria(canWriteBack: boolean): string {
 export const AUTOSAVE_RESUME_BADGE = '點一下恢復自動存檔';
 export const AUTOSAVE_RESUME_ARIA = '點一下恢復自動存檔，允許後每 5 分鐘自動存回檔案';
 export const AUTOSAVE_FAILED_BADGE = '自動存檔沒成功';
-export const AUTOSAVE_FAILED_ARIA = '自動存檔沒成功，點一下手動存檔';
+export const AUTOSAVE_FAILED_ARIA = '自動存檔沒成功，按了會儲存專案';
 export function autosavedAtLabel(timeText: string): string {
   return `已自動存檔 ${timeText}`;
 }
@@ -726,4 +726,17 @@ export function lastFileSavedLabel(timeText: string): string {
   return `上次存檔 ${timeText}`;
 }
 export const AUTOSAVE_RESUMED_TOAST = '已恢復自動存檔';
-export const AUTOSAVE_FAILED_TOAST = '自動存檔沒成功，稿子還在暫存空間，請手動存一次。';
+export const AUTOSAVE_FAILED_TOAST = '自動存檔沒成功，稿件仍在 APP 暫存空間。請按「儲存專案」';
+
+// WO-132 嚴-4（暫定，待九方審）：暫存失敗標示與提示用字。
+export const STASH_FAILED_BADGE = '暫存沒成功';
+export function stashFailedAria(canWriteBack: boolean): string {
+  return canWriteBack ? '暫存沒成功，點一下儲存專案' : '暫存沒成功，點一下另存專案';
+}
+export const STASH_AUTO_FAILED_TOAST = '剛剛沒能暫存在這個裝置，請按「儲存專案」或「另存專案」保住稿件';
+export const SAVE_AND_STASH_FAIL = '存檔沒成功，也還沒存進這個裝置的暫存空間，請不要關掉頁面並再試一次';
+
+// WO-132 嚴-2（暫定，待九方審）：寫回外部檔前發現檔案已被別處更新的提醒用字。
+export const SAVE_CONFLICT_BADGE = '檔案已被外部更新';
+export const SAVE_CONFLICT_ARIA = '原本的檔案已在別處更新，點一下另存專案';
+export const SAVE_CONFLICT_TOAST = '原本的檔案已在別處更新，已先暫停覆蓋。請改按「另存專案」保留這份稿件';

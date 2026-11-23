@@ -24,7 +24,12 @@ import {
 import { RELEASE_NOTES, findReleaseNote } from '../data/whatsNew';
 import { createMemoryTargetStore, type DiskFile } from '../db/fileTarget';
 import { currentSchemaVersion } from '../db/migrations';
-import { forgetOpenFile, recallOpenFile, rememberOpenFile } from '../db/openFileMemory';
+import {
+  forgetOpenFile,
+  recallOpenFile,
+  rememberOpenFile,
+  rememberOpenFileFingerprint,
+} from '../db/openFileMemory';
 import {
   autoSaveProjectToPlace,
   saveProjectFromClick,
@@ -931,8 +936,8 @@ describe('WO-130 甲段：自動存檔管線、單飛鎖、權限與寫回安全
   });
 });
 
-describe('WO-131：0.4.1 版號與改版說明驗證', () => {
-  it('package.json、package-lock.json、APP_VERSION 皆為 0.4.1，whatsNew 頂端為 0.4.1 且保留 0.4.0、0.3.0', () => {
+describe('WO-132：0.4.2 版號與改版說明驗證', () => {
+  it('package.json、package-lock.json、APP_VERSION 皆為 0.4.2，whatsNew 頂端為 0.4.2 且保留 0.4.1、0.4.0、0.3.0', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
       version: string;
     };
@@ -941,14 +946,21 @@ describe('WO-131：0.4.1 版號與改版說明驗證', () => {
       packages: { '': { version: string } };
     };
     const whatsNewSrc = readFileSync(new URL('../data/whatsNew.ts', import.meta.url), 'utf8');
-    expect(pkg.version).toBe('0.4.1');
-    expect(lock.version).toBe('0.4.1');
-    expect(lock.packages[''].version).toBe('0.4.1');
-    expect(APP_VERSION).toBe('0.4.1');
-    expect(whatsNewSrc).toContain('WO-131（暫定，待九方審）');
+    expect(pkg.version).toBe('0.4.2');
+    expect(lock.version).toBe('0.4.2');
+    expect(lock.packages[''].version).toBe('0.4.2');
+    expect(APP_VERSION).toBe('0.4.2');
+    expect(whatsNewSrc).toContain('WO-132（暫定，待九方審）');
 
-    expect(RELEASE_NOTES[0]?.version).toBe('0.4.1');
+    expect(RELEASE_NOTES[0]?.version).toBe('0.4.2');
     expect(RELEASE_NOTES[0]?.items).toEqual([
+      '寫作頁「還沒存成檔案」改成畫面一角的小標示，存檔狀態也改為只在一處顯示',
+      '排版後一開始打字就會收起「排版好了」提示，按「復原」不會清掉新打的字',
+      '誤刪章節後再復原，時間線事件會一起連回原本的章',
+      '暫存或自動存檔沒成功時，畫面會清楚提醒',
+      '修正在剛打完字立刻按存檔快速鍵、原檔已在別處更新，或瀏覽器暫存異常時可能漏字或覆蓋的問題',
+    ]);
+    expect(findReleaseNote('0.4.1')?.items).toEqual([
       '存檔提醒改成只在畫面角落顯示，不再跳出視窗',
     ]);
     expect(findReleaseNote('0.4.0')?.items).toEqual([
@@ -1217,10 +1229,13 @@ describe('WO-131 返工 1：自動存檔排程心跳與記憶體把手優先', (
     });
 
     const key = 'p-1763697600202';
+    touchedKeys.push(key);
     const { state } = makeBookState(NOW_MS, key, '記憶體把手測試稿');
     const bytes = await manuscriptBytesOn(state, state.projects[0]!, null);
 
     const memHandle = new FakeHandleDisk('記憶體把手.db');
+    // 記憶體把手已帶有本輪快取的指紋狀態（例如舊目標為 null）時，直接沿用而不重複讀 targets.load
+    rememberOpenFileFingerprint(key, memHandle, null);
     const diskHandle = new FakeHandleDisk('磁碟備援把手.db');
     const loadSpy = vi.fn(async () => ({ filename: '磁碟備援把手.db', file: diskHandle }));
     const env: Pick<SaveEnvironment, 'targets' | 'verify'> = {

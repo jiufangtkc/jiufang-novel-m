@@ -103,7 +103,7 @@ import { useBookSearch } from '../components/BookSearchPanelState';
 import { BOOK_SEARCH_TAB_SEARCH, BOOK_SEARCH_TAB_TREE, BOOK_SEARCH_TITLE } from '../copy/bookSearchCopy';
 import { WritingCardsDrawer } from '../components/WritingCardsDrawer';
 import { useLayout } from '../layout';
-import { useProject, useSample } from '../state/sampleStore';
+import { getProjectCards, useProject, useSample } from '../state/sampleStore';
 import { aliveNearId, markWriteChapterOpen, readWritePlace } from '../state/navMemory';
 import { getCardEditSnapshot, subscribeCardEdit } from '../state/writingCardEditSession';
 import { BookTitleButton, InlineBookTitle, useBookRename } from './bookTitleUi';
@@ -129,7 +129,7 @@ export function WriteScreen() {
   const { projectId = '', chapterId } = useParams();
   const navigate = useNavigate();
   const project = useProject(projectId);
-  const { actions } = useSample();
+  const { state, actions } = useSample();
   const { archive, update: updateArchive, archivePersistOk } = useBookArchive(projectId);
   const { mode: layoutMode, sidePanels, closePanel, openPanel, focusMode, pointer, panelOverlay, setHasBody } = useLayout();
   const desktop = useDesktop();
@@ -432,7 +432,9 @@ export function WriteScreen() {
     if (undo.deleted) {
       const deleted = undo.deleted;
       const next = nodesAfterDeleteUndo(current, { snapshot: [], deleted });
-      actions.setNodes(book.id, expandToNode(next, deleted.node.id));
+      actions.setNodes(book.id, expandToNode(next, deleted.node.id), {
+        restoreTimelineLinks: deleted.unlinkedTimelineEvents,
+      });
       updateArchive((archiveNow) => ({ ...archiveNow, deleted: forgetDeleted(archiveNow.deleted, deleted.id) }));
       pendingScroll.current = deleted.node.id;
     } else if (undo.structure) {
@@ -466,7 +468,13 @@ export function WriteScreen() {
       : null;
     const stamped = liveNodes();
     const when = Date.now();
-    const record = deletedFromNode(stamped, id, when, `del-${when}-${id}`);
+    const record = deletedFromNode(
+      stamped,
+      id,
+      when,
+      `del-${when}-${id}`,
+      getProjectCards(state, book.id),
+    );
     if (record) void updateArchive((current) => archiveDeletion(current, record, versionsForNode(record.node, when)), 'delete');
     commit(next, treeDeletedToast(node.title), { deleted: record });
     if (pickedId === id) setPickedId(null);
@@ -524,7 +532,9 @@ export function WriteScreen() {
 
   function recover(record: DeletedRecord, atEnd: boolean) {
     const placed = placeRecovered(book.nodes, record, atEnd);
-    actions.setNodes(book.id, expandToNode(placed, record.node.id));
+    actions.setNodes(book.id, expandToNode(placed, record.node.id), {
+      restoreTimelineLinks: record.unlinkedTimelineEvents,
+    });
     updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, record.id) }));
     setDeletedOpen(false);
     setUndo(null);

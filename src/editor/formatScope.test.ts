@@ -127,8 +127,8 @@ describe('WO-122 快照與復原規劃', () => {
       kind: 'space-paragraphs',
       scope: 'book',
       entries: [
-        { nodeId: 'c1', before: '甲\n乙' },
-        { nodeId: 's1', before: '丁\n戊' },
+        { nodeId: 'c1', before: '甲\n乙', after: '甲\n\n乙' },
+        { nodeId: 's1', before: '丁\n戊', after: '丁\n\n戊' },
       ],
     });
   });
@@ -149,12 +149,24 @@ describe('WO-122 快照與復原規劃', () => {
     expect(planUndo(snapshot, 'p', null)).toEqual({ status: 'invalid' });
   });
 
-  it('章幕都在：回傳可還原的項目（複本，不共用物件）', () => {
+  it('章幕都在且正文未變：回傳可還原的項目（複本，不共用物件）', () => {
+    const nodes = tree();
+    const afterNodes: ChapterNode[] = [
+      {
+        ...nodes[0]!,
+        children: [
+          { ...nodes[0]!.children![0]!, content: '甲\n\n乙', children: [{ ...nodes[0]!.children![0]!.children![0]!, content: '丁\n\n戊' }] },
+        ],
+      },
+    ];
     const snapshot = snapshotOf({ projectId: 'p', kind: 'indent', scope: 'book', changes });
-    const plan = planUndo(snapshot, 'p', tree());
+    const plan = planUndo(snapshot, 'p', afterNodes);
     expect(plan.status).toBe('ok');
     if (plan.status !== 'ok') return;
     expect(plan.entries).toEqual(snapshot.entries);
     expect(plan.entries[0]).not.toBe(snapshot.entries[0]);
+
+    // 任一章幕已有新編輯（或 live 新字）即判定失效，不可覆蓋新字
+    expect(planUndo(snapshot, 'p', afterNodes, { nodeId: 'c1', text: '甲\n\n乙新字' })).toEqual({ status: 'invalid' });
   });
 });

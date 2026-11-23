@@ -33,7 +33,7 @@ function useComputerLayout(): boolean {
 export function FilesScreen() {
   const { projectId = '' } = useParams();
   const project = useProject(projectId);
-  const { state, actions } = useSample();
+  const { state, actions, stashFailedOf } = useSample();
   const navigate = useNavigate();
   // WO-121：「開啟別的稿子」與首頁共用同一段開檔流程（picker／file input／busy／失敗提示）。須在條件 return 之前呼叫。
   const openFile = useOpenManuscriptFile();
@@ -89,6 +89,7 @@ export function FilesScreen() {
               stored: project.origin === 'file' || lastSaveMs != null,
               computer,
               lastSaveMs,
+              stashFailed: stashFailedOf ? stashFailedOf(project.id) : false,
             })}
           </p>
           <p className="files-status-line" data-testid="last-edit-line">

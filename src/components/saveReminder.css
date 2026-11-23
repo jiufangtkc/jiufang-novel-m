@@ -1,24 +1,34 @@
 /*
- * WO-130／WO-131：寫作頁頁首外部存檔標示樣式。
- * 沿用三套主題變數與 color-mix；不使用 --editor、--warning、--hit-size、rgba 或寫死淺色碼。
+ * WO-130／WO-131／WO-132 嚴-7：寫作頁頁首角落外部存檔小標示樣式。
+ * 沿用三套主題變數；不使用 --editor、--warning、--hit-size、rgba( 或 #fff。
  */
 
-.editor .topbar .save-header-action {
+.editor .topbar .save-header-slot {
   order: 99;
   flex: 1 0 100%;
   box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  padding: 0 4px 4px;
+}
+
+.editor .topbar .save-header-action {
+  box-sizing: border-box;
   display: inline-flex;
   align-items: center;
+  gap: 4px;
+  width: auto;
+  flex: 0 0 auto;
   min-width: 44px;
   min-height: 44px;
-  margin-bottom: 4px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  color: var(--text);
+  margin: -10px -4px -8px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.4;
   text-align: left;
   white-space: normal;
@@ -27,14 +37,10 @@
 }
 
 .editor .topbar .save-header-action.is-permission {
-  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
 }
 
 .editor .topbar .save-header-action.is-failed {
-  border-color: color-mix(in srgb, var(--danger) 65%, transparent);
-  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 
@@ -44,13 +50,18 @@
 }
 
 .editor .topbar .save-header-time {
-  order: 99;
-  flex: 1 0 100%;
   box-sizing: border-box;
-  padding: 0 4px 6px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.4;
   white-space: normal;
   overflow-wrap: anywhere;
+}
+
+html[data-layout="phone-landscape"] .editor .topbar .save-header-slot {
+  order: 2;
+  flex: 0 0 auto;
+  width: auto;
+  margin-left: auto;
+  padding: 0 4px;
 }

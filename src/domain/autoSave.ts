@@ -69,6 +69,7 @@ export type AutoSaveStatus =
   | 'unsaved'
   | 'active'
   | 'paused-rename'
+  | 'conflict'
   | 'needs-permission'
   | 'failed';
 
@@ -108,10 +109,12 @@ export function resolveAutoSaveStatus(input: {
   needsNewName: boolean;
   permission: HandlePermissionState;
   lastAutoSaveFailed: boolean;
+  hasExternalConflict?: boolean;
 }): AutoSaveStatus {
   if (!input.canPickFiles) return 'unsupported';
   if (input.isSample || input.removed || !input.hasSavedFile) return 'unsaved';
   if (input.needsNewName) return 'paused-rename';
+  if (input.hasExternalConflict) return 'conflict';
   if (input.permission === 'prompt' || input.permission === 'denied') return 'needs-permission';
   if (input.permission === 'none') return 'unsaved';
   if (input.lastAutoSaveFailed) return 'failed';
@@ -164,6 +167,8 @@ export function applyUncommittedDraftToProject(
 }
 
 export type HeaderSaveDisplayKind =
+  | 'conflict'
+  | 'stash-failed'
   | 'needs-permission'
   | 'failed'
   | 'stale'
@@ -173,18 +178,23 @@ export type HeaderSaveDisplayKind =
 
 /**
  * 寫作頁頁首次列單一互斥狀態解析：
- * 1. needs-permission → 恢復自動存檔
- * 2. failed → 自動存檔沒成功
- * 3. staleDays != null → 沿用 WO-98「已經 N 天沒存檔了」
- * 4. 未存成外部檔（非範例書） → 還沒存成檔案
- * 5. 已存過外部檔（非範例書） → 最後存檔時間（已自動存檔／上次存檔）
+ * 1. conflict → 檔案已被外部更新
+ * 2. stashFailed → 暫存沒成功
+ * 3. needs-permission → 恢復自動存檔
+ * 4. failed → 自動存檔沒成功
+ * 5. staleDays != null → 沿用 WO-98「已經 N 天沒存檔了」
+ * 6. 未存成外部檔（非範例書） → 還沒存成檔案
+ * 7. 已存過外部檔（非範例書） → 最後存檔時間（已自動存檔／上次存檔）
  */
 export function resolveHeaderSaveDisplay(input: {
   isSample: boolean;
   autoSaveStatus: AutoSaveStatus;
   staleDays: number | null;
   lastFileSaveMs: number | null;
+  stashFailed?: boolean;
 }): HeaderSaveDisplayKind {
+  if (input.autoSaveStatus === 'conflict') return 'conflict';
+  if (input.stashFailed) return 'stash-failed';
   if (input.autoSaveStatus === 'needs-permission') return 'needs-permission';
   if (input.autoSaveStatus === 'failed') return 'failed';
   if (input.staleDays != null) return 'stale';

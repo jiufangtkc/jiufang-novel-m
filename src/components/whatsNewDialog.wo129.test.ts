@@ -143,7 +143,7 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(html).not.toContain(`v${APP_VERSION}`);
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
-    expect(html).toContain('<li>存檔提醒改成只在畫面角落顯示，不再跳出視窗</li>');
+    expect(html).toContain('<li>寫作頁「還沒存成檔案」改成畫面一角的小標示，存檔狀態也改為只在一處顯示</li>');
 
     const confirmMatch = html.match(
       /<button\b[^>]*data-testid="whats-new-confirm"[^>]*>[\s\S]*?<\/button>/,

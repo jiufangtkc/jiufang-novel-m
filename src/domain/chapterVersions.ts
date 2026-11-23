@@ -1,6 +1,8 @@
 import { findNode, type ChapterNode } from '../data/demo';
 import type { FileCard } from '../db/projectFile';
+import { CATEGORY_TIMELINE } from './cardCategories';
 import { cloneNode, locateNode } from './chapterOps';
+import { collectAliveChapterIds } from './timeline';
 import { countWords } from './wordCount';
 
 export const VERSION_LIMIT = 10;
@@ -17,6 +19,11 @@ export interface ChapterVersion {
   savedAt: number;
 }
 
+export interface TimelineChapterLink {
+  cardId: string;
+  chapterId: string;
+}
+
 export interface DeletedRecord {
   id: string;
   node: ChapterNode;
@@ -28,6 +35,8 @@ export interface DeletedRecord {
   beforeIds?: string[];
   /** 刪除當下，由近到遠的後一個鄰居。舊紀錄可能沒有。 */
   afterIds?: string[];
+  /** WO-132 嚴-5：刪除當下連到被刪章節子樹的時間線事件，供復原時自動連回。 */
+  unlinkedTimelineEvents?: TimelineChapterLink[];
 }
 
 export interface DeletedCardRecord {
@@ -149,17 +158,40 @@ export function versionsForNode(node: ChapterNode, savedAt: number): ChapterVers
   return textNodes(node).map((item, index) => versionFromNode(item, savedAt, `v-${savedAt}-${item.id}-${index}`));
 }
 
+/** 收集被刪節點（單章或整卷子樹）底下所有章節所關聯的時間線事件。 */
+export function collectUnlinkedTimelineEvents(
+  node: ChapterNode,
+  cards: readonly FileCard[],
+): TimelineChapterLink[] {
+  const deletedChapterIds = collectAliveChapterIds([node]);
+  if (deletedChapterIds.size === 0 || cards.length === 0) return [];
+  const links: TimelineChapterLink[] = [];
+  for (const card of cards) {
+    if (
+      card.category === CATEGORY_TIMELINE &&
+      typeof card.chapterId === 'string' &&
+      card.chapterId !== '' &&
+      deletedChapterIds.has(card.chapterId)
+    ) {
+      links.push({ cardId: card.id, chapterId: card.chapterId });
+    }
+  }
+  return links;
+}
+
 export function deletedFromNode(
   nodes: readonly ChapterNode[],
   id: string,
   deletedAt: number,
   recordId: string,
+  cards?: readonly FileCard[],
 ): DeletedRecord | null {
   const node = findNode(nodes, id);
   const location = locateNode(nodes, id);
   if (!node || !location) return null;
   const siblings =
     location.parentId == null ? nodes : (findNode(nodes, location.parentId)?.children ?? []);
+  const unlinkedTimelineEvents = cards ? collectUnlinkedTimelineEvents(node, cards) : [];
   return {
     id: recordId,
     node: cloneNode(node),
@@ -169,6 +201,7 @@ export function deletedFromNode(
     title: node.title,
     beforeIds: siblings.slice(0, location.index).map((item) => item.id).reverse(),
     afterIds: siblings.slice(location.index + 1).map((item) => item.id),
+    ...(unlinkedTimelineEvents.length > 0 ? { unlinkedTimelineEvents } : {}),
   };
 }
 

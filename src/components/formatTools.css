@@ -178,10 +178,10 @@ html[data-focus-mode="true"] .format-backdrop {
   cursor: pointer;
 }
 .format-notice-undo {
-  border: 0;
-  background: var(--accent);
-  color: var(--on-accent);
-  font-weight: 700;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-weight: 400;
 }
 .format-notice-close {
   border: 1px solid var(--border);

@@ -85,7 +85,7 @@ import {
 import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthReminder';
 import { useProject, useSample } from '../state/sampleStore';
 import { caretToRestore, nearIdsOf, readWritePlace, saveWritePlace, scrollTopToRestore } from '../state/navMemory';
-import { editorSaveStatus } from './editorSaveStatus';
+import { editorSaveStatus, unifiedFocusSaveLabel } from './editorSaveStatus';
 import {
   HalfWidthBadge,
   HalfWidthBubble,
@@ -117,6 +117,7 @@ export function EditorPane({
   const [focused, setFocused] = useState(false);
   const keyboard = useWritingKeyboard(focused);
   const keyboardOpen = keyboard.compact;
+  const onUserEditRef = useRef<(() => void) | null>(null);
   const { ref, replaceText } = useWritingSurface({
     bookId: projectId,
     chapterId: chapter.id,
@@ -125,6 +126,7 @@ export function EditorPane({
     onLarge: actions.noteLarge,
     onDuration: actions.addDuration,
     onToast: (message) => actions.toast(message),
+    onUserEdit: () => onUserEditRef.current?.(),
   });
   const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const todayWords = state.schedule.open?.wordCount ?? 0;
@@ -154,14 +156,26 @@ export function EditorPane({
   const saveFromReminder = () => void runReminderSave(canPickLocalFiles(), actions);
   const isSample = isBuiltinSampleBook(project);
   const autoSaveStatus = autoSaveStatusOf ? autoSaveStatusOf(projectId) : 'unsupported';
+  const stashFailed = sample.stashFailedOf ? sample.stashFailedOf(projectId) : false;
   const lastFileSaveMs = lastExternalFileSaveMs(meta);
   const headerKind = resolveHeaderSaveDisplay({
     isSample,
     autoSaveStatus,
     staleDays,
     lastFileSaveMs,
+    stashFailed,
   });
   const headerHasSubRow = headerKind !== 'none';
+  const showFooterSaveStatus = headerKind === 'none';
+  const focusBottomSaveText = unifiedFocusSaveLabel({
+    headerKind,
+    isSample,
+    staleDays,
+    lastFileSaveMs,
+    autoSaveActive: autoSaveStatus === 'active',
+    lastSaveWasAuto: lastSaveWasAutoOf ? lastSaveWasAutoOf(projectId) : false,
+    lastLocalSaveMs: latestSaveTimestamp(meta),
+  });
   const titleRef = useRef(chapter.title);
   titleRef.current = chapter.title;
   const rememberRef = useRef(actions.rememberPlace);
@@ -277,6 +291,9 @@ export function EditorPane({
     replaceText,
     focusMode,
   });
+  onUserEditRef.current = () => {
+    if (formatTools.hasSnapshot) formatTools.dismissNotice();
+  };
 
   const [landscapeExitState, setLandscapeExitState] = useState(INITIAL_LANDSCAPE_EXIT_STATE);
   const landscapeExitTimerRef = useRef<number | null>(null);
@@ -811,6 +828,7 @@ export function EditorPane({
             lastSaveWasAuto={lastSaveWasAutoOf ? lastSaveWasAutoOf(projectId) : false}
             onResumeAutoSave={() => void actions.resumeAutoSave?.()}
             onSave={saveFromReminder}
+            onSaveAs={() => void actions.saveProjectAs()}
           />
         )}
       </header>
@@ -946,20 +964,22 @@ export function EditorPane({
             </span>
             {chapter.progress && <StatusBadge code={chapter.progress} />}
           </span>
-          {saveStatus.openFiles ? (
-            <button
-              type="button"
-              className="save-status"
-              data-testid="save-status"
-              onClick={() => navigate(`/p/${projectId}/files`)}
-            >
-              {saveStatus.label}
-            </button>
-          ) : (
-            <span className="save-status" data-testid="save-status">
-              {saveStatus.label}
-            </span>
-          )}
+          {showFooterSaveStatus
+            ? (saveStatus.openFiles ? (
+                <button
+                  type="button"
+                  className="save-status"
+                  data-testid="save-status"
+                  onClick={() => navigate(`/p/${projectId}/files`)}
+                >
+                  {saveStatus.label}
+                </button>
+              ) : (
+                <span className="save-status" data-testid="save-status">
+                  {saveStatus.label}
+                </span>
+              ))
+            : null}
         </div>
         <div className="chapter-jump" data-testid="chapter-jump">
           <button type="button" data-testid="chapter-prev" disabled={!prevId} onClick={() => go(prevId)}>
@@ -1018,7 +1038,7 @@ export function EditorPane({
       <div className="focus-bottom-status" data-testid="focus-bottom-status">
         <span>{todayWordsLabel(todayWords, goal)}</span>
         <span className="focus-status-sep">·</span>
-        <span>{saveStatus.label}</span>
+        <span>{focusBottomSaveText}</span>
       </div>
       {isCardsOpen && !focusMode && layoutMode !== 'wide' && (
         <WritingCardsDrawer

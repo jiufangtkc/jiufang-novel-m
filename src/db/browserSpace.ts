@@ -51,8 +51,34 @@ function idbRequest<T>(
   const transaction = database.transaction('files', mode);
   const request = run(transaction.objectStore('files'));
   return new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error ?? new Error('讀寫失敗'));
+    let settled = false;
+    let hasResult = false;
+    let requestResult!: T;
+    const fail = (fallback: string, error?: DOMException | null) => {
+      if (settled) return;
+      settled = true;
+      reject(error ?? new Error(fallback));
+    };
+    request.onerror = () => fail('讀寫失敗', request.error);
+    transaction.onerror = () => fail('讀寫失敗', transaction.error);
+    transaction.onabort = () => fail('交易中止', transaction.error);
+    if (mode === 'readonly') {
+      request.onsuccess = () => {
+        if (settled) return;
+        settled = true;
+        resolve(request.result);
+      };
+      return;
+    }
+    request.onsuccess = () => {
+      hasResult = true;
+      requestResult = request.result;
+    };
+    transaction.oncomplete = () => {
+      if (settled) return;
+      settled = true;
+      resolve(hasResult ? requestResult : request.result);
+    };
   });
 }
 

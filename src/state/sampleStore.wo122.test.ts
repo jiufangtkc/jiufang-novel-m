@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { vi } from 'vitest';
 import type { ChapterNode } from '../data/demo';
@@ -147,7 +148,13 @@ describe('WO-122 排版入口與 store', () => {
       projectId: PID,
       kind: 'space-paragraphs',
       scope: 'chapter',
-      entries: [{ nodeId: 'c1', before: '甲甲甲\n乙乙乙\n\n\n丙丙丙' }],
+      entries: [
+        {
+          nodeId: 'c1',
+          before: '甲甲甲\n乙乙乙\n\n\n丙丙丙',
+          after: '甲甲甲\n\n乙乙乙\n\n丙丙丙',
+        },
+      ],
     });
   });
 
@@ -220,17 +227,28 @@ describe('WO-122 排版入口與 store', () => {
     expect(content(h.state, 'c1')).toBe(afterFirst);
   });
 
-  it('復原會覆蓋排版後新打的字，但不碰沒被排版的章幕', () => {
+  it('WO-132 嚴-6：排版後一旦送出新字，快照自動清除；即使未送出仍在寫作框時強制復原，也絕不覆蓋新字', () => {
     const h = harness(baseState(), { currentId: 'c1' });
     h.format('space-paragraphs', 'chapter');
-    h.typeLive(`${h.live}後來新打的字`);
+    const formatted = content(h.state, 'c1')!;
+    expect(formatted).toBe('甲甲甲\n\n乙乙乙\n\n丙丙丙');
+
+    // (a) 打新字尚未停筆送出（僅在寫作框 live），強制呼叫 executeUndo：判定失效，新字與既有快照都不被覆蓋
+    h.typeLive(`${formatted}尚未停筆的新字`);
+    expect(h.undo()).toEqual({ status: 'invalid' });
+    expect(h.live).toBe(`${formatted}尚未停筆的新字`);
+    expect(h.state.formatUndo).toBeNull();
+
+    // (b) 再次排版後，停筆送出 commit-text：自動清除快照，後續 undo 回 none，新字完整保留
     h.flushLive();
-    h.switchTo('c3');
-    h.send({ type: 'commit-text', projectId: PID, nodeId: 'c3', text: ' 己己\n庚庚新增' });
-    h.switchTo('c1');
-    expect(h.undo().status).toBe('restored');
-    expect(content(h.state, 'c1')).toBe('甲甲甲\n乙乙乙\n\n\n丙丙丙');
-    expect(content(h.state, 'c3')).toBe(' 己己\n庚庚新增');
+    h.format('indent', 'chapter');
+    const afterSecondFormat = content(h.state, 'c1')!;
+    expect(h.state.formatUndo).not.toBeNull();
+    h.typeLive(`${afterSecondFormat}送出後的新字`);
+    h.flushLive();
+    expect(h.state.formatUndo).toBeNull();
+    expect(h.undo()).toEqual({ status: 'none' });
+    expect(content(h.state, 'c1')).toBe(`${afterSecondFormat}送出後的新字`);
   });
 
   it('尚未暫存的最新字納入排版前快照，不被舊 store 蓋掉', () => {
@@ -239,7 +257,9 @@ describe('WO-122 排版入口與 store', () => {
     h.typeLive(' 己己\n庚庚\n\n辛辛');
     expect(h.format('strip-blank', 'chapter')).toEqual({ status: 'applied', changedCount: 1 });
     expect(content(h.state, 'c3')).toBe(' 己己\n庚庚\n辛辛');
-    expect(h.state.formatUndo?.entries).toEqual([{ nodeId: 'c3', before: ' 己己\n庚庚\n\n辛辛' }]);
+    expect(h.state.formatUndo?.entries).toEqual([
+      { nodeId: 'c3', before: ' 己己\n庚庚\n\n辛辛', after: ' 己己\n庚庚\n辛辛' },
+    ]);
     h.undo();
     expect(content(h.state, 'c3')).toBe(' 己己\n庚庚\n\n辛辛');
     expect(h.live).toBe(' 己己\n庚庚\n\n辛辛');
@@ -438,5 +458,23 @@ describe('WO-122 字數沿用既有算法，不重複記帳', () => {
     const stored = h.state.projects.find((p) => p.id === PID)!;
     expect(findNode(stored.nodes, 'c3')?.content).toBe('　　己己\n　　庚庚');
     expect(stored.updatedLabel).toBe('剛剛');
+  });
+
+  it('WO-132 嚴-6：使用者輸入入口觸發 onUserEdit 收起提示（replaceRef 不觸發），且復原鈕為描邊次級樣式', () => {
+    const surfaceSrc = readFileSync(new URL('../editor/useWritingSurface.ts', import.meta.url), 'utf8');
+    const replaceStart = surfaceSrc.indexOf('replaceRef.current = (next');
+    const replaceEnd = surfaceSrc.indexOf('const onCompositionStart');
+    const replaceBlock = surfaceSrc.slice(replaceStart, replaceEnd);
+    expect(replaceBlock).not.toContain('onUserEdit');
+    expect(surfaceSrc).toMatch(/const onCompositionStart[\s\S]*?onUserEditRef\.current\?\.\(\)/);
+    expect(surfaceSrc).toMatch(/const applyPaste[\s\S]*?onUserEditRef\.current\?\.\(\)/);
+    expect(surfaceSrc).toMatch(/const onCut[\s\S]*?onUserEditRef\.current\?\.\(\)/);
+    expect(surfaceSrc).toMatch(/const onInput[\s\S]*?onUserEditRef\.current\?\.\(\)/);
+
+    const editorSrc = readFileSync(new URL('../screens/EditorPane.tsx', import.meta.url), 'utf8');
+    expect(editorSrc).toContain('formatTools.dismissNotice()');
+
+    const css = readFileSync(new URL('../components/formatTools.css', import.meta.url), 'utf8');
+    expect(css).toMatch(/\.format-notice-undo\s*\{[^}]*border:\s*1px solid var\(--border\)[^}]*background:\s*transparent/);
   });
 });
