@@ -3,7 +3,11 @@
  * 也驗證無把手（input 開進來）的稿子：第一次 pick-first-save、成功才記住、第二次 write-back。
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SAVE_PICKER_ABORTED_TOAST, SAVE_PERMISSION_DENIED } from '../copy/userFacing';
+import {
+  SAVE_PERMISSION_DENIED,
+  SAVE_PICKER_ABORTED_TOAST,
+  SAVE_USE_SAVE_AS_TOAST,
+} from '../copy/userFacing';
 import { applySaveOutcome, toastDurationMs, type Action } from '../state/sampleStore';
 import { pickSaveFile } from './browserDisk';
 import { createMemoryTargetStore, type DiskFile } from './fileTarget';
@@ -245,8 +249,8 @@ describe('saveProject：picker-aborted 結果', () => {
     expect(as).toEqual({ kind: 'cancelled' });
     expect(saveNotice(as)).toBeNull();
     const place = await saveProjectToPlace(phone.env, 'b', NEXT, '書.db');
-    expect(place).toEqual({ kind: 'cancelled' });
-    expect(saveNotice(place)).toBeNull();
+    expect(place).toEqual({ kind: 'use-save-as' });
+    expect(saveNotice(place)).toBe(SAVE_USE_SAVE_AS_TOAST);
   });
 
   it('其他提示與時長沒被改：權限被拒仍 2.4 秒、已儲存／已另存文字不變', () => {

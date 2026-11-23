@@ -3,7 +3,7 @@ import { useSyncExternalStore } from 'react';
 /**
  * 整個 App 的深色主題（WO-101）。
  *
- * - 只存在這台裝置的瀏覽器本機儲存（localStorage），鍵名見 THEME_STORAGE_KEY。
+ * - 只存在這個裝置的瀏覽器本機儲存（localStorage），鍵名見 THEME_STORAGE_KEY。
  *   不寫進稿子、不寫進 .db（電腦版的 current_theme 欄位也不碰），不同步。
  *   換稿子、開別的 .db 都不換主題。
  * - 沒存過（新安裝、舊版升上來）一律森林綠；讀的時候不替使用者寫入任何值，
