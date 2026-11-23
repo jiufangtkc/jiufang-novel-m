@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { clipForBook, rememberBookClip } from './bookClip';
 import { decidePaste } from './clipboardPolicy';
 import { EDITOR_COPIED_TOAST, EDITOR_CUT_TOAST, EDITOR_PASTE_BLOCKED_TOAST } from '../copy/userFacing';
-import { setLiveReader } from './liveDraft';
+import { setLiveFlusher, setLiveReader } from './liveDraft';
 import { revealCaret } from './caret';
 import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './enterGuard';
 import { createIdleGate, IDLE_MS } from './idleGate';
@@ -17,6 +17,7 @@ interface WritingSurfaceOptions {
   onLarge: (delta: TextDelta) => void;
   onDuration: (seconds: number) => void;
   onToast: (message: string) => void;
+  onUserEdit?: () => void;
 }
 
 export function useWritingSurface({
@@ -27,6 +28,7 @@ export function useWritingSurface({
   onLarge,
   onDuration,
   onToast,
+  onUserEdit,
 }: WritingSurfaceOptions) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [dirty, setDirty] = useState(false);
@@ -34,10 +36,12 @@ export function useWritingSurface({
   const onLargeRef = useRef(onLarge);
   const onDurationRef = useRef(onDuration);
   const onToastRef = useRef(onToast);
+  const onUserEditRef = useRef(onUserEdit);
   onCommitRef.current = onCommit;
   onLargeRef.current = onLarge;
   onDurationRef.current = onDuration;
   onToastRef.current = onToast;
+  onUserEditRef.current = onUserEdit;
   const openingRef = useRef(openingText);
   openingRef.current = openingText;
   /**
@@ -71,6 +75,11 @@ export function useWritingSurface({
       () => ({ projectId: bookId, chapterId, text: textarea.value }),
       () => composing.current,
     );
+    setLiveFlusher(() => {
+      if (composing.current) return;
+      gate.cancel();
+      flush();
+    });
     let lastActivity = 0;
     let billedUntil = 0;
     const gate = createIdleGate(IDLE_MS);
@@ -136,6 +145,7 @@ export function useWritingSurface({
       const end = textarea.selectionEnd ?? start;
       source.current = 'paste';
       textarea.setRangeText(decision.text, start, end, 'end');
+      onUserEditRef.current?.();
       process('paste');
       textarea.focus();
       revealCaret(textarea);
@@ -162,6 +172,7 @@ export function useWritingSurface({
     const onCompositionStart = () => {
       composing.current = true;
       gate.setComposing(true);
+      onUserEditRef.current?.();
     };
     const onCompositionEnd = (event: CompositionEvent) => {
       composing.current = false;
@@ -229,6 +240,7 @@ export function useWritingSurface({
       rememberBookClip(bookId, { text });
       event.clipboardData?.setData('text/plain', text);
       textarea.setRangeText('', start, end, 'end');
+      onUserEditRef.current?.();
       process('type');
       gate.schedule(() => flush());
       toast(EDITOR_CUT_TOAST);
@@ -251,6 +263,7 @@ export function useWritingSurface({
       const input = event as InputEvent;
       if (composing.current || input.isComposing) return;
       if (input.inputType === 'insertCompositionText' || input.inputType === 'deleteCompositionText') return;
+      onUserEditRef.current?.();
       process();
       gate.schedule(() => flush());
       revealCaret(textarea);
@@ -280,6 +293,7 @@ export function useWritingSurface({
 
     return () => {
       replaceRef.current = () => false;
+      setLiveFlusher(null);
       flush(true);
       gate.cancel();
       setLiveReader(null);
