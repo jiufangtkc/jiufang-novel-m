@@ -18,6 +18,7 @@ export interface FormatChange {
 export interface FormatSnapshotEntry {
   nodeId: string;
   before: string;
+  after: string;
 }
 
 /** 最近一次有效排版。只放記憶體，不寫入任何儲存格式。 */
@@ -86,13 +87,17 @@ export function snapshotOf(input: {
     projectId: input.projectId,
     kind: input.kind,
     scope: input.scope,
-    entries: input.changes.map((change) => ({ nodeId: change.nodeId, before: change.before })),
+    entries: input.changes.map((change) => ({
+      nodeId: change.nodeId,
+      before: change.before,
+      after: change.after,
+    })),
   };
 }
 
 export type UndoPlan =
   | { status: 'ok'; entries: FormatSnapshotEntry[] }
-  /** 沒有快照、不是這份稿子的快照，或其中有章幕已經不在（整批停止，不做一半） */
+  /** 沒有快照、不是這份稿子的快照，或其中有章幕已經不在或已有新編輯（整批停止，不做一半） */
   | { status: 'none' }
   | { status: 'invalid' };
 
@@ -100,11 +105,17 @@ export function planUndo(
   snapshot: FormatSnapshot | null | undefined,
   projectId: string,
   nodes: readonly ChapterNode[] | null | undefined,
+  live?: { nodeId: string; text: string } | null,
 ): UndoPlan {
   if (!snapshot || snapshot.projectId !== projectId) return { status: 'none' };
   if (!nodes) return { status: 'invalid' };
   for (const entry of snapshot.entries) {
-    if (!isWritableNode(findNode(nodes, entry.nodeId))) return { status: 'invalid' };
+    const node = findNode(nodes, entry.nodeId);
+    if (!isWritableNode(node)) return { status: 'invalid' };
+    const currentText = live && live.nodeId === entry.nodeId ? live.text : (node.content ?? '');
+    if (typeof entry.after === 'string' && currentText !== entry.after) {
+      return { status: 'invalid' };
+    }
   }
   return { status: 'ok', entries: snapshot.entries.map((entry) => ({ ...entry })) };
 }
