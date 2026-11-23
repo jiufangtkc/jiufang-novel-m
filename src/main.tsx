@@ -6,7 +6,7 @@ import { initDeviceTheme } from './layout/deviceTheme';
 import './fonts/iansui.css';
 import './styles/global.css';
 
-// WO-101：先讀這台裝置的主題並掛到 <html data-theme>，再畫畫面。
+// WO-101：先讀這個裝置的主題並掛到 <html data-theme>，再畫畫面。
 initDeviceTheme();
 
 registerSW({ immediate: true });

@@ -332,6 +332,7 @@ describe('WO-101：設定頁「外觀」主題列與定稿用字', () => {
 
   it('畫面只引用 copy 常數，不在 JSX 重複寫文案', () => {
     const src = readFileSync(new URL('../screens/AppearanceSettings.tsx', import.meta.url), 'utf8');
+    const codeOnly = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
     for (const text of [
       THEME_DESCRIPTION,
       THEME_GROUP_ARIA,
@@ -344,7 +345,7 @@ describe('WO-101：設定頁「外觀」主題列與定稿用字', () => {
       '青瓷',
       '經典深藍',
     ]) {
-      expect(src).not.toContain(text);
+      expect(codeOnly).not.toContain(text);
     }
     expect(src).toContain('THEME_DESCRIPTION');
     expect(src).toContain('THEME_OPTION_ARIA[id]');
