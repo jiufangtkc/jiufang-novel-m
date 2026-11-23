@@ -1,8 +1,11 @@
 import {
   SAVE_CONFLICT_TOAST,
   SAVE_FATAL_FAIL,
+  SAVE_HANDED_OFF_DOWNLOAD_TOAST,
+  SAVE_HANDED_OFF_SHARE_TOAST,
   SAVE_PARTIAL_FAIL,
   SAVE_PERMISSION_DENIED,
+  SAVE_USE_SAVE_AS_TOAST,
   TOAST_SAVED_UNDER_NEW_TITLE,
 } from '../copy/userFacing';
 import { SAVE_PICKER_ABORTED_TOAST } from '../copy/userFacing';
@@ -18,6 +21,7 @@ export type SaveOutcome =
   | { kind: 'saved-under-new-title'; filename: string }
   | { kind: 'handed-off'; via: 'share' | 'download'; filename: string }
   | { kind: 'external-conflict'; filename: string }
+  | { kind: 'use-save-as' }
   | { kind: 'cancelled' }
   | { kind: 'permission-denied' }
   | { kind: 'write-failed'; restored: boolean }
@@ -43,7 +47,11 @@ export function saveNotice(outcome: SaveOutcome): string | null {
     case 'saved-under-new-title':
       return TOAST_SAVED_UNDER_NEW_TITLE;
     case 'handed-off':
-      return outcome.via === 'share' ? '已另存' : '已下載，請自行放到想放的位置';
+      return outcome.via === 'share'
+        ? SAVE_HANDED_OFF_SHARE_TOAST
+        : SAVE_HANDED_OFF_DOWNLOAD_TOAST;
+    case 'use-save-as':
+      return SAVE_USE_SAVE_AS_TOAST;
     case 'external-conflict':
       return SAVE_CONFLICT_TOAST;
     case 'cancelled':
@@ -168,25 +176,28 @@ export async function saveProjectToPlace(
   bookKey: string,
   bytes: Uint8Array,
   suggestedName: string,
+  fallbackFile?: DiskFile | null,
 ): Promise<SaveOutcome> {
   try {
     await env.verify(bytes);
   } catch {
     return { kind: 'invalid-database' };
   }
-  const target = await env.targets.load(bookKey);
-  const filename = target?.filename || suggestedName;
-  if (target?.file) {
-    const expectedFp = await resolveExpectedFingerprint(env.targets, bookKey, target.file, target);
-    const wrote = await writeGranted(target.file, bytes, expectedFp);
+  const target = await env.targets.load(bookKey).catch(() => null);
+  const file = target?.file ?? fallbackFile ?? null;
+  const filename = target?.filename || file?.name || suggestedName;
+  if (file) {
+    const loadedTarget = target?.file === file ? target : undefined;
+    const expectedFp = await resolveExpectedFingerprint(env.targets, bookKey, file, loadedTarget);
+    const wrote = await writeGranted(file, bytes, expectedFp);
     if (wrote !== 'ready') {
       if (wrote.kind === 'external-conflict') {
-        return { kind: 'external-conflict', filename: target.file.name || filename };
+        return { kind: 'external-conflict', filename: file.name || filename };
       }
       return wrote;
     }
-    const savedName = target.file.name || filename;
-    await rememberTargetFingerprint(env.targets, bookKey, target.file, savedName, bytes);
+    const savedName = file.name || filename;
+    await rememberTargetFingerprint(env.targets, bookKey, file, savedName, bytes);
     return { kind: 'saved', filename: savedName };
   }
   if (env.canPickFiles) {
@@ -198,7 +209,7 @@ export async function saveProjectToPlace(
     await rememberTargetFingerprint(env.targets, bookKey, picked, picked.name, bytes);
     return { kind: 'saved', filename: picked.name };
   }
-  return { kind: 'cancelled' };
+  return { kind: 'use-save-as' };
 }
 
 /**
@@ -357,6 +368,7 @@ export async function saveProjectFromClick(input: {
   writeBackName: string;
   newTitleName: string;
   startIn: DiskFile | null;
+  fallbackFile?: DiskFile | null;
   buildBytes: () => Promise<Uint8Array>;
   onRemember?: (file: DiskFile) => void;
 }): Promise<SaveOutcome> {
@@ -367,7 +379,13 @@ export async function saveProjectFromClick(input: {
     } catch {
       return { kind: 'invalid-database' };
     }
-    return saveProjectToPlace(input.env, input.bookKey, bytes, input.writeBackName);
+    return saveProjectToPlace(
+      input.env,
+      input.bookKey,
+      bytes,
+      input.writeBackName,
+      input.fallbackFile,
+    );
   }
   const suggested = input.plan === 'pick-new-name' ? input.newTitleName : input.writeBackName;
   const startIn = input.plan === 'pick-new-name' ? input.startIn : null;
