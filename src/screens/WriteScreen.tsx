@@ -824,6 +824,7 @@ export function WriteScreen() {
             <span>{undo.text}</span>
             <button
               type="button"
+              data-testid="tree-undo-btn"
               onClick={undoNow}
             >
               {TREE_UNDO}

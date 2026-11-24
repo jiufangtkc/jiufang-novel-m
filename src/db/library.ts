@@ -20,8 +20,30 @@ export type { StoredBook };
 
 /** WO-116：進行中的寫入（以稿子代號分組），刪除時要等它們結束才刪，避免刪完又被寫回。 */
 const inflightPuts = new Map<string, Set<Promise<unknown>>>();
+/** WO-135：每本稿寫入佇列尾端，確保同一本稿的讀取-改寫-寫入依序執行，且失敗不鎖死後續寫入。 */
+const bookWriteTails = new Map<string, Promise<void>>();
 
-export async function putBook(book: StoredBook): Promise<void> {
+async function serializeBookWrite<T>(key: string, task: () => Promise<T>): Promise<T> {
+  const previous = bookWriteTails.get(key);
+  let release!: () => void;
+  const current = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  bookWriteTails.set(key, current);
+  if (previous) {
+    await previous;
+  }
+  try {
+    return await task();
+  } finally {
+    release();
+    if (bookWriteTails.get(key) === current) {
+      bookWriteTails.delete(key);
+    }
+  }
+}
+
+async function putBookDirect(book: StoredBook): Promise<void> {
   // 已從這個裝置刪掉的稿子不再寫回 App 空間（自動暫存、離頁寫回都經過這裡）。
   if (isBookRemoved(book.key)) return;
   const pending = (async () => {
@@ -41,6 +63,11 @@ export async function putBook(book: StoredBook): Promise<void> {
   }
 }
 
+export async function putBook(book: StoredBook): Promise<void> {
+  if (isBookRemoved(book.key)) return;
+  await serializeBookWrite(book.key, () => putBookDirect(book));
+}
+
 /**
  * WO-116：從這個裝置的 App 空間刪掉這份稿子的副本（OPFS 與 IndexedDB 備援，只刪這個鍵）。
  * 先登記為已刪除（擋住之後的寫入與讀回），等已開始的寫入結束，再刪，最後確認兩邊都讀不到。
@@ -49,6 +76,8 @@ export async function putBook(book: StoredBook): Promise<void> {
 export async function removeBook(key: string): Promise<void> {
   if (!key) return;
   markBookRemoved(key);
+  const queued = bookWriteTails.get(key);
+  if (queued) await queued;
   const running = inflightPuts.get(key);
   if (running) await Promise.allSettled([...running]);
   const space = await appSpace();
@@ -240,24 +269,26 @@ export async function saveBookBytes(
   importEvents?: Readonly<Record<string, TransferEvent>>,
   exportEvents?: Readonly<Record<string, TransferEvent>>,
 ): Promise<Uint8Array> {
-  const existing = await getBook(key);
-  const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents, exportEvents);
-  if (!persist) return exported;
-  const mark = bookkeeping ?? {
-    titleInFile: existing?.titleInFile ?? null,
-    hasExternalFile: existing?.hasExternalFile,
-    titleSavePending: existing?.titleSavePending ?? null,
-  };
-  await putBook({
-    key,
-    filename,
-    title,
-    bytes: exported,
-    titleInFile: mark.titleInFile,
-    hasExternalFile: mark.hasExternalFile,
-    titleSavePending: mark.titleSavePending,
+  return serializeBookWrite(key, async () => {
+    const existing = await getBook(key);
+    const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents, exportEvents);
+    if (!persist) return exported;
+    const mark = bookkeeping ?? {
+      titleInFile: existing?.titleInFile ?? null,
+      hasExternalFile: existing?.hasExternalFile,
+      titleSavePending: existing?.titleSavePending ?? null,
+    };
+    await putBookDirect({
+      key,
+      filename,
+      title,
+      bytes: exported,
+      titleInFile: mark.titleInFile,
+      hasExternalFile: mark.hasExternalFile,
+      titleSavePending: mark.titleSavePending,
+    });
+    return exported;
   });
-  return exported;
 }
 
 export async function exportBook(key: string): Promise<{ filename: string; bytes: Uint8Array } | null> {
