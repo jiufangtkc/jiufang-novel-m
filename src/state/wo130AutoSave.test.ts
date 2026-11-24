@@ -936,8 +936,8 @@ describe('WO-130 甲段：自動存檔管線、單飛鎖、權限與寫回安全
   });
 });
 
-describe('WO-133：0.4.3 版號與改版說明驗證', () => {
-  it('package.json、package-lock.json、APP_VERSION 皆為 0.4.3，whatsNew 頂端為 0.4.3 且保留 0.4.2、0.4.1、0.4.0、0.3.0', () => {
+describe('WO-135：0.4.4 版號與改版說明驗證', () => {
+  it('package.json、package-lock.json、APP_VERSION 皆為 0.4.4，whatsNew 頂端為 0.4.4 且保留 0.4.3、0.4.2、0.4.1、0.4.0、0.3.0', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
       version: string;
     };
@@ -946,14 +946,17 @@ describe('WO-133：0.4.3 版號與改版說明驗證', () => {
       packages: { '': { version: string } };
     };
     const whatsNewSrc = readFileSync(new URL('../data/whatsNew.ts', import.meta.url), 'utf8');
-    expect(pkg.version).toBe('0.4.3');
-    expect(lock.version).toBe('0.4.3');
-    expect(lock.packages[''].version).toBe('0.4.3');
-    expect(APP_VERSION).toBe('0.4.3');
-    expect(whatsNewSrc).toContain('WO-133（暫定，待九方審）');
+    expect(pkg.version).toBe('0.4.4');
+    expect(lock.version).toBe('0.4.4');
+    expect(lock.packages[''].version).toBe('0.4.4');
+    expect(APP_VERSION).toBe('0.4.4');
+    expect(whatsNewSrc).toContain('WO-135（暫定，待九方審）');
 
-    expect(RELEASE_NOTES[0]?.version).toBe('0.4.3');
+    expect(RELEASE_NOTES[0]?.version).toBe('0.4.4');
     expect(RELEASE_NOTES[0]?.items).toEqual([
+      '刪掉章節後按復原，時間線上連到這章的事件會一起接回來',
+    ]);
+    expect(findReleaseNote('0.4.3')?.items).toEqual([
       '瀏覽器暫時記不住原檔位置時，正常的九方稿件仍可照常開啟',
       '開啟非九方稿件或較新版本的稿件檔時，會清楚說明原因，不再誤開空白稿',
       '從「最近刪除」或「復原」救回章節與卡片時，會先確認存妥再移除刪除紀錄',

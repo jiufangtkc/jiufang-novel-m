@@ -3321,6 +3321,124 @@ export function persistLocalAutoStash(input: {
   }
 }
 
+export interface FileBookStashCoordinator {
+  nextGeneration: (dbKey: string) => number;
+  enqueue: <T>(
+    dbKey: string,
+    meta: { contentRev: number; generation?: number },
+    run: (isStale: () => boolean) => Promise<T>,
+    onStale: () => T,
+  ) => Promise<T>;
+  markPersisted: (dbKey: string, contentRev: number, generation: number) => void;
+  lastPersistedRevision: (dbKey: string) => number;
+}
+
+/**
+ * WO-135：每本檔案稿暫存寫入序列化與世代保護。
+ * - 同一本稿（dbKey）依序排隊寫入，且以 try / finally 保證前一次失敗不會鎖死後續寫入。
+ * - 若已有更新的寫入世代或內容修訂排入／落盤，過期寫入直接略過，絕不倒蓋新狀態。
+ */
+export function createFileBookStashCoordinator(options?: {
+  trackPersistedAfterDrain?: boolean;
+}): FileBookStashCoordinator {
+  const trackPersistedAfterDrain = options?.trackPersistedAfterDrain ?? true;
+  const tails = new Map<string, Promise<void>>();
+  const activeCount = new Map<string, number>();
+  const activeMaxRev = new Map<string, number>();
+  const genSeq = new Map<string, number>();
+  const maxGenByKey = new Map<string, number>();
+  const persistedRevByKey = new Map<string, number>();
+  const persistedGenByKey = new Map<string, number>();
+
+  const nextGeneration = (dbKey: string): number => {
+    const next = (genSeq.get(dbKey) ?? 0) + 1;
+    genSeq.set(dbKey, next);
+    return next;
+  };
+
+  return {
+    nextGeneration,
+    async enqueue<T>(
+      dbKey: string,
+      meta: { contentRev: number; generation?: number },
+      run: (isStale: () => boolean) => Promise<T>,
+      onStale: () => T,
+    ): Promise<T> {
+      const generation = meta.generation ?? nextGeneration(dbKey);
+      const prevMaxRev = activeMaxRev.get(dbKey);
+      if (prevMaxRev === undefined || meta.contentRev > prevMaxRev) {
+        activeMaxRev.set(dbKey, meta.contentRev);
+      }
+      const prevMaxGen = maxGenByKey.get(dbKey);
+      if (prevMaxGen === undefined || generation > prevMaxGen) {
+        maxGenByKey.set(dbKey, generation);
+      }
+      activeCount.set(dbKey, (activeCount.get(dbKey) ?? 0) + 1);
+
+      const isStale = () => {
+        const queuedRev = activeMaxRev.get(dbKey);
+        if (queuedRev !== undefined && meta.contentRev < queuedRev) return true;
+        const latestGen = maxGenByKey.get(dbKey);
+        if (latestGen !== undefined && generation < latestGen) return true;
+        if (trackPersistedAfterDrain) {
+          const persistedRev = persistedRevByKey.get(dbKey);
+          if (persistedRev !== undefined && meta.contentRev < persistedRev) return true;
+          const persistedGen = persistedGenByKey.get(dbKey);
+          if (persistedGen !== undefined && generation < persistedGen) return true;
+        }
+        return false;
+      };
+
+      const previous = tails.get(dbKey);
+      let release!: () => void;
+      const current = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      tails.set(dbKey, current);
+      if (previous) {
+        await previous;
+      }
+      try {
+        if (isStale()) return onStale();
+        return await run(isStale);
+      } finally {
+        const remaining = (activeCount.get(dbKey) ?? 1) - 1;
+        if (remaining <= 0) {
+          activeCount.delete(dbKey);
+          activeMaxRev.delete(dbKey);
+          if (!trackPersistedAfterDrain) {
+            maxGenByKey.delete(dbKey);
+          }
+        } else {
+          activeCount.set(dbKey, remaining);
+        }
+        release();
+        if (tails.get(dbKey) === current) {
+          tails.delete(dbKey);
+        }
+      }
+    },
+    markPersisted(dbKey, contentRev, generation) {
+      if (!trackPersistedAfterDrain) return;
+      const prevRev = persistedRevByKey.get(dbKey);
+      if (prevRev === undefined || contentRev > prevRev) {
+        persistedRevByKey.set(dbKey, contentRev);
+      }
+      const prevGen = persistedGenByKey.get(dbKey);
+      if (prevGen === undefined || generation > prevGen) {
+        persistedGenByKey.set(dbKey, generation);
+      }
+    },
+    lastPersistedRevision(dbKey) {
+      return persistedRevByKey.get(dbKey) ?? -1;
+    },
+  };
+}
+
+const defaultFileBookStashCoordinator = createFileBookStashCoordinator({
+  trackPersistedAfterDrain: false,
+});
+
 export async function persistFileBookStash(input: {
   state: SampleState;
   project: DemoProject;
@@ -3329,31 +3447,143 @@ export async function persistFileBookStash(input: {
   onStashResult: (projectId: string, ok: boolean, showToastOnFirstFail: boolean) => void;
   saveBytes?: typeof saveBookBytes;
   nowMs?: number;
+  coordinator?: FileBookStashCoordinator;
+  generation?: number;
 }): Promise<boolean> {
   const { state, project, extra } = input;
-  if (!project.dbKey) return false;
+  const dbKey = project.dbKey;
+  if (!dbKey || isBookRemoved(project.id) || isBookRemoved(dbKey)) return false;
+  const coordinator = input.coordinator ?? defaultFileBookStashCoordinator;
+  const contentRev = state.contentRevById?.[project.id] ?? 0;
+  const generation = input.generation ?? coordinator.nextGeneration(dbKey);
   const save = input.saveBytes ?? saveBookBytes;
-  try {
-    await save(
-      project.dbKey,
-      localDbFilename(project.title, project.filename),
-      project.title,
-      buildFileProjectInfo(state, project),
-      project.nodes,
-      extra.cards,
-      extra.logs,
-      bookkeepingOf(project),
-      true,
-      projectImportEventsOf(state, project.id),
-      projectExportEventsOf(state, project.id),
-    );
-    input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
-    input.onStashResult(project.id, true, false);
-    return true;
-  } catch {
-    input.onStashResult(project.id, false, true);
-    return false;
-  }
+  return coordinator.enqueue(
+    dbKey,
+    { contentRev, generation },
+    async (isStale) => {
+      if (isBookRemoved(project.id) || isBookRemoved(dbKey)) return false;
+      if (isStale()) return true;
+      try {
+        await save(
+          dbKey,
+          localDbFilename(project.title, project.filename),
+          project.title,
+          buildFileProjectInfo(state, project),
+          project.nodes,
+          extra.cards,
+          extra.logs,
+          bookkeepingOf(project),
+          true,
+          projectImportEventsOf(state, project.id),
+          projectExportEventsOf(state, project.id),
+        );
+        coordinator.markPersisted(dbKey, contentRev, generation);
+        input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
+        input.onStashResult(project.id, true, false);
+        return true;
+      } catch {
+        input.onStashResult(project.id, false, true);
+        return false;
+      }
+    },
+    () => true,
+  );
+}
+
+export interface FileBookAutoStashController {
+  sync: (state: SampleState) => void;
+  dispose: () => void;
+}
+
+/**
+ * WO-135：檔案稿自動暫存排程控制器。
+ * - 同一份稿更新時只重設 250ms 計時器，絕不用過期 closure 反寫 App 空間。
+ * - 切換成別份稿件或元件卸載時，才以 getLatestState() 取最新狀態刷寫尚未落盤的稿件。
+ */
+export function createFileBookAutoStashController(input: {
+  getLatestState: () => SampleState;
+  dispatch: (action: Action) => void;
+  onStashResult: (projectId: string, ok: boolean, showToastOnFirstFail: boolean) => void;
+  coordinator: FileBookStashCoordinator;
+  persist?: typeof persistFileBookStash;
+  setTimer?: (fn: () => void, ms: number) => number;
+  clearTimer?: (id: number) => void;
+  delayMs?: number;
+}): FileBookAutoStashController {
+  const setTimer = input.setTimer ?? ((fn: () => void, ms: number) => globalThis.setTimeout(fn, ms) as unknown as number);
+  const clearTimer = input.clearTimer ?? ((id: number) => globalThis.clearTimeout(id));
+  const delayMs = input.delayMs ?? 250;
+  const persistFn = input.persist ?? persistFileBookStash;
+  let pending: { projectId: string; dbKey: string; timerId: number; generation: number } | null = null;
+
+  const flushLatest = (projectId: string, dbKey: string, generation: number) => {
+    if (isBookRemoved(projectId) || isBookRemoved(dbKey)) return;
+    const latest = input.getLatestState();
+    const project = latest.projects.find((item) => item.id === projectId);
+    if (!project || project.origin !== 'file' || project.dbKey !== dbKey) return;
+    const extra = latest.fileExtras[dbKey];
+    if (!extra) return;
+    void persistFn({
+      state: latest,
+      project,
+      extra,
+      dispatch: input.dispatch,
+      onStashResult: input.onStashResult,
+      coordinator: input.coordinator,
+      generation,
+    });
+  };
+
+  return {
+    sync(state) {
+      const active = state.projects.find((item) => item.id === state.activeProjectId);
+      const valid =
+        active &&
+        active.origin === 'file' &&
+        active.dbKey &&
+        state.fileExtras[active.dbKey] &&
+        !isBookRemoved(active.id) &&
+        !isBookRemoved(active.dbKey)
+          ? active
+          : null;
+
+      if (!valid) {
+        if (pending) {
+          clearTimer(pending.timerId);
+          const prev = pending;
+          pending = null;
+          flushLatest(prev.projectId, prev.dbKey, prev.generation);
+        }
+        return;
+      }
+
+      const dbKey = valid.dbKey!;
+      if (pending) {
+        clearTimer(pending.timerId);
+        const prev = pending;
+        pending = null;
+        if (prev.projectId !== valid.id || prev.dbKey !== dbKey) {
+          flushLatest(prev.projectId, prev.dbKey, prev.generation);
+        }
+      }
+
+      const generation = input.coordinator.nextGeneration(dbKey);
+      const timerId = setTimer(() => {
+        if (!pending || pending.timerId !== timerId) return;
+        const target = pending;
+        pending = null;
+        flushLatest(target.projectId, target.dbKey, target.generation);
+      }, delayMs);
+      pending = { projectId: valid.id, dbKey, timerId, generation };
+    },
+    dispose() {
+      if (!pending) return;
+      clearTimer(pending.timerId);
+      const prev = pending;
+      pending = null;
+      flushLatest(prev.projectId, prev.dbKey, prev.generation);
+    },
+  };
 }
 
 /**
@@ -3367,6 +3597,7 @@ export async function persistProjectNow(input: {
   onStashResult: (projectId: string, ok: boolean, showToastOnFirstFail: boolean) => void;
   store?: KeyValueStore | null;
   saveBytes?: typeof saveBookBytes;
+  coordinator?: FileBookStashCoordinator;
 }): Promise<boolean> {
   const project = input.state.projects.find((item) => item.id === input.projectId);
   if (!project || isBookRemoved(project.id)) return false;
@@ -3380,6 +3611,7 @@ export async function persistProjectNow(input: {
       dispatch: input.dispatch,
       onStashResult: input.onStashResult,
       saveBytes: input.saveBytes,
+      coordinator: input.coordinator,
     });
   }
   const store =
@@ -3412,9 +3644,14 @@ export function SampleProvider({
   /** WO-130：測試用自動存檔週期（預設 5 分鐘）。 */
   autoSaveIntervalMs?: number;
 }) {
-  const [state, dispatch] = useReducer(reduce, undefined, () => initialState ?? createState(new Date()));
+  const [state, rawDispatch] = useReducer(reduce, undefined, () => initialState ?? createState(new Date()));
   const stateRef = useRef(state);
   stateRef.current = state;
+  // WO-135：同步推進 stateRef.current，確保還原／改動同一拍立刻按 Ctrl+S 或自動存檔時讀到最新狀態。
+  const dispatch = useCallback((action: Action) => {
+    stateRef.current = reduce(stateRef.current, action);
+    rawDispatch(action);
+  }, []);
   const importBusyRef = useRef(false);
   const exportBusyRef = useRef(false);
   // WO-110：手機暫存稿（loadStoredBooks）回復完成或確定讀不到後才是 true。
@@ -3457,6 +3694,10 @@ export function SampleProvider({
   const lastSavedRevByIdRef = useRef<Record<string, number>>({});
   const fileSaveInflightRef = useRef<{ kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null>(null);
   const restoringArchiveIdsRef = useRef(new Set<string>());
+  const fileStashCoordinatorRef = useRef<FileBookStashCoordinator | null>(null);
+  if (!fileStashCoordinatorRef.current) {
+    fileStashCoordinatorRef.current = createFileBookStashCoordinator({ trackPersistedAfterDrain: true });
+  }
 
   const refreshHandlePermission = useCallback(
     async (project: DemoProject | null | undefined): Promise<HandlePermissionState> => {
@@ -3628,25 +3869,26 @@ export function SampleProvider({
     };
   }, []);
 
-  useEffect(() => {
-    const project = state.projects.find((item) => item.id === state.activeProjectId);
-    if (!project || project.origin !== 'file' || !project.dbKey) return;
-    const extra = state.fileExtras[project.dbKey];
-    if (!extra) return;
-    const save = () =>
-      persistFileBookStash({
-        state,
-        project,
-        extra,
+  const fileAutoStashController = useMemo(
+    () =>
+      createFileBookAutoStashController({
+        getLatestState: () => stateRef.current,
         dispatch,
         onStashResult: markStashResult,
-      });
-    const timer = window.setTimeout(() => void save(), 250);
+        coordinator: fileStashCoordinatorRef.current!,
+      }),
+    [dispatch, markStashResult],
+  );
+
+  useEffect(() => {
+    fileAutoStashController.sync(state);
+  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents, state.exportEvents, fileAutoStashController]);
+
+  useEffect(() => {
     return () => {
-      window.clearTimeout(timer);
-      void save();
+      fileAutoStashController.dispose();
     };
-  }, [state.projects, state.fileExtras, state.activeProjectId, state.importEvents, state.exportEvents, markStashResult]);
+  }, [fileAutoStashController]);
 
   useEffect(() => {
     const flush = () => {
@@ -3820,6 +4062,7 @@ export function SampleProvider({
                   projectId,
                   dispatch,
                   onStashResult: markStashResult,
+                  coordinator: fileStashCoordinatorRef.current ?? undefined,
                 }),
             },
           );
@@ -3845,6 +4088,7 @@ export function SampleProvider({
                 projectId,
                 dispatch,
                 onStashResult: markStashResult,
+                coordinator: fileStashCoordinatorRef.current ?? undefined,
               }),
           });
         } finally {
