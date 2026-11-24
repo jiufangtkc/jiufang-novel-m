@@ -7,6 +7,7 @@ import {
   currentSchemaVersion,
   detectLegacyVersion,
 } from './migrations';
+import { DatabaseOpenError } from './openDbError';
 import { columnNames, tableNames, type Sql, type SqlValue } from './sql';
 import { readTimelineData, writeTimelineData, type TimelineRead } from './timelineMeta';
 import { readTransferData, writeTransferEvents, type TransferEvent, type TransferRead } from './transferMeta';
@@ -331,7 +332,58 @@ function runMigrationsPreservingExistingTimestamps(sql: Sql): void {
   }
 }
 
+const BASE_JIUFANG_COLUMNS: ReadonlyArray<readonly [string, readonly string[]]> = [
+  ['project_info', ['id', 'title']],
+  ['chapters', ['id', 'parent_id', 'name', 'node_type', 'content', 'sort_order']],
+  ['cards', ['id', 'category', 'title', 'content']],
+  ['writing_logs', ['date', 'word_count']],
+];
+
+function safeMaxSchemaVersion(sql: Sql, tables: ReadonlySet<string>): number {
+  if (!tables.has('schema_version')) return 0;
+  if (!columnNames(sql, 'schema_version').has('version')) return 0;
+  const row = sql.select('SELECT MAX(version) AS version FROM schema_version')[0];
+  const version = row?.version;
+  return typeof version === 'number' ? version : 0;
+}
+
+/**
+ * 開檔／存檔驗證：確認資料庫具備九方底表與核心欄位，且版本不超過本版支援上限。
+ * 不用於 writeFileProject 建立全新空白稿（從 0 位元組開始時直接建表）。
+ */
+export function validateJiufangDatabase(sql: Sql): void {
+  try {
+    const tables = tableNames(sql);
+    const schemaVersion = safeMaxSchemaVersion(sql, tables);
+    if (
+      tables.has('project_info') &&
+      tables.has('chapters') &&
+      schemaVersion > CURRENT_SCHEMA_VERSION
+    ) {
+      throw new DatabaseOpenError('newer-schema', schemaVersion);
+    }
+    for (const [table, requiredCols] of BASE_JIUFANG_COLUMNS) {
+      if (!tables.has(table)) {
+        throw new DatabaseOpenError('not-jiufang');
+      }
+      const cols = columnNames(sql, table);
+      for (const col of requiredCols) {
+        if (!cols.has(col)) {
+          throw new DatabaseOpenError('not-jiufang');
+        }
+      }
+    }
+    if (schemaVersion > CURRENT_SCHEMA_VERSION) {
+      throw new DatabaseOpenError('newer-schema', schemaVersion);
+    }
+  } catch (error) {
+    if (error instanceof DatabaseOpenError) throw error;
+    throw new DatabaseOpenError('not-jiufang');
+  }
+}
+
 export function readFileProject(sql: Sql): LoadedFile {
+  validateJiufangDatabase(sql);
   runMigrationsPreservingExistingTimestamps(sql);
   const infoRow = sql.select('SELECT * FROM project_info ORDER BY id LIMIT 1')[0];
   const infoExtra = extractExtraColumns(infoRow, KNOWN_PROJECT_INFO_COLUMNS);

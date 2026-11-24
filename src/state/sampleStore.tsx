@@ -32,6 +32,7 @@ import { canPickLocalFiles, pickExistingDatabase, pickSaveFile } from '../db/bro
 import { createBrowserTargetStore } from '../db/browserTargetStore';
 import type { DiskFile } from '../db/fileTarget';
 import { currentSchemaVersion } from '../db/migrations';
+import { validateJiufangDatabase } from '../db/projectFile';
 import {
   recallOpenFile,
   rememberOpenFile,
@@ -68,11 +69,18 @@ import {
   NEW_NOVEL_VOLUME_TITLE,
   EDITOR_PASTE_BLOCKED_TOAST,
   OPEN_DB_FAIL,
+  OPEN_DB_NEWER_VERSION,
+  OPEN_DB_NOT_JIUFANG,
+  OPEN_DB_STORAGE_FAIL,
   SAVE_AND_STASH_FAIL,
+  SAVE_AS_LOCAL_STASH_FAIL,
   SAVE_CONFLICT_TOAST,
+  SAVE_DOWNLOAD_LOCAL_STASH_FAIL,
   SAVE_FATAL_FAIL,
   SAVE_PERMISSION_DENIED,
   SAVE_PICKER_ABORTED_TOAST,
+  SAVE_SHARE_LOCAL_STASH_FAIL,
+  SAVE_USE_SAVE_AS_TOAST,
   STASH_AUTO_FAILED_TOAST,
   STASH_FAIL,
   STORED_ON_PHONE_LABEL,
@@ -176,7 +184,11 @@ import { isBuiltinSampleBook } from '../domain/builtinSampleBook';
 import { navMemoryKey, readNavMemory } from './navMemory';
 import { dropUntouchedSamples } from './sampleCleanup';
 import { bookArchive, type ArchiveClient } from '../db/chapterArchive';
-import type { TimelineChapterLink } from '../domain/chapterVersions';
+import {
+  forgetDeleted,
+  type DeletedRecord,
+  type TimelineChapterLink,
+} from '../domain/chapterVersions';
 import {
   archiveCardDeletion,
   archiveCardRestore,
@@ -239,11 +251,18 @@ export const TOAST_OPEN_FAIL_MS = 5000;
 export function toastDurationMs(message: string): number {
   if (message === EDITOR_PASTE_BLOCKED_TOAST) return TOAST_PASTE_BLOCKED_MS;
   if (message === OPEN_DB_FAIL) return TOAST_OPEN_FAIL_MS;
+  if (message === OPEN_DB_NOT_JIUFANG) return TOAST_OPEN_FAIL_MS;
+  if (message === OPEN_DB_NEWER_VERSION) return TOAST_OPEN_FAIL_MS;
+  if (message === OPEN_DB_STORAGE_FAIL) return TOAST_OPEN_FAIL_MS;
   if (message === SAVE_PICKER_ABORTED_TOAST) return TOAST_OPEN_FAIL_MS;
   if (message === AUTOSAVE_FAILED_TOAST) return TOAST_OPEN_FAIL_MS;
   if (message === SAVE_CONFLICT_TOAST) return TOAST_OPEN_FAIL_MS;
   if (message === STASH_AUTO_FAILED_TOAST) return TOAST_OPEN_FAIL_MS;
   if (message === SAVE_AND_STASH_FAIL) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_AS_LOCAL_STASH_FAIL) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_SHARE_LOCAL_STASH_FAIL) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_DOWNLOAD_LOCAL_STASH_FAIL) return TOAST_OPEN_FAIL_MS;
+  if (message === SAVE_USE_SAVE_AS_TOAST) return TOAST_OPEN_FAIL_MS;
   return TOAST_DEFAULT_MS;
 }
 
@@ -264,7 +283,7 @@ export interface SampleState {
   saveMeta: Record<string, SaveMetaEntry>;
   /** WO-130：各稿在本次開啟期間的實質內容修訂序號（只隨真正改動 .db 內容的操作遞增）。 */
   contentRevById?: Record<string, number>;
-  /** WO-98：各稿在這台裝置的建立（或第一次遇到）時間，只存本機，不寫進 .db。 */
+  /** WO-98：各稿在這個裝置的建立（或第一次遇到）時間，只存本機，不寫進 .db。 */
   startedById: Record<string, number>;
   /**
    * WO-99：TXT 匯入事件的本機紀錄（與瀏覽器本機儲存同步）。
@@ -448,7 +467,7 @@ function savedProjects(store: KeyValueStore | null): DemoProject[] | null {
   }
 }
 
-/** WO-77：這台裝置的瀏覽器本機儲存；私人瀏覽或測試環境沒有時回傳 null。 */
+/** WO-77：這個裝置的瀏覽器本機儲存；私人瀏覽或測試環境沒有時回傳 null。 */
 function deviceStore(): KeyValueStore | null {
   try {
     return typeof localStorage === 'undefined' ? null : localStorage;
@@ -518,7 +537,7 @@ function cleanUpSamples(
 
 export function createState(now: Date): SampleState {
   const store = deviceStore();
-  // WO-77：讀回這台裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
+  // WO-77：讀回這個裝置留下的存檔時間，以及新稿子自己的今天字數與寫作紀錄。
   const record = loadDeviceSaveRecord(store, now);
   const schedule = blankSchedule(now, record.homeGoal);
   // WO-95：沒有存過稿子就是空的，不再放範例書。
@@ -549,7 +568,7 @@ export function createState(now: Date): SampleState {
 }
 
 /**
- * WO-77：把存檔時間與新稿子的寫作紀錄留在這台裝置（不寫進 .db）。
+ * WO-77：把存檔時間與新稿子的寫作紀錄留在這個裝置（不寫進 .db）。
  * 寫作紀錄只留還沒升格成檔案、也不是內建範例書的稿子。
  */
 export function persistDeviceSaveRecord(store: KeyValueStore, state: SampleState): void {
@@ -619,7 +638,7 @@ export async function noteExportedBytes(store: KeyValueStore, bytes: Uint8Array,
   if (fingerprint) rememberExportedFile(store, fingerprint, atMs);
 }
 
-/** WO-77：開回的檔若正是這台裝置另存出去的那一份，取回當時的另存時間；內容不同就沒有。 */
+/** WO-77：開回的檔若正是這個裝置另存出去的那一份，取回當時的另存時間；內容不同就沒有。 */
 export async function exportTimeOfBytes(store: KeyValueStore, bytes: Uint8Array): Promise<number | null> {
   const fingerprint = await fingerprintBytes(bytes);
   return fingerprint ? recallExportedFile(store, fingerprint) : null;
@@ -1162,6 +1181,8 @@ export async function restoreProjectCardFromArchive(
   options?: {
     atEnd?: boolean;
     archive?: ArchiveClient;
+    persistBook?: (nextState: SampleState) => Promise<boolean>;
+    onPersistResult?: (ok: boolean) => void;
   },
 ): Promise<FileCard[] | null> {
   const archive = options?.archive ?? bookArchive;
@@ -1180,19 +1201,75 @@ export async function restoreProjectCardFromArchive(
   // reducer 看到清單沒變就直接套用，不再重算。
   const atEnd = options?.atEnd ?? false;
   const basis = getProjectCards(state, projectId);
-  const nextCards = getProjectCards(
-    reduce(state, { type: 'restore-deleted-card', projectId, record, atEnd }),
-    projectId,
-  );
-  dispatch({
-    type: 'restore-deleted-card',
-    projectId,
-    record,
-    atEnd,
-    placed: { basis, cards: nextCards },
-  });
-  await archive.update(projectId, (current) => archiveCardRestore(current, record.id), 'restore');
+  const alreadyInMemory = basis.some((c) => c.id === record.rootCardId);
+  let nextState = state;
+  let nextCards = basis;
+  if (!alreadyInMemory) {
+    const placedState = reduce(state, { type: 'restore-deleted-card', projectId, record, atEnd });
+    nextCards = getProjectCards(placedState, projectId);
+    dispatch({
+      type: 'restore-deleted-card',
+      projectId,
+      record,
+      atEnd,
+      placed: { basis, cards: nextCards },
+    });
+    nextState = placedState;
+  }
+
+  let persisted = true;
+  if (options?.persistBook) {
+    try {
+      persisted = await options.persistBook(nextState);
+    } catch {
+      persisted = false;
+    }
+  }
+  options?.onPersistResult?.(persisted);
+  if (persisted) {
+    await archive.update(projectId, (current) => archiveCardRestore(current, record.id), 'restore');
+  }
   return nextCards;
+}
+
+/**
+ * WO-133 中-4(a)：還原章節或卷時，先立即寫入本機暫存，確認成功後才移除歸檔刪除紀錄。
+ */
+export async function restoreDeletedChapterWithArchive(input: {
+  state: SampleState;
+  dispatch: (action: Action) => void;
+  projectId: string;
+  record: DeletedRecord;
+  nodes: ChapterNode[];
+  archive?: ArchiveClient;
+  persistBook?: (nextState: SampleState) => Promise<boolean>;
+}): Promise<{ persisted: boolean }> {
+  const archive = input.archive ?? bookArchive;
+  const action: Action = {
+    type: 'set-nodes',
+    projectId: input.projectId,
+    nodes: input.nodes,
+    restoreTimelineLinks: input.record.unlinkedTimelineEvents,
+  };
+  const nextState = reduce(input.state, action);
+  input.dispatch(action);
+
+  let persisted = true;
+  if (input.persistBook) {
+    try {
+      persisted = await input.persistBook(nextState);
+    } catch {
+      persisted = false;
+    }
+  }
+  if (persisted) {
+    await archive.update(
+      input.projectId,
+      (curr) => ({ ...curr, deleted: forgetDeleted(curr.deleted, input.record.id) }),
+      'restore',
+    );
+  }
+  return { persisted };
 }
 
 export function buildPromotedFileExtras(
@@ -1913,7 +1990,7 @@ interface SampleActions {
   setGoal: (goal: number) => void;
   /**
    * WO-111：歡迎導覽第 1 關按「下一關」時寫每日目標（和設定頁同一個值）。
-   * 不合法（不是 300 以上的整數）不寫、回 false。沒有開著的稿子時另外記在這台裝置的紀錄裡，重開後還在；
+   * 不合法（不是 300 以上的整數）不寫、回 false。沒有開著的稿子時另外記在這個裝置的紀錄裡，重開後還在；
    * 記不進本機儲存時這次使用照樣有效。不改檔案欄位、不寫 .db。
    */
   setTourDailyGoal: (goal: number) => boolean;
@@ -1951,8 +2028,17 @@ interface SampleActions {
     options?: {
       atEnd?: boolean;
       archive?: ArchiveClient;
+      onPersistResult?: (ok: boolean) => void;
     },
   ) => Promise<FileCard[] | null>;
+  restoreDeletedChapter: (
+    projectId: string,
+    record: DeletedRecord,
+    nodes: ChapterNode[],
+    options?: {
+      archive?: ArchiveClient;
+    },
+  ) => Promise<{ persisted: boolean }>;
   /** WO-128：新增時間線事件（頂層時間軸卡，依 nextTimelineOrderForNewEvent 排在最後）。 */
   addTimelineEvent: (
     projectId: string,
@@ -2014,7 +2100,7 @@ interface SampleContextValue {
   lastSaveWasAutoOf: (projectId: string) => boolean;
   stashFailedOf?: (projectId: string) => boolean;
   /**
-   * WO-110：這台裝置的資料（含非同步回復的手機暫存稿）是否已經載入完成。
+   * WO-110：這個裝置的資料（含非同步回復的手機暫存稿）是否已經載入完成。
    * 首次歡迎導覽要等它為 true 才判斷是不是全新裝置，不可趁還沒載完就當作全新。
    */
   deviceLoaded: boolean;
@@ -2031,6 +2117,9 @@ export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
   await verifyExportedDatabase(bytes, async (payload) => {
     const db = await openMemoryDb(payload);
     try {
+      validateJiufangDatabase(db.sql);
+      db.sql.select('SELECT id FROM project_info LIMIT 1');
+      db.sql.select('SELECT id FROM chapters LIMIT 1');
       assertTransferDataWritable(db.sql);
       assertTimelineDataWritable(db.sql);
       return currentSchemaVersion(db.sql);
@@ -2107,13 +2196,26 @@ async function snapshotManuscript(
   return { key, bytes };
 }
 
+function localStashFailedSaveAsNotice(outcome: SaveOutcome): string | null {
+  if (outcome.kind === 'saved-as') return SAVE_AS_LOCAL_STASH_FAIL;
+  if (outcome.kind === 'handed-off') {
+    return outcome.via === 'share'
+      ? SAVE_SHARE_LOCAL_STASH_FAIL
+      : SAVE_DOWNLOAD_LOCAL_STASH_FAIL;
+  }
+  return null;
+}
+
 export function applySaveOutcome(
   dispatch: (action: Action) => void,
   projectId: string,
   outcome: SaveOutcome,
   mode: 'save' | 'save-as',
+  options?: { localStashOk?: boolean },
 ) {
-  const text = saveNotice(outcome);
+  const stashFailedNotice =
+    options?.localStashOk === false ? localStashFailedSaveAsNotice(outcome) : null;
+  const text = stashFailedNotice ?? saveNotice(outcome);
   if (text) dispatch({ type: 'toast', message: text });
   if (outcome.kind === 'saved' || outcome.kind === 'saved-under-new-title') {
     dispatch({ type: 'record-project-save', projectId, atMs: Date.now() });
@@ -2203,6 +2305,7 @@ export async function runSaveProjectAs(input: {
   outcome: SaveOutcome;
   revAtStart: number;
   rememberedFile: DiskFile | null;
+  localStashOk: boolean;
 }> {
   const { state, project, dispatch, env } = input;
   const snapshot = input.snapshot ?? snapshotManuscript;
@@ -2211,14 +2314,21 @@ export async function runSaveProjectAs(input: {
   const snap = await snapshot(committedState, committedProject, false);
   const bytes = shareBytesForSaveAs({ prepared: committed ? null : input.preparedBytes, latest: snap.bytes });
   const outcome = await saveProjectAsNew(env, snap.key, bytes, exportDbFilename(committedProject.title));
+  let localStashOk = true;
   if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
-    await snapshot(committedState, committedProject, true);
-    dispatch({
-      type: 'promote-stored',
-      projectId: project.id,
-      key: snap.key,
-      filename: projectSaveFilename(committedProject.title, committedProject.filename),
-    });
+    try {
+      await snapshot(committedState, committedProject, true);
+    } catch {
+      localStashOk = false;
+    }
+    if (localStashOk) {
+      dispatch({
+        type: 'promote-stored',
+        projectId: project.id,
+        key: snap.key,
+        filename: projectSaveFilename(committedProject.title, committedProject.filename),
+      });
+    }
   }
   let rememberedFile: DiskFile | null = null;
   if (outcome.kind === 'saved-as') {
@@ -2227,8 +2337,8 @@ export async function runSaveProjectAs(input: {
       rememberedFile = rememberLoadedTarget(snap.key, target);
     }
   }
-  applySaveOutcome(dispatch, project.id, outcome, 'save-as');
-  return { snap, bytes, outcome, revAtStart, rememberedFile };
+  applySaveOutcome(dispatch, project.id, outcome, 'save-as', { localStashOk });
+  return { snap, bytes, outcome, revAtStart, rememberedFile, localStashOk };
 }
 
 export type TextImportOutcome =
@@ -2284,13 +2394,13 @@ export function buildImportedProject(
 
 /**
  * WO-109：一般開新稿子（長篇／單篇）的建立事件。
- * 全書目標帶入這台裝置的新稿子全書目標預設（沒設過、不合法、讀不到＝100,000）。
+ * 全書目標帶入這個裝置的新稿子全書目標預設（沒設過、不合法、讀不到＝100,000）。
  */
 /**
  * WO-111：歡迎導覽第 1 關按「下一關」寫每日目標。和設定頁同一個每日目標（set-tour-goal → changeGoal）。
  * - 不是 300 以上的整數：不寫，回 false。
  * - 值沒變：不寫，回 true。
- * - 沒有開著的稿子：另外記在這台裝置既有紀錄（save-record.v1）的 homeGoal，重開後預選；不新增每日目標的鍵。
+ * - 沒有開著的稿子：另外記在這個裝置既有紀錄（save-record.v1）的 homeGoal，重開後預選；不新增每日目標的鍵。
  *   本機儲存不能用或寫丟錯時照樣回 true，這次使用的值已在記憶體裡。
  * - WO-111 返工1：開著 .db 檔案稿：當下記在同一把裝置紀錄的 tourGoalById（以稿子代號對應），
  *   重新載入時由 applyTourFileGoal 套回；不寫 .db、不改檔案欄位。寫丟錯時同上，照樣回 true。
@@ -2382,7 +2492,7 @@ export async function runTextImport(input: {
   yieldToUi?: () => Promise<void>;
   decoder?: StrictDecoderFactory;
   newEventId?: (projectId: string) => string;
-  /** WO-109：新稿子的全書目標；沒給就讀這台裝置的本機設定 new-book-goal（沒設過＝100,000）。 */
+  /** WO-109：新稿子的全書目標；沒給就讀這個裝置的本機設定 new-book-goal（沒設過＝100,000）。 */
   newBookGoal?: number;
 }): Promise<TextImportOutcome> {
   const { busy } = input;
@@ -2979,6 +3089,65 @@ export async function runResumeAutoSave(input: {
 }
 
 /**
+ * WO-133 中-1：importFile 與 openWithPicker 共用的開檔流程。
+ * 讀入並寫好本機副本後，若寫入原檔位置把手（targets.save）失敗，不阻斷開檔，
+ * 仍保留記憶體把手供當次寫回；重開分頁無把手時自然退回既有的「還沒存成檔案」與選存檔位置流程。
+ */
+export async function openDatabaseManuscript(input: {
+  filename: string;
+  bytes: Uint8Array;
+  diskFile: DiskFile | null;
+  dispatch: (action: Action) => void;
+  env: Pick<SaveEnvironment, 'targets'>;
+  store: KeyValueStore | null;
+  onClearConflict?: (bookKey: string) => void;
+  importBookFn?: typeof importBook;
+  now?: Date;
+}): Promise<{ id: string; chapterId: string | null }> {
+  const rawFingerprint = await fingerprintBytes(input.bytes).catch(() => null);
+  const exportedAt = input.store
+    ? await exportTimeOfBytes(input.store, input.bytes).catch(() => null)
+    : null;
+  const book = await (input.importBookFn ?? importBook)(input.filename, input.bytes, input.now);
+  // WO-99／WO-100：開回的檔若是這個裝置從匯入稿存出去的，接回同一批匯入事件（以事件代號去重，不再加一次）。
+  const adopted = input.store
+    ? (() => {
+        try {
+          return adoptImportEventsByFingerprint(input.store, rawFingerprint, book.key);
+        } catch {
+          return null;
+        }
+      })()
+    : null;
+  if (adopted) input.dispatch({ type: 'set-import-events', importEvents: adopted });
+  const adoptedExports = input.store
+    ? adoptExportsQuietly(input.store, rawFingerprint, book.key)
+    : null;
+  if (adoptedExports) input.dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
+  try {
+    await input.env.targets.save(book.key, {
+      filename: book.filename,
+      file: input.diskFile,
+      lastKnownFingerprint: rawFingerprint,
+    });
+  } catch {
+    // 瀏覽器記不住原檔位置（IndexedDB 不可寫）時不阻斷開檔，也不報 OPEN_DB_FAIL。
+  }
+  rememberOpenFile(book.key, input.diskFile);
+  rememberOpenFileFingerprint(book.key, input.diskFile, rawFingerprint);
+  input.onClearConflict?.(book.key);
+  input.dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
+  // WO-77：開回的正是這個裝置另存出去的那份檔，「上次另存」沿用當時時間。
+  if (exportedAt != null) input.dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
+  return {
+    id: book.key,
+    chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '')
+      ? book.info.lastOpenedNodeId
+      : null,
+  };
+}
+
+/**
  * WO-130：手動「儲存專案」（含頁首點擊「還沒存成檔案」、檔案頁按鈕與 Ctrl/Cmd+S）主流程。
  * 與背景自動存檔共用同一條 snapshotManuscript → saveProjectFromClick → applySaveOutcome 管線與單飛鎖。
  */
@@ -3030,6 +3199,7 @@ export async function runManualSaveProject(input: {
         writeBackName: projectSaveFilename(project.title, project.filename),
         newTitleName: `${sanitizeDbBasename(project.title)}.db`,
         startIn: needsNewName && remembered ? remembered : null,
+        fallbackFile: remembered ?? null,
         onRemember: (file) => rememberOpenFile(key, file),
         buildBytes: async () => {
           const snapState = input.getState();
@@ -3186,6 +3356,48 @@ export async function persistFileBookStash(input: {
   }
 }
 
+/**
+ * WO-133 中-4(a)：立即把指定稿件的目前狀態寫進本機暫存（檔案稿直接寫入 App 空間，不等 250ms debounce；
+ * 非檔案稿直接寫入 localStorage），回傳是否寫入成功。
+ */
+export async function persistProjectNow(input: {
+  state: SampleState;
+  projectId: string;
+  dispatch: (action: Action) => void;
+  onStashResult: (projectId: string, ok: boolean, showToastOnFirstFail: boolean) => void;
+  store?: KeyValueStore | null;
+  saveBytes?: typeof saveBookBytes;
+}): Promise<boolean> {
+  const project = input.state.projects.find((item) => item.id === input.projectId);
+  if (!project || isBookRemoved(project.id)) return false;
+  if (project.origin === 'file' && project.dbKey) {
+    const extra = input.state.fileExtras[project.dbKey];
+    if (!extra) return false;
+    return persistFileBookStash({
+      state: input.state,
+      project,
+      extra,
+      dispatch: input.dispatch,
+      onStashResult: input.onStashResult,
+      saveBytes: input.saveBytes,
+    });
+  }
+  const store =
+    input.store === undefined
+      ? typeof localStorage === 'undefined'
+        ? null
+        : localStorage
+      : input.store;
+  if (!store) return false;
+  return persistLocalAutoStash({
+    store,
+    projects: input.state.projects,
+    activeProjectId: project.id,
+    dispatch: input.dispatch,
+    onStashResult: input.onStashResult,
+  });
+}
+
 export function SampleProvider({
   children,
   initialState,
@@ -3244,6 +3456,7 @@ export function SampleProvider({
   const [lastSaveWasAutoById, setLastSaveWasAutoById] = useState<Record<string, boolean>>({});
   const lastSavedRevByIdRef = useRef<Record<string, number>>({});
   const fileSaveInflightRef = useRef<{ kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null>(null);
+  const restoringArchiveIdsRef = useRef(new Set<string>());
 
   const refreshHandlePermission = useCallback(
     async (project: DemoProject | null | undefined): Promise<HandlePermissionState> => {
@@ -3351,7 +3564,7 @@ export function SampleProvider({
     });
   }, [state.projects, state.activeProjectId, markStashResult]);
 
-  // WO-77：暫存／另存時間與新稿子的寫作紀錄跟著留在這台裝置，重新整理後還在。
+  // WO-77：暫存／另存時間與新稿子的寫作紀錄跟著留在這個裝置，重新整理後還在。
   useEffect(() => {
     const store = deviceStore();
     if (!store) return;
@@ -3588,8 +3801,56 @@ export function SampleProvider({
         dispatch({ type: 'set-card-categories', projectId, ...payload }),
       deleteCard: (projectId, cardId, options) =>
         deleteProjectCardWithArchive(stateRef.current, dispatch, projectId, cardId, options),
-      restoreDeletedCard: (projectId, recordOrId, options) =>
-        restoreProjectCardFromArchive(stateRef.current, dispatch, projectId, recordOrId, options),
+      restoreDeletedCard: async (projectId, recordOrId, options) => {
+        const keySuffix = typeof recordOrId === 'string' ? recordOrId : recordOrId.id;
+        const guardKey = `${projectId}:card:${keySuffix}`;
+        if (restoringArchiveIdsRef.current.has(guardKey)) return null;
+        restoringArchiveIdsRef.current.add(guardKey);
+        try {
+          return await restoreProjectCardFromArchive(
+            stateRef.current,
+            dispatch,
+            projectId,
+            recordOrId,
+            {
+              ...options,
+              persistBook: (nextState) =>
+                persistProjectNow({
+                  state: nextState,
+                  projectId,
+                  dispatch,
+                  onStashResult: markStashResult,
+                }),
+            },
+          );
+        } finally {
+          restoringArchiveIdsRef.current.delete(guardKey);
+        }
+      },
+      restoreDeletedChapter: async (projectId, record, nodes, options) => {
+        const guardKey = `${projectId}:chapter:${record.id}`;
+        if (restoringArchiveIdsRef.current.has(guardKey)) return { persisted: false };
+        restoringArchiveIdsRef.current.add(guardKey);
+        try {
+          return await restoreDeletedChapterWithArchive({
+            state: stateRef.current,
+            dispatch,
+            projectId,
+            record,
+            nodes,
+            archive: options?.archive,
+            persistBook: (nextState) =>
+              persistProjectNow({
+                state: nextState,
+                projectId,
+                dispatch,
+                onStashResult: markStashResult,
+              }),
+          });
+        } finally {
+          restoringArchiveIdsRef.current.delete(guardKey);
+        }
+      },
       addTimelineEvent: (projectId, input) => {
         const currentCards = getProjectCards(stateRef.current, projectId);
         const nextOrder =
@@ -3615,70 +3876,36 @@ export function SampleProvider({
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
-        const store = deviceStore();
-        // WO-100：先對使用者選入的原始位元組算指紋（重新匯出後的位元組會不同，對不上本機舊對應）。
-        const rawFingerprint = await fingerprintBytes(bytes).catch(() => null);
-        const exportedAt = store ? await exportTimeOfBytes(store, bytes).catch(() => null) : null;
-        const book = await importBook(file.name, bytes);
-        // WO-99／WO-100：開回的檔若是這台裝置從匯入稿存出去的，接回同一批匯入事件（以事件代號去重，不再加一次）。
-        const adopted = store ? (() => {
-          try {
-            return adoptImportEventsByFingerprint(store, rawFingerprint, book.key);
-          } catch {
-            return null;
-          }
-        })() : null;
-        if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
-        const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
-        if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
-        await getSaveEnv().targets.save(book.key, {
-          filename: book.filename,
-          file: diskFile ?? null,
-          lastKnownFingerprint: rawFingerprint,
+        return openDatabaseManuscript({
+          filename: file.name,
+          bytes,
+          diskFile: diskFile ?? null,
+          dispatch,
+          env: getSaveEnv(),
+          store: deviceStore(),
+          onClearConflict: (bookKey) => {
+            autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [bookKey]: false };
+            setAutoSaveConflictById((prev) => (prev[bookKey] ? { ...prev, [bookKey]: false } : prev));
+          },
         });
-        rememberOpenFile(book.key, diskFile ?? null);
-        rememberOpenFileFingerprint(book.key, diskFile ?? null, rawFingerprint);
-        autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [book.key]: false };
-        setAutoSaveConflictById((prev) => (prev[book.key] ? { ...prev, [book.key]: false } : prev));
-        dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
-        // WO-77：開回的正是這台裝置另存出去的那份檔，「上次另存」沿用當時時間。
-        if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
-        return { id: book.key, chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null };
       },
       openWithPicker: async () => {
         const picked = await pickExistingDatabase();
         if (!picked) return null;
         const copy = new Uint8Array(picked.bytes.byteLength);
         copy.set(picked.bytes);
-        const store = deviceStore();
-        const rawFingerprint = await fingerprintBytes(copy).catch(() => null);
-        const exportedAt = store ? await exportTimeOfBytes(store, copy).catch(() => null) : null;
-        const book = await importBook(picked.file.name, copy);
-        const adopted = store ? (() => {
-          try {
-            return adoptImportEventsByFingerprint(store, rawFingerprint, book.key);
-          } catch {
-            return null;
-          }
-        })() : null;
-        if (adopted) dispatch({ type: 'set-import-events', importEvents: adopted });
-        const adoptedExports = store ? adoptExportsQuietly(store, rawFingerprint, book.key) : null;
-        if (adoptedExports) dispatch({ type: 'set-export-events', exportEvents: adoptedExports });
-        await getSaveEnv().targets.save(book.key, {
-          filename: book.filename,
-          file: picked.file,
-          lastKnownFingerprint: rawFingerprint,
+        return openDatabaseManuscript({
+          filename: picked.file.name,
+          bytes: copy,
+          diskFile: picked.file,
+          dispatch,
+          env: getSaveEnv(),
+          store: deviceStore(),
+          onClearConflict: (bookKey) => {
+            autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [bookKey]: false };
+            setAutoSaveConflictById((prev) => (prev[bookKey] ? { ...prev, [bookKey]: false } : prev));
+          },
         });
-        rememberOpenFile(book.key, picked.file);
-        rememberOpenFileFingerprint(book.key, picked.file, rawFingerprint);
-        autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [book.key]: false };
-        setAutoSaveConflictById((prev) => (prev[book.key] ? { ...prev, [book.key]: false } : prev));
-        dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
-        if (exportedAt != null) dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
-        return {
-          id: book.key,
-          chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '') ? book.info.lastOpenedNodeId : null,
-        };
       },
       importTextFile: async (file) => {
         const outcome = await runTextImport({
@@ -3823,7 +4050,7 @@ export function SampleProvider({
         dismissRenameSavePrompt(project.id);
         const runManualAs = async (): Promise<SaveOutcome | null> => {
           try {
-            const { bytes, outcome, revAtStart, rememberedFile } = await runSaveProjectAs({
+            const { bytes, outcome, revAtStart, rememberedFile, localStashOk } = await runSaveProjectAs({
               state: latestState,
               project,
               dispatch,
@@ -3855,7 +4082,7 @@ export function SampleProvider({
               setAutoSaveFailedById((prev) => (prev[project.id] ? { ...prev, [project.id]: false } : prev));
               autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [project.id]: false };
               setAutoSaveConflictById((prev) => (prev[project.id] ? { ...prev, [project.id]: false } : prev));
-              markStashResult(project.id, true, false);
+              markStashResult(project.id, localStashOk, false);
               setLastSaveWasAutoById((prev) => ({ ...prev, [project.id]: false }));
             }
             return outcome;

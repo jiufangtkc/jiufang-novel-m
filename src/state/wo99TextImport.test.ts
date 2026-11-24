@@ -88,7 +88,7 @@ function importedId(outcome: TextImportOutcome): string {
   return outcome.id;
 }
 
-/** 和 App 自動暫存一樣：本機稿子清單與這台裝置的紀錄寫進本機。 */
+/** 和 App 自動暫存一樣：本機稿子清單與這個裝置的紀錄寫進本機。 */
 function autoSave(state: SampleState): void {
   saveProjects(store, state.projects.filter((project) => project.origin !== 'file'));
   persistDeviceSaveRecord(store, state);

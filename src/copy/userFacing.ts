@@ -1,6 +1,7 @@
 import { formatProjectUpdatedLabel } from '../domain/formatCalendarDate';
 import { formatInteger } from '../domain/formatNumber';
 import { formatLastExportLabel } from '../domain/saveClock';
+import { isDatabaseOpenError } from '../db/openDbError';
 
 /** 九方審過的介面文案（改前改後表 V1）。 */
 
@@ -29,6 +30,23 @@ export const CHAPTER_NOT_FOUND = '找不到這一章。請從目錄重新選。'
 
 export const OPEN_DB_FAIL =
   '這個檔案打不開。請選擇使用九方編輯器編寫的 .db 稿件檔。';
+
+/** WO-133（暫定，待九方審）：開檔錯誤分流提示。 */
+export const OPEN_DB_NOT_JIUFANG =
+  '這不是九方稿件檔。請選擇使用九方編輯器編寫的 .db 稿件檔。';
+export const OPEN_DB_NEWER_VERSION =
+  '這份稿件來自較新版本的九方編輯器，目前這個版本打不開，請先更新後再開啟。';
+export const OPEN_DB_STORAGE_FAIL =
+  '這個裝置目前存不下這份稿件，請先清出空間再試一次。';
+
+export function openFileErrorMessage(error: unknown): string {
+  if (isDatabaseOpenError(error)) {
+    if (error.code === 'not-jiufang') return OPEN_DB_NOT_JIUFANG;
+    if (error.code === 'newer-schema') return OPEN_DB_NEWER_VERSION;
+    if (error.code === 'storage-failed') return OPEN_DB_STORAGE_FAIL;
+  }
+  return OPEN_DB_FAIL;
+}
 
 /** WO-121：開檔讀取中，所有開稿按鈕（首頁、檔案頁、歡迎導覽）統一顯示這句（九方已核准，單一省略號字元）。 */
 export const OPEN_FILE_BUSY = '正在開啟…';
@@ -740,3 +758,11 @@ export const SAVE_AND_STASH_FAIL = '存檔沒成功，也還沒存進這個裝�
 export const SAVE_CONFLICT_BADGE = '檔案已被外部更新';
 export const SAVE_CONFLICT_ARIA = '原本的檔案已在別處更新，點一下另存專案';
 export const SAVE_CONFLICT_TOAST = '原本的檔案已在別處更新，已先暫停覆蓋。請改按「另存專案」保留這份稿件';
+
+// WO-133 中-4(c)（暫定，待九方審）：另存交付結果與裝置暫存狀態分流提示。
+export const SAVE_HANDED_OFF_SHARE_TOAST = '已交給分享選單，請確認已存到想放的位置';
+export const SAVE_HANDED_OFF_DOWNLOAD_TOAST = '已開始下載，請自行放到想放的位置';
+export const SAVE_AS_LOCAL_STASH_FAIL = '檔案已另存，但這個裝置的暫存沒更新';
+export const SAVE_SHARE_LOCAL_STASH_FAIL = '已交給分享選單，但這個裝置的暫存沒更新';
+export const SAVE_DOWNLOAD_LOCAL_STASH_FAIL = '已開始下載，但這個裝置的暫存沒更新';
+export const SAVE_USE_SAVE_AS_TOAST = '這個瀏覽器無法直接存回原檔，請改用「另存專案」';

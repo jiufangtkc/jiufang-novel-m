@@ -233,6 +233,7 @@ function CardsScreenBody(props: CardsScreenProps) {
   );
   const checkedRemembered = useRef(fromProps);
   const cardIdsRef = useRef<readonly string[]>([]);
+  const restoringRecordIdsRef = useRef(new Set<string>());
 
   // 訂閱 IndexedDB 歸檔庫之最近刪除紀錄
   useEffect(() => {
@@ -397,7 +398,7 @@ function CardsScreenBody(props: CardsScreenProps) {
     dispatch({ type: 'SELECT_CATEGORY', categoryId });
   };
 
-  // WO-65：「返回」只離開編輯畫面，打到一半的字已隨打隨存在這台裝置，不當作放棄
+  // WO-65：「返回」只離開編輯畫面，打到一半的字已隨打隨存在這個裝置，不當作放棄
   const handleBackToCards = () => {
     setEditorMode('preview');
     setPickingColor(false);
@@ -678,52 +679,70 @@ function CardsScreenBody(props: CardsScreenProps) {
   const handleUndo = async () => {
     if (!undoState?.record) return;
     const record = undoState.record;
+    if (restoringRecordIdsRef.current.has(record.id)) return;
+    restoringRecordIdsRef.current.add(record.id);
 
     const restoredIds = [record.rootCardId, ...(record.cards ?? []).map((c) => c.id)];
-    setDeletedIds((prev) => {
-      const next = new Set(prev);
-      for (const id of restoredIds) next.delete(id);
-      return next;
-    });
-
-    setDeletedCards((prev) => prev.filter((r) => r.id !== record.id));
-
-    const categoryName =
-      categories.find((c) => c.id === record.category)?.name ?? '未知分類';
-    actions.toast(restoredCardToast(record.title, categoryName));
-
     setUndoState(null);
-    dispatch({ type: 'SELECT_CARD', cardId: record.rootCardId });
-
-    if (projectId) {
-      try {
-        await actions.restoreDeletedCard(projectId, record);
-      } catch {
-        // ignore
+    let persisted = true;
+    try {
+      if (projectId) {
+        const result = await actions.restoreDeletedCard(projectId, record, {
+          onPersistResult: (ok) => {
+            persisted = ok;
+          },
+        });
+        if (!result) return;
       }
+      setDeletedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of restoredIds) next.delete(id);
+        return next;
+      });
+      dispatch({ type: 'SELECT_CARD', cardId: record.rootCardId });
+      if (persisted) {
+        setDeletedCards((prev) => prev.filter((r) => r.id !== record.id));
+        const categoryName =
+          categories.find((c) => c.id === record.category)?.name ?? '未知分類';
+        actions.toast(restoredCardToast(record.title, categoryName));
+      }
+    } catch {
+      // ignore
+    } finally {
+      restoringRecordIdsRef.current.delete(record.id);
     }
   };
 
   const handleRestoreFromList = async (record: DeletedCardRecord) => {
+    if (restoringRecordIdsRef.current.has(record.id)) return;
+    restoringRecordIdsRef.current.add(record.id);
+
     const restoredIds = [record.rootCardId, ...(record.cards ?? []).map((c) => c.id)];
-    setDeletedIds((prev) => {
-      const next = new Set(prev);
-      for (const id of restoredIds) next.delete(id);
-      return next;
-    });
-
-    setDeletedCards((prev) => prev.filter((r) => r.id !== record.id));
-
-    const categoryName =
-      categories.find((c) => c.id === record.category)?.name ?? '未知分類';
-    actions.toast(restoredCardToast(record.title, categoryName));
-
-    if (projectId) {
-      try {
-        await actions.restoreDeletedCard(projectId, record);
-      } catch {
-        // ignore
+    let persisted = true;
+    try {
+      if (projectId) {
+        const result = await actions.restoreDeletedCard(projectId, record, {
+          onPersistResult: (ok) => {
+            persisted = ok;
+          },
+        });
+        if (!result) return;
       }
+      setDeletedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of restoredIds) next.delete(id);
+        return next;
+      });
+      if (persisted) {
+        setDeletedCards((prev) => prev.filter((r) => r.id !== record.id));
+        const categoryName =
+          categories.find((c) => c.id === record.category)?.name ?? '未知分類';
+        actions.toast(restoredCardToast(record.title, categoryName));
+      }
+    } catch {
+      // ignore
+    } finally {
+      restoringRecordIdsRef.current.delete(record.id);
     }
   };
 

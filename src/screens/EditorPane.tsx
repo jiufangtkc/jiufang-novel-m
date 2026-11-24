@@ -184,7 +184,7 @@ export function EditorPane({
   const nextId = project ? neighborChapterId(project.nodes, chapter.id, 1) : null;
 
   const [isCardsOpen, setIsCardsOpen] = useState(false);
-  // WO-65：記住這一章的游標、選取、捲動與離開前鍵盤狀態（每本書各一份，存在這台裝置）
+  // WO-65：記住這一章的游標、選取、捲動與離開前鍵盤狀態（每本書各一份，存在這個裝置）
   const nodesRef = useRef(project?.nodes ?? []);
   nodesRef.current = project?.nodes ?? [];
   /** 最近一次按下（手指或滑鼠）當下正文是否在打字；切頁造成失焦之前就記下 */
@@ -506,7 +506,7 @@ export function EditorPane({
     if (!el || !project) return;
     if (placedCursor.current !== chapter.id) {
       placedCursor.current = chapter.id;
-      // WO-65：先用這台裝置記住的位置（同一章才用）；離開前在打字就叫回鍵盤，收著就只放好游標
+      // WO-65：先用這個裝置記住的位置（同一章才用）；離開前在打字就叫回鍵盤，收著就只放好游標
       const memo = caretToRestore(readWritePlace(projectId), chapter.id, el.value.length);
       if (memo) {
         if (memo.keyboard) {

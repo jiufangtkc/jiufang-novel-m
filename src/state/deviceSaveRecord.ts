@@ -3,11 +3,11 @@ import type { WritingLogRow } from '../domain/writingLog';
 import type { KeyValueStore } from '../domain/outline';
 
 /**
- * WO-77：只存在這台裝置（瀏覽器本機儲存）的存檔紀錄。
+ * WO-77：只存在這個裝置（瀏覽器本機儲存）的存檔紀錄。
  *
  * - 每份稿子（以稿子代號對應）的暫存、另存、儲存時間。
  * - 還沒升格成檔案的新稿子，自己的寫作紀錄與每日目標結算狀態。
- * - 這台裝置另存出去的檔案指紋與另存時間，開回同一份檔時用來對上「上次另存」。
+ * - 這個裝置另存出去的檔案指紋與另存時間，開回同一份檔時用來對上「上次另存」。
  * - WO-111：還沒開任何稿子時（例如第一次用、在歡迎導覽第 1 關選的）的每日目標 homeGoal。
  *   和設定頁是同一個每日目標的規則（最少 300 的整數、當天以最後一次為準），只是補上「沒有稿子時」
  *   重開後還記得；放在這把既有的鍵裡，不另開每日目標的鍵。
@@ -36,7 +36,7 @@ export interface DeviceSaveRecord {
   logsById: Record<string, WritingLogRow[]>;
   goalById: Record<string, GoalSchedule>;
   exportedFiles: Record<string, number>;
-  /** WO-98：每份稿子（以代號對應）在這台裝置的建立或第一次遇到的時間，用來算「沒存檔幾天」。 */
+  /** WO-98：每份稿子（以代號對應）在這個裝置的建立或第一次遇到的時間，用來算「沒存檔幾天」。 */
   startedById: Record<string, number>;
   /** WO-111：沒有開著的稿子時的每日目標；沒設過或不合法時不帶這一格。 */
   homeGoal?: number;
@@ -122,7 +122,7 @@ export function loadDeviceSaveRecord(store: KeyValueStore | null, now: Date): De
 }
 
 /**
- * 寫入這台裝置的紀錄。寫作紀錄只留「還沒升格成檔案的新稿子」的（傳進來的 draftIds）；
+ * 寫入這個裝置的紀錄。寫作紀錄只留「還沒升格成檔案的新稿子」的（傳進來的 draftIds）；
  * 範例書照舊用範例紀錄，從檔案開的稿子照舊讀檔案裡的紀錄。
  */
 export function saveDeviceSaveRecord(
@@ -241,7 +241,7 @@ export function saveHomeDailyGoal(store: KeyValueStore, goal: number): boolean {
   return true;
 }
 
-/** 記下這台裝置另存出去的那份檔案（以內容指紋對應）與另存時間。 */
+/** 記下這個裝置另存出去的那份檔案（以內容指紋對應）與另存時間。 */
 export function rememberExportedFile(store: KeyValueStore, fingerprint: string, atMs: number): void {
   const record = readRaw(store);
   const entries = Object.entries({ ...record.exportedFiles, [fingerprint]: atMs })
@@ -253,7 +253,7 @@ export function rememberExportedFile(store: KeyValueStore, fingerprint: string, 
   );
 }
 
-/** 開回檔案時查：這份檔是不是這台裝置另存出去的，另存時間是幾點。內容不同就查不到。 */
+/** 開回檔案時查：這份檔是不是這個裝置另存出去的，另存時間是幾點。內容不同就查不到。 */
 export function recallExportedFile(store: KeyValueStore, fingerprint: string): number | null {
   const atMs = readRaw(store).exportedFiles[fingerprint];
   return typeof atMs === 'number' ? atMs : null;

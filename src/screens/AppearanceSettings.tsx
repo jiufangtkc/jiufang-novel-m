@@ -52,7 +52,7 @@ function ThemeSwatch({ theme }: { theme: ThemeId }) {
 }
 
 /**
- * 主題（WO-101）。選了立刻換色並記在這台裝置；不寫進稿子。
+ * 主題（WO-101）。選了立刻換色並記在這個裝置；不寫進稿子。
  * 選取狀態由 radio 語意提供；方向鍵在三套之間移動。
  */
 function ThemeRow() {
