@@ -12,6 +12,13 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-135（暫定，待九方審）
+  {
+    version: '0.4.4',
+    items: [
+      '刪掉章節後按復原，時間線上連到這章的事件會一起接回來',
+    ],
+  },
   // WO-133（暫定，待九方審）
   {
     version: '0.4.3',

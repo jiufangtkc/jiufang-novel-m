@@ -143,7 +143,7 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(html).not.toContain(`v${APP_VERSION}`);
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
-    expect(html).toContain('<li>瀏覽器暫時記不住原檔位置時，正常的九方稿件仍可照常開啟</li>');
+    expect(html).toContain('<li>刪掉章節後按復原，時間線上連到這章的事件會一起接回來</li>');
 
     const confirmMatch = html.match(
       /<button\b[^>]*data-testid="whats-new-confirm"[^>]*>[\s\S]*?<\/button>/,
