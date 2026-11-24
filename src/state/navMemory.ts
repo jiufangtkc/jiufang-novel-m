@@ -1,7 +1,7 @@
 /**
  * WO-65：寫作 ↔ 資料集「來回記住位置」與卡片未完成編輯的本機記憶。
  *
- * - 每本書一份，存在這台裝置的 localStorage，鍵名為 `jiufang-novel-m.nav-memory.v1:<書 id>`，
+ * - 每本書一份，存在這個裝置的 localStorage，鍵名為 `jiufang-novel-m.nav-memory.v1:<書 id>`，
  *   內容也帶 `version: 1`。不寫進 .db，不影響存檔內容或電腦版。
  * - 讀到壞 JSON、欄位型別不符或舊版本，就當作沒有記憶（該段忽略），不當機。
  * - 讀寫 localStorage 失敗時，仍保留這次開著時的記憶體內容，正在編輯的字不會因此消失。

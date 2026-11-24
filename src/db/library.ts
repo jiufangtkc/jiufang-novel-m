@@ -7,7 +7,14 @@ import { externalFileFromStored, type BookFileMark } from '../domain/bookTitle';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
 import type { TimelineRead } from './timelineMeta';
 import type { TransferEvent, TransferRead } from './transferMeta';
-import { openMemoryDb } from './wasmDb';
+import {
+  browserDeliveryEnv,
+  downloadFile,
+  shouldPreferDownload,
+  type DeliveryEnv,
+} from './fileDelivery';
+import { DatabaseOpenError, hasSqliteHeader } from './openDbError';
+import { openMemoryDb, type MemoryDb } from './wasmDb';
 
 export type { StoredBook };
 
@@ -102,8 +109,10 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
   for (const item of stored) {
     // WO-116：已刪稿子即使讀取在刪除前就開始，也不回傳。
     if (isBookRemoved(item.key)) continue;
-    const db = await openMemoryDb(item.bytes);
+    if (!hasSqliteHeader(item.bytes)) continue;
+    let db: MemoryDb | null = null;
     try {
+      db = await openMemoryDb(item.bytes);
       const loaded = readFileProject(db.sql);
       const mark = externalFileFromStored({
         key: item.key,
@@ -129,8 +138,10 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         transfer: loaded.transfer,
         timeline: loaded.timeline,
       });
+    } catch {
+      // 單本暫存讀壞時略過，避免拖垮其餘已存稿件載入。
     } finally {
-      db.close();
+      db?.close();
     }
   }
   // 讀取期間才被刪掉的稿子也要濾掉。
@@ -142,7 +153,15 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
  * 回傳的 bytes 是重新匯出的位元組；原始位元組的指紋請在呼叫前另外算（本機事件對應用）。
  */
 export async function readBookBytes(filename: string, bytes: Uint8Array, key: string, now = new Date()): Promise<ImportedBook> {
-  const db = await openMemoryDb(bytes);
+  if (!hasSqliteHeader(bytes)) {
+    throw new DatabaseOpenError('not-jiufang');
+  }
+  let db: MemoryDb;
+  try {
+    db = await openMemoryDb(bytes);
+  } catch {
+    throw new DatabaseOpenError('not-jiufang');
+  }
   try {
     const loaded = readFileProject(db.sql);
     const exported = db.exportBytes();
@@ -170,15 +189,19 @@ export async function readBookBytes(filename: string, bytes: Uint8Array, key: st
 
 export async function importBook(filename: string, bytes: Uint8Array, now = new Date()): Promise<ImportedBook> {
   const book = await readBookBytes(filename, bytes, `file-${now.getTime()}`, now);
-  await putBook({
-    key: book.key,
-    filename: book.filename,
-    title: book.title,
-    bytes: book.bytes,
-    hasExternalFile: true,
-    titleInFile: book.info.title,
-    titleSavePending: null,
-  });
+  try {
+    await putBook({
+      key: book.key,
+      filename: book.filename,
+      title: book.title,
+      bytes: book.bytes,
+      hasExternalFile: true,
+      titleInFile: book.info.title,
+      titleSavePending: null,
+    });
+  } catch {
+    throw new DatabaseOpenError('storage-failed');
+  }
   return book;
 }
 
@@ -250,26 +273,35 @@ export function databaseSharePayload(file: File): ShareData {
 export async function shareDatabase(
   filename: string,
   bytes: Uint8Array,
+  env: DeliveryEnv = browserDeliveryEnv(),
 ): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const copy = new Uint8Array(bytes.byteLength);
   copy.set(bytes);
   const file = new File([copy], filename.endsWith('.db') ? filename : `${filename}.db`, {
     type: 'application/octet-stream',
   });
-  if (typeof navigator.share === 'function' && navigator.canShare?.({ files: [file] })) {
+  const payload = databaseSharePayload(file);
+  let canShare = false;
+  try {
+    canShare = Boolean(env.share && env.canShare?.(payload)) && !shouldPreferDownload(env);
+  } catch {
+    canShare = false;
+  }
+  if (canShare && env.share) {
     try {
-      await navigator.share(databaseSharePayload(file));
+      await env.share(payload);
       return 'shared';
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return 'cancelled';
-      throw error;
+      if (
+        error &&
+        typeof error === 'object' &&
+        'name' in error &&
+        (error as { name?: unknown }).name === 'AbortError'
+      ) {
+        return 'cancelled';
+      }
+      // 分享遇到 NotAllowedError 或瀏覽器假支援時，降級走下載流程。
     }
   }
-  const url = URL.createObjectURL(file);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = file.name;
-  link.click();
-  URL.revokeObjectURL(url);
-  return 'downloaded';
+  return downloadFile(file, env);
 }

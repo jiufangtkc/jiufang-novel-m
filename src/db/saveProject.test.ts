@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
+import {
+  SAVE_HANDED_OFF_SHARE_TOAST,
+  SAVE_USE_SAVE_AS_TOAST,
+} from '../copy/userFacing';
 import { createMemoryAppSpace } from './appSpace';
 import { DATABASE_FILE_TYPE, savePickerConfig } from './browserDisk';
 import { createMemoryTargetStore, restoreTarget, type DiskFile } from './fileTarget';
@@ -189,26 +193,28 @@ describe('儲存專案', () => {
     expect(file.writes).toBe(0);
   });
 
-  it('不支援選檔且沒有把手時無法儲存專案', async () => {
+  it('不支援選檔且沒有把手時回傳 use-save-as 並提示改用另存專案', async () => {
     const box = env();
     await box.store.save('book-1', { filename: '原稿.db', file: null });
     const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '書名.db');
-    expect(outcome.kind).toBe('cancelled');
+    expect(outcome.kind).toBe('use-save-as');
     expect(box.shared).toEqual([]);
-    expect(saveNotice(outcome)).toBeNull();
+    expect(saveNotice(outcome)).toBe(SAVE_USE_SAVE_AS_TOAST);
   });
 
-  it('沒有原檔名也沒有把手時仍取消', async () => {
+  it('沒有原檔名也沒有把手且不支援選檔時同樣回傳 use-save-as', async () => {
     const box = env();
     const outcome = await saveProjectToPlace(box.env, 'book-1', NEXT, '未命名.db');
-    expect(outcome.kind).toBe('cancelled');
+    expect(outcome.kind).toBe('use-save-as');
     expect(box.shared).toEqual([]);
   });
 });
 
 describe('另存專案', () => {
-  it('分享選單成功後提示已另存', () => {
-    expect(saveNotice({ kind: 'handed-off', via: 'share', filename: '【範例】測試書_20260315-0905.db' })).toBe('已另存');
+  it('分享選單成功後提示已交給分享選單', () => {
+    expect(saveNotice({ kind: 'handed-off', via: 'share', filename: '【範例】測試書_20260315-0905.db' })).toBe(
+      SAVE_HANDED_OFF_SHARE_TOAST,
+    );
   });
 
   it('分享選單取消時不顯示成功', async () => {
@@ -246,7 +252,7 @@ describe('另存專案', () => {
       via: 'share',
       filename: '霧港_20260315-0905.db',
     });
-    expect(saveNotice(savedAs)).toBe('已另存');
+    expect(saveNotice(savedAs)).toBe(SAVE_HANDED_OFF_SHARE_TOAST);
     const loaded = await box.store.load('book-1');
     expect(loaded?.filename).toBe('原稿.db');
     expect(loaded?.file).toBeNull();

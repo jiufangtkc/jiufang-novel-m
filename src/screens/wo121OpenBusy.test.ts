@@ -7,7 +7,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it } from 'vitest';
-import { OPEN_DB_FAIL, OPEN_FILE_BUSY, openButtonLabel } from '../copy/userFacing';
+import { OPEN_DB_FAIL, OPEN_FILE_BUSY, openButtonLabel, openFileErrorMessage } from '../copy/userFacing';
 import { LayoutProvider } from '../layout';
 import { WelcomeTour, type WelcomeTourProps } from './WelcomeTour';
 
@@ -139,7 +139,8 @@ describe('WO-121：入口共用同一段開檔流程', () => {
     expect(hook).toContain("settle('opened')");
     expect(hook).toContain("settle('cancelled')");
     expect(hook).toContain("settle('failed')");
-    expect(hook.match(/actions\.toast\(OPEN_DB_FAIL\)/g)?.length).toBe(2);
+    expect(hook.match(/actions\.toast\(openFileErrorMessage\(error\)\)/g)?.length).toBe(2);
+    expect(openFileErrorMessage(new Error('unknown'))).toBe(OPEN_DB_FAIL);
     expect(hook).toContain("input.addEventListener('cancel'");
   });
 

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { CardEditor } from '../components/CardEditor';
 import { BackIcon, PlusIcon } from '../components/Icons';
@@ -118,6 +118,7 @@ function TimelineScreenBody(props: TimelineScreenProps) {
     initialConfirmDeleteCardId,
   );
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
+  const restoringRecordIdsRef = useRef(new Set<string>());
   const [undoState, setUndoState] = useState<{
     record: DeletedCardRecord;
     title: string;
@@ -349,25 +350,35 @@ function TimelineScreenBody(props: TimelineScreenProps) {
   const handleUndo = async () => {
     if (!undoState?.record) return;
     const record = undoState.record;
+    if (restoringRecordIdsRef.current.has(record.id)) return;
+    restoringRecordIdsRef.current.add(record.id);
     const restoredIds = [record.rootCardId, ...(record.cards ?? []).map((c) => c.id)];
 
-    setDeletedIds((prev) => {
-      const next = new Set(prev);
-      for (const id of restoredIds) next.delete(id);
-      return next;
-    });
-
-    actions.toast(restoredCardToast(record.title, TIMELINE_HEADING));
     setUndoState(null);
-    setSelectedCardId(record.rootCardId);
-    setEditorMode('preview');
-
-    if (projectId) {
-      try {
-        await actions.restoreDeletedCard(projectId, record);
-      } catch {
-        // ignore
+    let persisted = true;
+    try {
+      if (projectId) {
+        const result = await actions.restoreDeletedCard(projectId, record, {
+          onPersistResult: (ok) => {
+            persisted = ok;
+          },
+        });
+        if (!result) return;
       }
+      setDeletedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of restoredIds) next.delete(id);
+        return next;
+      });
+      setSelectedCardId(record.rootCardId);
+      setEditorMode('preview');
+      if (persisted) {
+        actions.toast(restoredCardToast(record.title, TIMELINE_HEADING));
+      }
+    } catch {
+      // ignore
+    } finally {
+      restoringRecordIdsRef.current.delete(record.id);
     }
   };
 

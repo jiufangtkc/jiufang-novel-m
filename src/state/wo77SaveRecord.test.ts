@@ -47,7 +47,7 @@ function write(state: SampleState, projectId: string, text: string): SampleState
   return reduce(state, { type: 'commit-text', projectId, nodeId: chapterOf(state, projectId), text });
 }
 
-/** 和 App 自動暫存做的事一樣：正文寫進本機、記下暫存時間，再把存檔紀錄留在這台裝置。 */
+/** 和 App 自動暫存做的事一樣：正文寫進本機、記下暫存時間，再把存檔紀錄留在這個裝置。 */
 function autoSave(state: SampleState, atMs: number): SampleState {
   saveProjects(store, state.projects.filter((project) => project.origin !== 'file'));
   const next = state.activeProjectId
@@ -57,7 +57,7 @@ function autoSave(state: SampleState, atMs: number): SampleState {
   return next;
 }
 
-/** 重新整理：從這台裝置的儲存重新建立狀態，再像使用者一樣打開那份稿子。 */
+/** 重新整理：從這個裝置的儲存重新建立狀態，再像使用者一樣打開那份稿子。 */
 function reload(now: Date, projectId: string): SampleState {
   return reduce(createState(now), { type: 'focus-project', id: projectId });
 }
@@ -128,7 +128,7 @@ describe('WO-77 自動暫存留住今天字數、另存時間重新整理後還�
     expect(statsOf(reload(NOON, 'p-b')).todayWords).toBe(bWords);
     const sample = createState(NOON);
     expect(statsOf(sample)).toEqual(sampleBefore);
-    // 範例書不寫進這台裝置的寫作紀錄
+    // 範例書不寫進這個裝置的寫作紀錄
     const saved = JSON.parse(store.getItem(DEVICE_SAVE_RECORD_KEY)!);
     expect(Object.keys(saved.logsById).sort()).toEqual(['p-a', 'p-b']);
   });
@@ -204,7 +204,7 @@ describe('WO-77 自動暫存留住今天字數、另存時間重新整理後還�
     // 存檔紀錄之後再寫入，不會把另存檔案指紋洗掉
     persistDeviceSaveRecord(store, createState(NOON));
     expect(await exportTimeOfBytes(store, saved)).toBe(exportAt);
-    // 指紋只在這台裝置，紀錄裡沒有正文
+    // 指紋只在這個裝置，紀錄裡沒有正文
     expect(store.getItem(DEVICE_SAVE_RECORD_KEY)).not.toContain('霧');
   });
 });

@@ -26,7 +26,6 @@ import { nodesAfterDeleteUndo } from '../domain/undoDelete';
 import {
   archiveDeletion,
   deletedFromNode,
-  forgetDeleted,
   nodeAfterVersionRestore,
   versionFromNode,
   versionsForNode,
@@ -193,6 +192,7 @@ export function WriteScreen() {
   const restoredKey = useRef<string | null>(null);
   const dragSession = useRef<DragState>({ dragId: null, drop: null });
   const undoAction = useRef<(() => void) | null>(null);
+  const restoringDeletedIdsRef = useRef(new Set<string>());
   nodesRef.current = project?.nodes ?? [];
   // WO-63：全書搜尋。放在寫作頁，換章不會不見；離開寫作頁就一起清掉。
   const search = useBookSearch(project, chapterId);
@@ -426,17 +426,24 @@ export function WriteScreen() {
     actions.setNodes(book.id, next);
   }
 
-  function undoNow() {
+  async function undoNow() {
     if (!undo) return;
     const current = liveNodes();
     if (undo.deleted) {
       const deleted = undo.deleted;
-      const next = nodesAfterDeleteUndo(current, { snapshot: [], deleted });
-      actions.setNodes(book.id, expandToNode(next, deleted.node.id), {
-        restoreTimelineLinks: deleted.unlinkedTimelineEvents,
-      });
-      updateArchive((archiveNow) => ({ ...archiveNow, deleted: forgetDeleted(archiveNow.deleted, deleted.id) }));
+      if (restoringDeletedIdsRef.current.has(deleted.id)) return;
+      restoringDeletedIdsRef.current.add(deleted.id);
+      setUndo(null);
       pendingScroll.current = deleted.node.id;
+      try {
+        const next = findNode(current, deleted.node.id)
+          ? current
+          : expandToNode(nodesAfterDeleteUndo(current, { snapshot: [], deleted }), deleted.node.id);
+        await actions.restoreDeletedChapter(book.id, deleted, next);
+      } finally {
+        restoringDeletedIdsRef.current.delete(deleted.id);
+      }
+      return;
     } else if (undo.structure) {
       actions.setNodes(book.id, nodesAfterStructureUndo(current, undo.structure));
       if (undo.structure.kind === 'move' || undo.structure.kind === 'rename' || undo.structure.kind === 'progress') {
@@ -445,7 +452,7 @@ export function WriteScreen() {
     }
     setUndo(null);
   }
-  undoAction.current = undo ? undoNow : null;
+  undoAction.current = undo ? () => { void undoNow(); } : null;
 
   function liveNodes(): ChapterNode[] {
     const live = readLiveDraftFromEditor();
@@ -530,15 +537,23 @@ export function WriteScreen() {
     return `${formatCalendarDateFromDate(date)} ${formatClockTime(date)}`;
   }
 
-  function recover(record: DeletedRecord, atEnd: boolean) {
-    const placed = placeRecovered(book.nodes, record, atEnd);
-    actions.setNodes(book.id, expandToNode(placed, record.node.id), {
-      restoreTimelineLinks: record.unlinkedTimelineEvents,
-    });
-    updateArchive((current) => ({ ...current, deleted: forgetDeleted(current.deleted, record.id) }));
-    setDeletedOpen(false);
-    setUndo(null);
-    pendingScroll.current = record.node.id;
+  async function recover(record: DeletedRecord, atEnd: boolean) {
+    if (restoringDeletedIdsRef.current.has(record.id)) return;
+    restoringDeletedIdsRef.current.add(record.id);
+    try {
+      const current = liveNodes();
+      const placed = findNode(current, record.node.id)
+        ? current
+        : expandToNode(placeRecovered(current, record, atEnd), record.node.id);
+      const { persisted } = await actions.restoreDeletedChapter(book.id, record, placed);
+      if (persisted) {
+        setDeletedOpen(false);
+      }
+      setUndo(null);
+      pendingScroll.current = record.node.id;
+    } finally {
+      restoringDeletedIdsRef.current.delete(record.id);
+    }
   }
 
   async function restoreVersion(version: ChapterVersion) {

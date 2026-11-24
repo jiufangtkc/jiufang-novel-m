@@ -12,6 +12,16 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-133（暫定，待九方審）
+  {
+    version: '0.4.3',
+    items: [
+      '瀏覽器暫時記不住原檔位置時，正常的九方稿件仍可照常開啟',
+      '開啟非九方稿件或較新版本的稿件檔時，會清楚說明原因，不再誤開空白稿',
+      '從「最近刪除」或「復原」救回章節與卡片時，會先確認存妥再移除刪除紀錄',
+      '修正另存檔案與畫面提示可能不一致的情況，並統一介面用字',
+    ],
+  },
   // WO-132（暫定，待九方審）
   {
     version: '0.4.2',
@@ -34,7 +44,7 @@ export const RELEASE_NOTES: readonly ReleaseNote[] = [
   {
     version: '0.4.0',
     items: [
-      '自動存檔：用電腦的 Chrome 或 Edge 存過一次後，每 5 分鐘自動存回檔案',
+      '自動存檔：在電腦的 Chrome 或 Edge 存成檔案一次後，有改字就每 5 分鐘自動存回去',
       '還沒存成檔案時會提醒你',
     ],
   },

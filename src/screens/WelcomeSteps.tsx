@@ -51,7 +51,7 @@ import type { TourEntry } from './welcomeTourModel';
  *
  * 寫入：
  * - 第 1 關：actions.setTourDailyGoal，和設定頁「寫作目標」卡片是同一個每日目標（最少 300、當天以最後一次為準）；
- *   不改開著檔案的欄位、不寫 .db；沒有稿子時記在這台裝置的既有紀錄裡，重開後預選。
+ *   不改開著檔案的欄位、不寫 .db；沒有稿子時記在這個裝置的既有紀錄裡，重開後預選。
  * - 第 2 關：WO-109 的 writeNewBookGoal（`jiufang-novel-m.new-book-goal.v1`），不改目前這份稿子的全書目標。
  * - 上一步不回滾已存的設定；跳過不改該關；沒按「下一關」不存。
  */
