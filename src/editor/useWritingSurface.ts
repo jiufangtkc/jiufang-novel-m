@@ -8,6 +8,7 @@ import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './
 import { createIdleGate, IDLE_MS } from './idleGate';
 import { classifyTextDelta, type TextChangeSource, type TextDelta } from '../domain/writingLog';
 import { textForBoundChapter } from './chapterSurface';
+import { createTrashCaptureTracker, type TrashCapturePayload } from './trashCapture';
 
 interface WritingSurfaceOptions {
   bookId: string;
@@ -18,6 +19,8 @@ interface WritingSurfaceOptions {
   onDuration: (seconds: number) => void;
   onToast: (message: string) => void;
   onUserEdit?: () => void;
+  onTrashCapture?: (payload: TrashCapturePayload) => string | null;
+  onTrashUndo?: (itemId: string) => void;
 }
 
 export function useWritingSurface({
@@ -29,6 +32,8 @@ export function useWritingSurface({
   onDuration,
   onToast,
   onUserEdit,
+  onTrashCapture,
+  onTrashUndo,
 }: WritingSurfaceOptions) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [dirty, setDirty] = useState(false);
@@ -37,11 +42,15 @@ export function useWritingSurface({
   const onDurationRef = useRef(onDuration);
   const onToastRef = useRef(onToast);
   const onUserEditRef = useRef(onUserEdit);
+  const onTrashCaptureRef = useRef(onTrashCapture);
+  const onTrashUndoRef = useRef(onTrashUndo);
   onCommitRef.current = onCommit;
   onLargeRef.current = onLarge;
   onDurationRef.current = onDuration;
   onToastRef.current = onToast;
   onUserEditRef.current = onUserEdit;
+  onTrashCaptureRef.current = onTrashCapture;
+  onTrashUndoRef.current = onTrashUndo;
   const openingRef = useRef(openingText);
   openingRef.current = openingText;
   /**
@@ -71,6 +80,7 @@ export function useWritingSurface({
     const source = { current: 'type' as TextChangeSource };
     const latest = { current: textarea.value };
     const lock = { current: false };
+    const trashCapture = createTrashCaptureTracker();
     setLiveReader(
       () => ({ projectId: bookId, chapterId, text: textarea.value }),
       () => composing.current,
@@ -110,11 +120,28 @@ export function useWritingSurface({
       if (composing.current) return;
       const next = textarea.value;
       if (next === latest.current) return;
-      const delta = classifyTextDelta(latest.current, next, { source: nextSource ?? source.current });
+      const effectiveSource = nextSource ?? source.current;
+      const before = latest.current;
+      const delta = classifyTextDelta(before, next, { source: effectiveSource });
+      const trashOutcome = trashCapture.handleEdit({
+        chapterId,
+        before,
+        after: next,
+        source: effectiveSource,
+        nowMs: Date.now(),
+      });
       latest.current = next;
       source.current = 'type';
       mark();
       if (delta.largeInsert || delta.largeDelete) noteLarge(delta);
+      if (trashOutcome.kind === 'undo') {
+        onTrashUndoRef.current?.(trashOutcome.itemId);
+      } else if (trashOutcome.kind === 'capture') {
+        const capturedId = onTrashCaptureRef.current?.(trashOutcome.payload) ?? null;
+        if (capturedId) {
+          trashCapture.rememberAutoTrash(capturedId, chapterId, trashOutcome.payload);
+        }
+      }
       setDirty(true);
     };
 
@@ -143,6 +170,7 @@ export function useWritingSurface({
       }
       const start = textarea.selectionStart ?? textarea.value.length;
       const end = textarea.selectionEnd ?? start;
+      trashCapture.noteSelection(start, end, latest.current.length);
       source.current = 'paste';
       textarea.setRangeText(decision.text, start, end, 'end');
       onUserEditRef.current?.();
@@ -160,6 +188,7 @@ export function useWritingSurface({
       textarea.setSelectionRange(caret, caret);
       textarea.scrollTop = scrollTop;
       // 不算成「大量文字出現」：只是同一章的標點換成全形，前後字數由 commit-text 相減。
+      trashCapture.clear();
       latest.current = next;
       source.current = 'type';
       mark();
@@ -171,6 +200,11 @@ export function useWritingSurface({
 
     const onCompositionStart = () => {
       composing.current = true;
+      trashCapture.noteSelection(
+        textarea.selectionStart ?? 0,
+        textarea.selectionEnd ?? 0,
+        latest.current.length,
+      );
       gate.setComposing(true);
       onUserEditRef.current?.();
     };
@@ -212,6 +246,18 @@ export function useWritingSurface({
         if (event.cancelable) event.preventDefault();
         const incoming = event.dataTransfer?.getData('text/plain') ?? event.data;
         applyPaste(incoming ?? null);
+        return;
+      }
+      if (event.inputType === 'historyUndo') {
+        trashCapture.noteHistoryUndo();
+        return;
+      }
+      if (!composing.current && !event.isComposing) {
+        trashCapture.noteSelection(
+          textarea.selectionStart ?? 0,
+          textarea.selectionEnd ?? 0,
+          latest.current.length,
+        );
       }
     };
     const selectedText = () => {
@@ -239,6 +285,7 @@ export function useWritingSurface({
       event.preventDefault();
       rememberBookClip(bookId, { text });
       event.clipboardData?.setData('text/plain', text);
+      trashCapture.noteSelection(start, end, latest.current.length);
       textarea.setRangeText('', start, end, 'end');
       onUserEditRef.current?.();
       process('type');
@@ -263,6 +310,9 @@ export function useWritingSurface({
       const input = event as InputEvent;
       if (composing.current || input.isComposing) return;
       if (input.inputType === 'insertCompositionText' || input.inputType === 'deleteCompositionText') return;
+      if (input.inputType === 'historyUndo') {
+        trashCapture.noteHistoryUndo();
+      }
       onUserEditRef.current?.();
       process();
       gate.schedule(() => flush());
@@ -293,6 +343,7 @@ export function useWritingSurface({
 
     return () => {
       replaceRef.current = () => false;
+      trashCapture.clear();
       setLiveFlusher(null);
       flush(true);
       gate.cancel();
