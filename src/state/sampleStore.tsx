@@ -136,10 +136,18 @@ import {
   shareDatabase,
   writeBookBytes,
   type ImportedBook,
+  type StoredBookMark,
 } from '../db/library';
 import { isBookRemoved, removedBookIds } from '../db/removedBooks';
 import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
 import type { FormatChange, FormatSnapshot, FormatSnapshotEntry } from '../editor/formatScope';
+import {
+  BOOK_META_FORMAT_REVISION,
+  assertBookMetaWritable,
+  type BookMetaRead,
+  type BookMetaWritable,
+} from '../db/bookMeta';
+import { generateUuidV4, isPositiveSafeInteger, isValidUuidV4 } from '../db/extensionMeta';
 import { assertTimelineDataWritable, type TimelineRead } from '../db/timelineMeta';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
 import {
@@ -307,8 +315,10 @@ export interface FileExtras {
   logs: FileLog[];
   /** WO-100：開檔時讀到的檔內附加資料（匯入事件）。沒有代表不是從檔案讀來的（例如剛升格的新稿）。 */
   transfer?: TransferRead;
-  /** WO-128：開檔時讀到的時間線附加資料狀態（absent / ok / invalid）。 */
+  /** WO-128：開檔時讀到的時間線附加資料狀態（absent / ok / newer-revision / corrupt）。 */
   timeline?: TimelineRead;
+  /** WO-137：開檔時讀到的稿件固定身分證狀態（absent / ok / newer-revision / corrupt）。 */
+  bookMeta?: BookMetaRead;
 }
 
 export type Action =
@@ -323,6 +333,8 @@ export type Action =
       startedMs?: number;
       /** WO-109：新稿子的全書目標（由本機設定 new-book-goal 帶入）；沒給或不合法用 100,000。 */
       bookGoal?: number;
+      /** WO-137：預先指定的稿件固定身分證 UUID v4。 */
+      bookUuid?: string;
     }
   | { type: 'note-started'; startedById: Record<string, number> }
   | { type: 'import-text'; project: DemoProject; dayKey: string; startedMs: number; importEvents: ImportEventRecord }
@@ -369,6 +381,15 @@ export type Action =
   | { type: 'rename-book'; projectId: string; title: string; titleSavePending: BookFileMark['titleSavePending'] }
   | { type: 'defer-title-save'; projectId: string }
   | { type: 'note-title-in-file'; projectId: string }
+  | { type: 'mark-book-meta-persisted'; projectId: string }
+  | {
+      type: 'set-book-identity';
+      projectId: string;
+      bookUuid: string;
+      bookCreatedAtMs: number;
+      originBookUuid: string | null;
+      persisted: boolean;
+    }
   | { type: 'promote-stored'; projectId: string; key: string; filename: string }
   | { type: 'set-cards'; projectId: string; cards: FileCard[] }
   | { type: 'update-card'; projectId: string; cardId: string; patch: UpdateCardPatch }
@@ -415,11 +436,15 @@ export type Action =
     };
 
 
-function bookkeepingOf(project: DemoProject): BookFileMark {
+function bookkeepingOf(project: DemoProject): StoredBookMark {
   return {
     titleInFile: project.titleInFile ?? null,
     hasExternalFile: Boolean(project.hasExternalFile),
     titleSavePending: project.titleSavePending ?? null,
+    ...(isValidUuidV4(project.bookUuid) ? { bookUuid: project.bookUuid } : {}),
+    ...(isPositiveSafeInteger(project.bookCreatedAtMs) ? { bookCreatedAtMs: project.bookCreatedAtMs } : {}),
+    ...(project.originBookUuid !== undefined ? { originBookUuid: project.originBookUuid } : {}),
+    ...(typeof project.bookMetaPersisted === 'boolean' ? { bookMetaPersisted: project.bookMetaPersisted } : {}),
   };
 }
 
@@ -721,6 +746,10 @@ export function attachActionForBook(
       hasExternalFile: book.hasExternalFile,
       titleInFile: book.titleInFile,
       titleSavePending: book.titleSavePending,
+      bookUuid: book.bookUuid,
+      bookCreatedAtMs: book.bookCreatedAtMs,
+      originBookUuid: book.originBookUuid,
+      bookMetaPersisted: book.bookMetaPersisted,
     },
     schedule: book.schedule,
     extras: {
@@ -729,6 +758,7 @@ export function attachActionForBook(
       logs: book.logs,
       transfer: book.transfer,
       timeline: book.timeline,
+      bookMeta: book.bookMeta,
     },
   };
 }
@@ -1468,11 +1498,93 @@ function reduceBase(state: SampleState, action: Action): SampleState {
           titleSavePending: null,
         })),
       };
+    case 'mark-book-meta-persisted': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const key = project.dbKey ?? project.id;
+      const extra = state.fileExtras[key];
+      if (extra?.bookMeta?.kind === 'newer-revision' || extra?.bookMeta?.kind === 'corrupt') {
+        return state;
+      }
+      const existingMeta = extra?.bookMeta?.kind === 'ok' ? extra.bookMeta.meta : null;
+      const bookUuid = isValidUuidV4(project.bookUuid)
+        ? project.bookUuid
+        : existingMeta?.bookUuid ?? generateUuidV4();
+      const bookCreatedAtMs = isPositiveSafeInteger(project.bookCreatedAtMs)
+        ? project.bookCreatedAtMs
+        : existingMeta?.createdAtMs ??
+          (startedMsFromProjectId(project.id, now.getTime()) ?? Math.max(1, now.getTime()));
+      const originBookUuid =
+        project.originBookUuid !== undefined
+          ? project.originBookUuid
+          : existingMeta?.originBookUuid ?? null;
+      const nextBookMeta: BookMetaRead = {
+        kind: 'ok',
+        revision: BOOK_META_FORMAT_REVISION,
+        meta: { bookUuid, createdAtMs: bookCreatedAtMs, originBookUuid },
+      };
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          bookUuid,
+          bookCreatedAtMs,
+          originBookUuid,
+          bookMetaPersisted: true,
+        })),
+        fileExtras: extra
+          ? {
+              ...state.fileExtras,
+              [key]: { ...extra, bookMeta: nextBookMeta },
+            }
+          : state.fileExtras,
+      };
+    }
+    case 'set-book-identity': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const key = project.dbKey ?? project.id;
+      const extra = state.fileExtras[key];
+      const nextBookMeta: BookMetaRead | undefined = action.persisted
+        ? {
+            kind: 'ok',
+            revision: BOOK_META_FORMAT_REVISION,
+            meta: {
+              bookUuid: action.bookUuid,
+              createdAtMs: action.bookCreatedAtMs,
+              originBookUuid: action.originBookUuid,
+            },
+          }
+        : extra?.bookMeta;
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          bookUuid: action.bookUuid,
+          bookCreatedAtMs: action.bookCreatedAtMs,
+          originBookUuid: action.originBookUuid,
+          bookMetaPersisted: action.persisted,
+        })),
+        fileExtras: extra
+          ? {
+              ...state.fileExtras,
+              [key]: {
+                ...extra,
+                ...(nextBookMeta ? { bookMeta: nextBookMeta } : {}),
+              },
+            }
+          : state.fileExtras,
+      };
+    }
     case 'promote-stored': {
       const project = state.projects.find((item) => item.id === action.projectId);
       if (!project) return state;
       const key = project.dbKey ?? action.key;
       const extras = buildPromotedFileExtras(state, project, key);
+      const bookUuid = isValidUuidV4(project.bookUuid) ? project.bookUuid : generateUuidV4();
+      const bookCreatedAtMs = isPositiveSafeInteger(project.bookCreatedAtMs)
+        ? project.bookCreatedAtMs
+        : startedMsFromProjectId(project.id, now.getTime()) ?? Math.max(1, now.getTime());
       return {
         ...state,
         projects: mapProject(state.projects, action.projectId, (current) => ({
@@ -1480,6 +1592,10 @@ function reduceBase(state: SampleState, action: Action): SampleState {
           origin: 'file',
           dbKey: key,
           filename: current.filename || action.filename,
+          bookUuid,
+          bookCreatedAtMs,
+          originBookUuid: current.originBookUuid ?? null,
+          bookMetaPersisted: current.bookMetaPersisted ?? false,
         })),
         fileExtras: { ...state.fileExtras, [key]: extras },
         goalById: {
@@ -1530,6 +1646,10 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
         expandedCategoriesRaw: null,
         categoriesMetaRaw: '{}',
+        bookUuid: isValidUuidV4(action.bookUuid) ? action.bookUuid : generateUuidV4(),
+        bookCreatedAtMs: isPositiveSafeInteger(action.startedMs) ? action.startedMs : now.getTime(),
+        originBookUuid: null,
+        bookMetaPersisted: false,
         nodes: single
           ? [{ id: chapterId, type: 'file', title, progress: 'Draft', content: '' }]
           : [
@@ -2120,6 +2240,7 @@ export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
       validateJiufangDatabase(db.sql);
       db.sql.select('SELECT id FROM project_info LIMIT 1');
       db.sql.select('SELECT id FROM chapters LIMIT 1');
+      assertBookMetaWritable(db.sql);
       assertTransferDataWritable(db.sql);
       assertTimelineDataWritable(db.sql);
       return currentSchemaVersion(db.sql);
@@ -2139,10 +2260,46 @@ function browserSaveEnv(): SaveEnvironment {
   };
 }
 
+/** WO-137：組出存檔時要寫進 jiufangm_book_meta 的固定身分證；若檔內為較新修訂值或已損壞則回傳 undefined（唯讀保留）。 */
+export function manuscriptBookMeta(
+  state: SampleState,
+  project: DemoProject,
+  options?: { overrideBookMeta?: BookMetaWritable; nowMs?: number },
+): BookMetaWritable | undefined {
+  const key = project.dbKey ?? project.id;
+  const extra = (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
+  if (extra?.bookMeta?.kind === 'newer-revision' || extra?.bookMeta?.kind === 'corrupt') {
+    return undefined;
+  }
+  if (options?.overrideBookMeta) {
+    return options.overrideBookMeta;
+  }
+  const existingMeta = extra?.bookMeta?.kind === 'ok' ? extra.bookMeta.meta : null;
+  const bookUuid = isValidUuidV4(project.bookUuid)
+    ? project.bookUuid
+    : existingMeta
+      ? existingMeta.bookUuid
+      : generateUuidV4();
+  const createdAtMs = isPositiveSafeInteger(project.bookCreatedAtMs)
+    ? project.bookCreatedAtMs
+    : existingMeta
+      ? existingMeta.createdAtMs
+      : startedMsFromProjectId(project.id, options?.nowMs ?? Date.now()) ??
+        Math.max(1, Math.trunc(options?.nowMs ?? Date.now()));
+  const originBookUuid =
+    project.originBookUuid !== undefined
+      ? project.originBookUuid
+      : existingMeta
+        ? existingMeta.originBookUuid
+        : null;
+  return { bookUuid, createdAtMs, originBookUuid };
+}
+
 /** WO-69：另存或暫存時要寫進檔案的內容。寫作紀錄只取這份稿子自己的。 */
 export function manuscriptSnapshotParts(
   state: SampleState,
   project: DemoProject,
+  options?: { includeBookMeta?: boolean; overrideBookMeta?: BookMetaWritable },
 ): {
   key: string;
   info: FileProjectInfo;
@@ -2150,6 +2307,7 @@ export function manuscriptSnapshotParts(
   logs: FileLog[];
   importEvents: ProjectImportEvents;
   exportEvents: ProjectImportEvents;
+  bookMeta: BookMetaWritable | undefined;
 } {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -2161,7 +2319,11 @@ export function manuscriptSnapshotParts(
   const importEvents = projectImportEventsOf(state, project.id);
   // WO-103：匯出事件同一份快照、同一筆交易寫進 .db。
   const exportEvents = projectExportEventsOf(state, project.id);
-  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents, exportEvents };
+  const bookMeta =
+    options?.includeBookMeta === false
+      ? undefined
+      : manuscriptBookMeta(state, project, { overrideBookMeta: options?.overrideBookMeta });
+  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents, exportEvents, bookMeta };
 }
 
 /** WO-100：在給定的底稿位元組上建出這份稿子的 .db（與 snapshotManuscript 同一套內容；測試也用）。 */
@@ -2170,16 +2332,30 @@ export async function manuscriptBytesOn(
   project: DemoProject,
   base: Uint8Array | null,
 ): Promise<Uint8Array> {
-  const { info, cards, logs, importEvents, exportEvents } = manuscriptSnapshotParts(state, project);
-  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents, exportEvents);
+  const { info, cards, logs, importEvents, exportEvents, bookMeta } = manuscriptSnapshotParts(state, project);
+  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents, exportEvents, bookMeta);
 }
 
 async function snapshotManuscript(
   state: SampleState,
   project: DemoProject,
   persist = true,
+  options?: { includeBookMeta?: boolean; overrideBookMeta?: BookMetaWritable },
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const { key, info, cards, logs, importEvents, exportEvents } = manuscriptSnapshotParts(state, project);
+  const { key, info, cards, logs, importEvents, exportEvents, bookMeta } = manuscriptSnapshotParts(
+    state,
+    project,
+    options,
+  );
+  const baseMark = bookkeepingOf(project);
+  const mark: StoredBookMark = options?.overrideBookMeta
+    ? {
+        ...baseMark,
+        bookUuid: options.overrideBookMeta.bookUuid,
+        bookCreatedAtMs: options.overrideBookMeta.createdAtMs,
+        originBookUuid: options.overrideBookMeta.originBookUuid ?? null,
+      }
+    : baseMark;
   const bytes = await saveBookBytes(
     key,
     projectSaveFilename(project.title, project.filename),
@@ -2188,10 +2364,11 @@ async function snapshotManuscript(
     project.nodes,
     cards,
     logs,
-    bookkeepingOf(project),
+    mark,
     persist,
     importEvents,
     exportEvents,
+    bookMeta,
   );
   return { key, bytes };
 }
@@ -2311,15 +2488,72 @@ export async function runSaveProjectAs(input: {
   const snapshot = input.snapshot ?? snapshotManuscript;
   const { state: committedState, project: committedProject, committed } = commitLiveDraft(state, project.id, dispatch);
   const revAtStart = committedState.contentRevById?.[project.id] ?? 0;
-  const snap = await snapshot(committedState, committedProject, false);
-  const bytes = shareBytesForSaveAs({ prepared: committed ? null : input.preparedBytes, latest: snap.bytes });
+  const extraKey = committedProject.dbKey ?? committedProject.id;
+  const extraBookMeta = committedState.fileExtras[extraKey]?.bookMeta;
+  const canUpdateBookMeta =
+    extraBookMeta?.kind !== 'newer-revision' && extraBookMeta?.kind !== 'corrupt';
+  // WO-137 決-2（方案 A）：只有電腦支援直接寫回、且原本已有外部檔時主動另存，才核發新 UUID 並記住原稿 UUID；
+  // 取消或寫檔失敗維持原證；手機或不支援直接寫回以及新稿首次存檔沿用原證。
+  const shouldBranchBookUuid = Boolean(
+    env.canPickFiles && committedProject.hasExternalFile && canUpdateBookMeta,
+  );
+  const currentBookMeta = canUpdateBookMeta
+    ? manuscriptBookMeta(committedState, committedProject)
+    : undefined;
+  const candidateBranchMeta: BookMetaWritable | undefined =
+    shouldBranchBookUuid && currentBookMeta
+      ? {
+          bookUuid: generateUuidV4(),
+          createdAtMs: Math.max(1, Math.trunc(Date.now())),
+          originBookUuid: currentBookMeta.bookUuid,
+        }
+      : undefined;
+
+  const snap = await snapshot(
+    committedState,
+    committedProject,
+    false,
+    candidateBranchMeta ? { overrideBookMeta: candidateBranchMeta } : undefined,
+  );
+  const bytes = shouldBranchBookUuid
+    ? snap.bytes
+    : shareBytesForSaveAs({ prepared: committed ? null : input.preparedBytes, latest: snap.bytes });
   const outcome = await saveProjectAsNew(env, snap.key, bytes, exportDbFilename(committedProject.title));
   let localStashOk = true;
   if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
+    const projectForStash: DemoProject =
+      candidateBranchMeta && outcome.kind === 'saved-as'
+        ? {
+            ...committedProject,
+            bookUuid: candidateBranchMeta.bookUuid,
+            bookCreatedAtMs: candidateBranchMeta.createdAtMs,
+            originBookUuid: candidateBranchMeta.originBookUuid ?? null,
+            bookMetaPersisted: true,
+          }
+        : committedProject;
     try {
-      await snapshot(committedState, committedProject, true);
+      await snapshot(
+        committedState,
+        projectForStash,
+        true,
+        candidateBranchMeta && outcome.kind === 'saved-as'
+          ? { overrideBookMeta: candidateBranchMeta }
+          : undefined,
+      );
     } catch {
       localStashOk = false;
+    }
+    if (candidateBranchMeta && outcome.kind === 'saved-as') {
+      dispatch({
+        type: 'set-book-identity',
+        projectId: project.id,
+        bookUuid: candidateBranchMeta.bookUuid,
+        bookCreatedAtMs: candidateBranchMeta.createdAtMs,
+        originBookUuid: candidateBranchMeta.originBookUuid ?? null,
+        persisted: canUpdateBookMeta,
+      });
+    } else if (canUpdateBookMeta) {
+      dispatch({ type: 'mark-book-meta-persisted', projectId: project.id });
     }
     if (localStashOk) {
       dispatch({
@@ -2367,6 +2601,7 @@ export function buildImportedProject(
   title: string,
   chapters: readonly SplitChapter[],
   bookGoal: number = NEW_BOOK_GOAL_DEFAULT,
+  createdAtMs: number = Date.now(),
 ): DemoProject {
   const firstId = newChapterId(id);
   const nodes: ChapterNode[] = chapters.map((chapter, index) => ({
@@ -2388,6 +2623,10 @@ export function buildImportedProject(
     categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
     expandedCategoriesRaw: null,
     categoriesMetaRaw: '{}',
+    bookUuid: generateUuidV4(),
+    bookCreatedAtMs: Math.max(1, Math.trunc(createdAtMs)),
+    originBookUuid: null,
+    bookMetaPersisted: false,
     nodes,
   };
 }
@@ -2584,6 +2823,7 @@ export function commitTextImport(input: {
       importTitleFromFilename(input.filename),
       chapters,
       input.newBookGoal ?? readNewBookGoal(store),
+      ms,
     );
     const dayKey = freshSchedule(state, at).open?.dayKey ?? writingDayKey(at, state.schedule.dayEndHour);
     const eventId = (input.newEventId ?? defaultImportEventId)(id);
@@ -2994,6 +3234,7 @@ export async function executeBackgroundAutoSave(
         deps.dispatch({ type: 'record-project-save', projectId, atMs });
         deps.dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
         deps.dispatch({ type: 'note-title-in-file', projectId });
+        deps.dispatch({ type: 'mark-book-meta-persisted', projectId });
         deps.dispatch({ type: 'clear-dirty-after-file-save', projectId, clearDirty });
         deps.onSaved(projectId);
         const store = deps.store === undefined ? deviceStore() : deps.store;
@@ -3252,6 +3493,7 @@ export async function runManualSaveProject(input: {
         const latestRev = input.getState().contentRevById?.[project.id] ?? 0;
         const clearDirty = shouldClearDirtyAfterSave(revAtStart, latestRev);
         input.lastSavedRevById[project.id] = revAtStart;
+        dispatch({ type: 'mark-book-meta-persisted', projectId: project.id });
         dispatch({
           type: 'clear-dirty-after-file-save',
           projectId: project.id,
@@ -3464,6 +3706,8 @@ export async function persistFileBookStash(input: {
       if (isBookRemoved(project.id) || isBookRemoved(dbKey)) return false;
       if (isStale()) return true;
       try {
+        const includeBookMetaInLocalDb =
+          Boolean(project.bookMetaPersisted) || !project.hasExternalFile;
         await save(
           dbKey,
           localDbFilename(project.title, project.filename),
@@ -3476,6 +3720,7 @@ export async function persistFileBookStash(input: {
           true,
           projectImportEventsOf(state, project.id),
           projectExportEventsOf(state, project.id),
+          includeBookMetaInLocalDb ? manuscriptBookMeta(state, project) : undefined,
         );
         coordinator.markPersisted(dbKey, contentRev, generation);
         input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
@@ -3926,7 +4171,11 @@ export function SampleProvider({
       const project = projects.find((item) => item.id === projectId);
       if (!project) return;
       const startedAt = Date.now();
-      void snapshotManuscript({ ...current, projects }, project)
+      const includeBookMetaInFlush =
+        Boolean(project.bookMetaPersisted) || !project.hasExternalFile;
+      void snapshotManuscript({ ...current, projects }, project, true, {
+        includeBookMeta: includeBookMetaInFlush,
+      })
         .then((result) => {
           if (live && typeof localStorage !== 'undefined') notePersistedDraft(localStorage, live, startedAt);
           dispatch({ type: 'record-auto-save', projectId: project.id, atMs: startedAt });
