@@ -58,6 +58,14 @@ export interface DemoProject {
   expandedCategoriesRaw?: string | null;
   /** 升格成檔案前的自訂分類設定原始字串（對應 project_info.categories_meta）。 */
   categoriesMetaRaw?: string;
+  /** WO-137：稿件固定身分證 UUID v4（新稿建立即配發；舊稿開檔先暫配於記憶體／中繼，真正存檔才寫進 .db）。 */
+  bookUuid?: string;
+  /** WO-137：此身分證首次核發時間（正安全整數毫秒）。 */
+  bookCreatedAtMs?: number;
+  /** WO-137：若由另一份稿子另存分枝而來，記錄原稿的 book_uuid；否則為 null。 */
+  originBookUuid?: string | null;
+  /** WO-137：是否已寫入 .db 的 jiufangm_book_meta（或既有檔原本就帶有）。 */
+  bookMetaPersisted?: boolean;
 }
 
 export function demoParagraph(label: string, index: number): string {

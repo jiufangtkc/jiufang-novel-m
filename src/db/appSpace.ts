@@ -1,3 +1,5 @@
+import { isPositiveSafeInteger, isValidUuidV4 } from './extensionMeta';
+
 export interface StoredBook {
   key: string;
   filename: string;
@@ -10,6 +12,11 @@ export interface StoredBook {
   /** WO-132 嚴-3：寫入暫存空間時的時間戳與遞增版本號（選填，向下相容舊資料）。 */
   savedAt?: number;
   revision?: number;
+  /** WO-137：待寫入或快取的稿件固定身分證（記於 .json 中繼，不直接改動舊 .db 本體）。 */
+  bookUuid?: string;
+  bookCreatedAtMs?: number;
+  originBookUuid?: string | null;
+  bookMetaPersisted?: boolean;
 }
 
 export interface AppSpace {
@@ -67,6 +74,10 @@ export function createDirectoryAppSpace(dir: ByteDirectory): AppSpace {
         titleSavePending: book.titleSavePending ?? null,
         ...(typeof book.savedAt === 'number' ? { savedAt: book.savedAt } : {}),
         ...(typeof book.revision === 'number' ? { revision: book.revision } : {}),
+        ...(isValidUuidV4(book.bookUuid) ? { bookUuid: book.bookUuid } : {}),
+        ...(isPositiveSafeInteger(book.bookCreatedAtMs) ? { bookCreatedAtMs: book.bookCreatedAtMs } : {}),
+        ...(book.originBookUuid !== undefined ? { originBookUuid: book.originBookUuid } : {}),
+        ...(typeof book.bookMetaPersisted === 'boolean' ? { bookMetaPersisted: book.bookMetaPersisted } : {}),
         byteLength: book.bytes.byteLength,
       })));
     },
@@ -82,6 +93,10 @@ export function createDirectoryAppSpace(dir: ByteDirectory): AppSpace {
         titleSavePending?: 'export' | 'resave' | null;
         savedAt?: number;
         revision?: number;
+        bookUuid?: string;
+        bookCreatedAtMs?: number;
+        originBookUuid?: string | null;
+        bookMetaPersisted?: boolean;
         byteLength?: number;
       } = {};
       if (metaBytes) {
@@ -98,6 +113,11 @@ export function createDirectoryAppSpace(dir: ByteDirectory): AppSpace {
       const pending = meta.titleSavePending === 'export' || meta.titleSavePending === 'resave'
         ? meta.titleSavePending
         : null;
+      const validBookUuid = isValidUuidV4(meta.bookUuid) ? meta.bookUuid : undefined;
+      const validCreatedAt = isPositiveSafeInteger(meta.bookCreatedAtMs) ? meta.bookCreatedAtMs : undefined;
+      const validOriginUuid = meta.originBookUuid === null || isValidUuidV4(meta.originBookUuid)
+        ? meta.originBookUuid
+        : undefined;
       return {
         key,
         filename: meta.filename || '未命名.db',
@@ -108,6 +128,10 @@ export function createDirectoryAppSpace(dir: ByteDirectory): AppSpace {
         titleSavePending: pending,
         ...(typeof meta.savedAt === 'number' ? { savedAt: meta.savedAt } : {}),
         ...(typeof meta.revision === 'number' ? { revision: meta.revision } : {}),
+        ...(validBookUuid ? { bookUuid: validBookUuid } : {}),
+        ...(validCreatedAt ? { bookCreatedAtMs: validCreatedAt } : {}),
+        ...(validOriginUuid !== undefined ? { originBookUuid: validOriginUuid } : {}),
+        ...(typeof meta.bookMetaPersisted === 'boolean' ? { bookMetaPersisted: meta.bookMetaPersisted } : {}),
       };
     },
     async list() {
