@@ -9,6 +9,8 @@ import { generateUuidV4, isPositiveSafeInteger, isValidUuidV4 } from './extensio
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
 import type { TimelineRead } from './timelineMeta';
 import type { TransferEvent, TransferRead } from './transferMeta';
+import type { TrashRead } from './trashMeta';
+import type { TrashItem } from '../domain/trash';
 import {
   browserDeliveryEnv,
   downloadFile,
@@ -115,6 +117,8 @@ export interface ImportedBook {
   timeline: TimelineRead;
   /** WO-137：檔內附加表的固定身分證讀取結果。 */
   bookMeta?: BookMetaRead;
+  /** WO-138：檔內附加表的刪稿暫存區讀取結果。 */
+  trash?: TrashRead;
   /** WO-137：此稿件在記憶體／中繼層的有效固定身分證（舊檔未存前先於記憶體／.json 暫配）。 */
   bookUuid?: string;
   bookCreatedAtMs?: number;
@@ -214,6 +218,7 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         transfer: loaded.transfer,
         timeline: loaded.timeline,
         bookMeta: loaded.bookMeta,
+        trash: loaded.trash,
         ...identity,
       });
     } catch {
@@ -267,6 +272,7 @@ export async function readBookBytes(
       transfer: loaded.transfer,
       timeline: loaded.timeline,
       bookMeta: loaded.bookMeta,
+      trash: loaded.trash,
       ...identity,
     };
   } finally {
@@ -309,10 +315,11 @@ export async function writeBookBytes(
   importEvents?: Readonly<Record<string, TransferEvent>>,
   exportEvents?: Readonly<Record<string, TransferEvent>>,
   bookMeta?: BookMetaWritable,
+  trashItems?: readonly TrashItem[],
 ): Promise<Uint8Array> {
   const db = await openMemoryDb(base ?? new Uint8Array());
   try {
-    writeFileProject(db.sql, info, tree, cards, logs, importEvents, exportEvents, bookMeta);
+    writeFileProject(db.sql, info, tree, cards, logs, importEvents, exportEvents, bookMeta, trashItems);
     return db.exportBytes();
   } finally {
     db.close();
@@ -332,10 +339,21 @@ export async function saveBookBytes(
   importEvents?: Readonly<Record<string, TransferEvent>>,
   exportEvents?: Readonly<Record<string, TransferEvent>>,
   bookMeta?: BookMetaWritable,
+  trashItems?: readonly TrashItem[],
 ): Promise<Uint8Array> {
   return serializeBookWrite(key, async () => {
     const existing = await getBook(key);
-    const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents, exportEvents, bookMeta);
+    const exported = await writeBookBytes(
+      existing?.bytes,
+      info,
+      tree,
+      cards,
+      logs,
+      importEvents,
+      exportEvents,
+      bookMeta,
+      trashItems,
+    );
     if (!persist) return exported;
     const mark: StoredBookMark = bookkeeping ?? {
       titleInFile: existing?.titleInFile ?? null,

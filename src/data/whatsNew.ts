@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-138（暫定，待九方審）
+  {
+    version: '0.6.0',
+    items: [
+      '新增刪稿暫存區：改稿時一次刪掉較長的段落會先留下來，可註記當時為什麼刪，也能放回原來的章節',
+      '這些刪稿會跟著稿子檔一起保存；打錯字的小刪除不會進去，避免存檔無謂變大',
+    ],
+  },
   // WO-137（暫定，待九方審）
   {
     version: '0.5.0',
