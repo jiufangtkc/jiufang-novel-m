@@ -150,6 +150,7 @@ import {
 import { generateUuidV4, isPositiveSafeInteger, isValidUuidV4 } from '../db/extensionMeta';
 import { assertTimelineDataWritable, type TimelineRead } from '../db/timelineMeta';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
+import { assertTrashDataWritable, TRASH_FORMAT_REVISION, type TrashRead } from '../db/trashMeta';
 import {
   bindLeaveFlush,
   clearLiveDraft,
@@ -221,6 +222,13 @@ import {
   reorderTimelineByOrderedIds,
   type TimelineDropTarget,
 } from '../domain/timeline';
+import {
+  insertTrashItemWithLimit,
+  isTrashOriginalNodeAlive,
+  sortTrashItems,
+  type TrashInsertResult,
+  type TrashItem,
+} from '../domain/trash';
 import {
   newChapterId,
   newManuscriptFirstNodeId,
@@ -319,6 +327,8 @@ export interface FileExtras {
   timeline?: TimelineRead;
   /** WO-137：開檔時讀到的稿件固定身分證狀態（absent / ok / newer-revision / corrupt）。 */
   bookMeta?: BookMetaRead;
+  /** WO-138：開檔時讀到的刪稿暫存區狀態（absent / ok / newer-revision / corrupt）。 */
+  trash?: TrashRead;
 }
 
 export type Action =
@@ -433,6 +443,18 @@ export type Action =
       delta?: -1 | 1;
       targetIndex?: number;
       drop?: TimelineDropTarget;
+    }
+  /** WO-138：刪稿暫存區操作。 */
+  | { type: 'trash-add'; projectId: string; item: TrashItem }
+  | { type: 'trash-remove'; projectId: string; itemId: string }
+  | { type: 'trash-restore-deleted'; projectId: string; item: TrashItem }
+  | { type: 'trash-update-reason'; projectId: string; itemId: string; reason: string }
+  | {
+      type: 'trash-put-back';
+      projectId: string;
+      itemId: string;
+      targetNodeId: string;
+      nextBody: string;
     };
 
 
@@ -759,6 +781,7 @@ export function attachActionForBook(
       transfer: book.transfer,
       timeline: book.timeline,
       bookMeta: book.bookMeta,
+      trash: book.trash,
     },
   };
 }
@@ -1109,6 +1132,80 @@ function applyProjectCards(
   };
 }
 
+/** WO-138：讀取目前稿件的刪稿暫存區四態狀態（非檔案稿與舊稿皆為可讀）。 */
+export function getProjectTrashRead(state: SampleState, projectId: string): TrashRead {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return { kind: 'absent' };
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const trash = state.fileExtras[key]?.trash;
+    if (trash) return trash;
+  }
+  const items = project.trashItems ?? [];
+  return items.length > 0
+    ? { kind: 'ok', revision: TRASH_FORMAT_REVISION, items }
+    : { kind: 'absent' };
+}
+
+/** WO-138：統一取得目前稿件的刪稿暫存區清單。 */
+export function getProjectTrash(state: SampleState, projectId: string): TrashItem[] {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return [];
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const trash = state.fileExtras[key]?.trash;
+    if (trash) {
+      if (trash.kind === 'ok') return trash.items;
+      if (trash.kind === 'newer-revision' || trash.kind === 'corrupt') return [];
+    }
+  }
+  return project.trashItems ?? [];
+}
+
+/** WO-138：若為較新修訂值或損壞狀態，暫存區須維持唯讀不改寫。 */
+export function isProjectTrashReadOnly(state: SampleState, projectId: string): boolean {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project || project.origin !== 'file') return false;
+  const key = project.dbKey ?? project.id;
+  const kind = state.fileExtras[key]?.trash?.kind;
+  return kind === 'newer-revision' || kind === 'corrupt';
+}
+
+function applyProjectTrash(
+  state: SampleState,
+  projectId: string,
+  nextItems: readonly TrashItem[],
+): SampleState {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project || isProjectTrashReadOnly(state, projectId)) return state;
+  const sorted = sortTrashItems(nextItems);
+  const key = project.dbKey ?? project.id;
+  const extra = state.fileExtras[key];
+  let nextFileExtras = state.fileExtras;
+  if (extra) {
+    const nextTrash: TrashRead =
+      extra.trash?.kind === 'absent' && sorted.length === 0
+        ? { kind: 'absent' }
+        : { kind: 'ok', revision: TRASH_FORMAT_REVISION, items: sorted };
+    nextFileExtras = {
+      ...state.fileExtras,
+      [key]: {
+        ...extra,
+        trash: nextTrash,
+      },
+    };
+  }
+  return {
+    ...state,
+    projects: mapProject(state.projects, projectId, (current) => ({
+      ...current,
+      updatedLabel: '剛剛',
+      trashItems: sorted,
+    })),
+    fileExtras: nextFileExtras,
+  };
+}
+
 export function buildFileProjectInfo(state: SampleState, project: DemoProject): FileProjectInfo {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -1311,7 +1408,19 @@ export function buildPromotedFileExtras(
     state.fileExtras[key] ??
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ??
     state.fileExtras[project.id];
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.trash && project.trashItems?.length) {
+      return {
+        ...existing,
+        trash: {
+          kind: 'ok',
+          revision: TRASH_FORMAT_REVISION,
+          items: sortTrashItems(project.trashItems),
+        },
+      };
+    }
+    return existing;
+  }
 
   // WO-69：升格成檔案時只帶這份稿子自己的目標與寫作紀錄。
   const own = trackingOf(state, project, new Date());
@@ -1341,6 +1450,9 @@ export function buildPromotedFileExtras(
         }))
       : [],
     logs: toFileLogs(own.logs),
+    trash: project.trashItems?.length
+      ? { kind: 'ok', revision: TRASH_FORMAT_REVISION, items: sortTrashItems(project.trashItems) }
+      : { kind: 'absent' },
   };
 }
 
@@ -1361,6 +1473,11 @@ const NON_TEXT_CONTENT_ACTIONS = new Set<Action['type']>([
   'add-timeline-event',
   'reorder-timeline',
   'move-timeline-event',
+  'trash-add',
+  'trash-remove',
+  'trash-restore-deleted',
+  'trash-update-reason',
+  'trash-put-back',
 ]);
 
 export function reduce(state: SampleState, action: Action): SampleState {
@@ -2016,6 +2133,55 @@ function reduceBase(state: SampleState, action: Action): SampleState {
       if (!changed) return state;
       return applyProjectCards(state, action.projectId, () => moved);
     }
+    case 'trash-add': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      const result = insertTrashItemWithLimit(currentTrash, action.item);
+      if (result.kind !== 'added') return state;
+      return applyProjectTrash(state, action.projectId, result.items);
+    }
+    case 'trash-remove': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      const nextTrash = currentTrash.filter((item) => item.itemId !== action.itemId);
+      if (nextTrash.length === currentTrash.length) return state;
+      return applyProjectTrash(state, action.projectId, nextTrash);
+    }
+    case 'trash-restore-deleted': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      if (currentTrash.some((item) => item.itemId === action.item.itemId)) return state;
+      const result = insertTrashItemWithLimit(currentTrash, action.item);
+      if (result.kind !== 'added') return state;
+      return applyProjectTrash(state, action.projectId, result.items);
+    }
+    case 'trash-update-reason': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      let changed = false;
+      const nextTrash = currentTrash.map((item) => {
+        if (item.itemId !== action.itemId || item.reason === action.reason) return item;
+        changed = true;
+        return { ...item, reason: action.reason };
+      });
+      if (!changed) return state;
+      return applyProjectTrash(state, action.projectId, nextTrash);
+    }
+    case 'trash-put-back': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project || isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      if (!currentTrash.some((item) => item.itemId === action.itemId)) return state;
+      if (!isTrashOriginalNodeAlive(project.nodes, action.targetNodeId)) return state;
+      const afterCommit = reduceBase(state, {
+        type: 'commit-text',
+        projectId: action.projectId,
+        nodeId: action.targetNodeId,
+        text: action.nextBody,
+      });
+      const remainingTrash = currentTrash.filter((item) => item.itemId !== action.itemId);
+      return applyProjectTrash(afterCommit, action.projectId, remainingTrash);
+    }
     case 'set-nodes': {
       const nextWithNodes: SampleState = {
         ...state,
@@ -2172,6 +2338,25 @@ interface SampleActions {
     cardId: string,
     move: { delta?: -1 | 1; targetIndex?: number; drop?: TimelineDropTarget },
   ) => void;
+  /** WO-138：刪稿暫存區操作。 */
+  addTrashItem: (
+    projectId: string,
+    item: TrashItem,
+    options?: { immediate?: boolean },
+  ) => TrashInsertResult;
+  removeTrashItem: (projectId: string, itemId: string, options?: { immediate?: boolean }) => void;
+  restoreDeletedTrashItem: (
+    projectId: string,
+    item: TrashItem,
+    options?: { immediate?: boolean },
+  ) => TrashInsertResult;
+  updateTrashReason: (projectId: string, itemId: string, reason: string) => void;
+  putBackTrashItem: (
+    projectId: string,
+    itemId: string,
+    targetNodeId: string,
+    nextBody: string,
+  ) => void;
   focusProject: (id: string) => void;
   attachImported: (payload: {
     project: DemoProject;
@@ -2243,6 +2428,7 @@ export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
       assertBookMetaWritable(db.sql);
       assertTransferDataWritable(db.sql);
       assertTimelineDataWritable(db.sql);
+      assertTrashDataWritable(db.sql);
       return currentSchemaVersion(db.sql);
     } finally {
       db.close();
@@ -2308,6 +2494,7 @@ export function manuscriptSnapshotParts(
   importEvents: ProjectImportEvents;
   exportEvents: ProjectImportEvents;
   bookMeta: BookMetaWritable | undefined;
+  trashItems: TrashItem[] | undefined;
 } {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -2323,7 +2510,20 @@ export function manuscriptSnapshotParts(
     options?.includeBookMeta === false
       ? undefined
       : manuscriptBookMeta(state, project, { overrideBookMeta: options?.overrideBookMeta });
-  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents, exportEvents, bookMeta };
+  const trashItems =
+    extra?.trash?.kind === 'newer-revision' || extra?.trash?.kind === 'corrupt'
+      ? undefined
+      : getProjectTrash(state, project.id);
+  return {
+    key,
+    info,
+    cards: extra?.cards ?? project.cards ?? [],
+    logs,
+    importEvents,
+    exportEvents,
+    bookMeta,
+    trashItems,
+  };
 }
 
 /** WO-100：在給定的底稿位元組上建出這份稿子的 .db（與 snapshotManuscript 同一套內容；測試也用）。 */
@@ -2332,8 +2532,21 @@ export async function manuscriptBytesOn(
   project: DemoProject,
   base: Uint8Array | null,
 ): Promise<Uint8Array> {
-  const { info, cards, logs, importEvents, exportEvents, bookMeta } = manuscriptSnapshotParts(state, project);
-  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents, exportEvents, bookMeta);
+  const { info, cards, logs, importEvents, exportEvents, bookMeta, trashItems } = manuscriptSnapshotParts(
+    state,
+    project,
+  );
+  return writeBookBytes(
+    base,
+    info,
+    project.nodes,
+    cards,
+    logs,
+    importEvents,
+    exportEvents,
+    bookMeta,
+    trashItems,
+  );
 }
 
 async function snapshotManuscript(
@@ -2342,7 +2555,7 @@ async function snapshotManuscript(
   persist = true,
   options?: { includeBookMeta?: boolean; overrideBookMeta?: BookMetaWritable },
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const { key, info, cards, logs, importEvents, exportEvents, bookMeta } = manuscriptSnapshotParts(
+  const { key, info, cards, logs, importEvents, exportEvents, bookMeta, trashItems } = manuscriptSnapshotParts(
     state,
     project,
     options,
@@ -2369,6 +2582,7 @@ async function snapshotManuscript(
     importEvents,
     exportEvents,
     bookMeta,
+    trashItems,
   );
   return { key, bytes };
 }
@@ -3708,6 +3922,10 @@ export async function persistFileBookStash(input: {
       try {
         const includeBookMetaInLocalDb =
           Boolean(project.bookMetaPersisted) || !project.hasExternalFile;
+        const trashItems =
+          extra.trash?.kind === 'newer-revision' || extra.trash?.kind === 'corrupt'
+            ? undefined
+            : getProjectTrash(state, project.id);
         await save(
           dbKey,
           localDbFilename(project.title, project.filename),
@@ -3721,6 +3939,7 @@ export async function persistFileBookStash(input: {
           projectImportEventsOf(state, project.id),
           projectExportEventsOf(state, project.id),
           includeBookMetaInLocalDb ? manuscriptBookMeta(state, project) : undefined,
+          trashItems,
         );
         coordinator.markPersisted(dbKey, contentRev, generation);
         input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
@@ -4238,8 +4457,39 @@ export function SampleProvider({
     return () => window.clearTimeout(timer);
   }, [state.toast]);
 
-  const actions = useMemo<SampleActions>(
-    () => ({
+  const actions = useMemo<SampleActions>(() => {
+    const dispatchTrashAction = (
+      projectId: string,
+      action: Action,
+      immediate: boolean,
+    ): void => {
+      const prev = stateRef.current;
+      dispatch(action);
+      if (immediate && stateRef.current !== prev) {
+        void persistProjectNow({
+          state: stateRef.current,
+          projectId,
+          dispatch,
+          onStashResult: markStashResult,
+          coordinator: fileStashCoordinatorRef.current ?? undefined,
+        });
+      }
+    };
+    const insertTrashAction = (
+      projectId: string,
+      item: TrashItem,
+      type: 'trash-add' | 'trash-restore-deleted',
+      immediate: boolean,
+    ): TrashInsertResult => {
+      if (isProjectTrashReadOnly(stateRef.current, projectId)) {
+        return { kind: 'blocked-full', items: [], reason: 'all-annotated' };
+      }
+      const result = insertTrashItemWithLimit(getProjectTrash(stateRef.current, projectId), item);
+      if (result.kind !== 'added') return result;
+      dispatchTrashAction(projectId, { type, projectId, item }, immediate);
+      return result;
+    };
+    return {
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
       removeFromDevice: async (id) => {
         const project = stateRef.current.projects.find((item) => item.id === id);
@@ -4365,6 +4615,28 @@ export function SampleProvider({
         dispatch({ type: 'reorder-timeline', projectId, orderedIds }),
       moveTimelineEvent: (projectId, cardId, move) =>
         dispatch({ type: 'move-timeline-event', projectId, cardId, ...move }),
+      addTrashItem: (projectId, item, options) =>
+        insertTrashAction(projectId, item, 'trash-add', Boolean(options?.immediate)),
+      removeTrashItem: (projectId, itemId, options) =>
+        dispatchTrashAction(
+          projectId,
+          { type: 'trash-remove', projectId, itemId },
+          options?.immediate !== false,
+        ),
+      restoreDeletedTrashItem: (projectId, item, options) =>
+        insertTrashAction(projectId, item, 'trash-restore-deleted', options?.immediate !== false),
+      updateTrashReason: (projectId, itemId, reason) =>
+        dispatchTrashAction(
+          projectId,
+          { type: 'trash-update-reason', projectId, itemId, reason },
+          true,
+        ),
+      putBackTrashItem: (projectId, itemId, targetNodeId, nextBody) =>
+        dispatchTrashAction(
+          projectId,
+          { type: 'trash-put-back', projectId, itemId, targetNodeId, nextBody },
+          true,
+        ),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {
@@ -4619,9 +4891,8 @@ export function SampleProvider({
         if (message === stateRef.current.toast) return;
         dispatch({ type: 'toast', message });
       },
-    }),
-    [state],
-  );
+    };
+  }, [state]);
 
   const achievementCount = countAchievements(state.schedule.settled);
   const isGlowing = glowing(state.schedule);

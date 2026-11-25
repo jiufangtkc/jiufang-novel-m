@@ -7,8 +7,11 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useFocusEscape } from './useFocusEscape';
 import { DailyProgressBar } from '../components/DailyProgressBar';
-import { FormatLayer, FormatMoreButton, FormatNotice, useFormatTools } from '../components/FormatTools';
+import { FormatLayer, FormatMoreButton, FormatNotice, useFormatTools, type FormatExtraMenuItem } from '../components/FormatTools';
 import '../components/formatTools.css';
+import { TrashCornerNotice } from '../components/TrashCornerNotice';
+import { TrashSheet } from '../components/TrashSheet';
+import '../components/trashSheet.css';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
 import { SaveHeaderStatus } from '../components/SaveHeaderStatus';
@@ -41,6 +44,7 @@ import {
   VIEW_CARDS_BUTTON,
 } from '../copy/userFacing';
 import { bookArchive } from '../db/chapterArchive';
+import { generateUuidV4 } from '../db/extensionMeta';
 import type { ChapterNode } from '../data/demo';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { lastExternalFileSaveMs, resolveHeaderSaveDisplay } from '../domain/autoSave';
@@ -49,7 +53,32 @@ import { neighborChapterId } from '../domain/chapterOps';
 import { sessionVersions, VERSION_INTERVAL_MS, withVersion } from '../domain/chapterVersions';
 import { latestSaveTimestamp } from '../domain/saveClock';
 import { hasBodyText, staleSaveDays } from '../domain/staleSaveReminder';
+import {
+  appendToChapterEndPlan,
+  computePutBackPlan,
+  createTrashItem,
+  extractTrashAnchor,
+  insertTrashItemWithLimit,
+  isTrashOriginalNodeAlive,
+  nextTrashSortOrder,
+  type TrashItem,
+  type TrashPutBackPlan,
+} from '../domain/trash';
 import { countWords } from '../domain/wordCount';
+import type { TrashCapturePayload } from '../editor/trashCapture';
+import {
+  TRASH_CORNER_ADDED,
+  TRASH_MENU_MOVE_SELECTION,
+  TRASH_MENU_OPEN,
+  TRASH_MOVE_COMPOSING_TOAST,
+  TRASH_MOVE_READONLY_TOAST,
+  TRASH_PUT_BACK_END_TOAST,
+  TRASH_PUT_BACK_ORIGINAL_TOAST,
+  trashBlockedMessage,
+  trashCornerAddedWithEvict,
+  trashMenuBadge,
+  trashPutBackPickedToast,
+} from '../copy/trashCopy';
 import {
   captureCaretSnapshot,
   COMPOSITION_TIMEOUT_MS,
@@ -59,7 +88,7 @@ import {
   type WritingCaretSnapshot,
 } from '../domain/writingCards';
 import { writingPlaceLabel } from '../copy/writingCardEditCopy';
-import { restorePanelRoom, revealCaret, revealCaretAbovePanel } from '../editor/caret';
+import { measureCaret, restorePanelRoom, revealCaret, revealCaretAbovePanel } from '../editor/caret';
 import {
   flushCardEdit,
   getCardEditSnapshot,
@@ -83,7 +112,7 @@ import {
   useLayout,
 } from '../layout';
 import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthReminder';
-import { useProject, useSample } from '../state/sampleStore';
+import { getProjectTrash, getProjectTrashRead, isProjectTrashReadOnly, useProject, useSample } from '../state/sampleStore';
 import { caretToRestore, nearIdsOf, readWritePlace, saveWritePlace, scrollTopToRestore } from '../state/navMemory';
 import { editorSaveStatus, unifiedFocusSaveLabel } from './editorSaveStatus';
 import {
@@ -118,6 +147,8 @@ export function EditorPane({
   const keyboard = useWritingKeyboard(focused);
   const keyboardOpen = keyboard.compact;
   const onUserEditRef = useRef<(() => void) | null>(null);
+  const onTrashCaptureRef = useRef<((payload: TrashCapturePayload) => string | null) | null>(null);
+  const onTrashUndoRef = useRef<((itemId: string) => void) | null>(null);
   const { ref, replaceText } = useWritingSurface({
     bookId: projectId,
     chapterId: chapter.id,
@@ -127,6 +158,8 @@ export function EditorPane({
     onDuration: actions.addDuration,
     onToast: (message) => actions.toast(message),
     onUserEdit: () => onUserEditRef.current?.(),
+    onTrashCapture: (payload) => onTrashCaptureRef.current?.(payload) ?? null,
+    onTrashUndo: (itemId) => onTrashUndoRef.current?.(itemId),
   });
   const goal = state.schedule.open?.goals.at(-1)?.goal ?? state.schedule.defaultGoal;
   const todayWords = state.schedule.open?.wordCount ?? 0;
@@ -282,6 +315,239 @@ export function EditorPane({
     replaceText,
   });
 
+  // WO-138：刪稿暫存區狀態、自動收集／撤回、手動送入與角落提示
+  const trashRead = getProjectTrashRead(state, projectId);
+  const trashItems = getProjectTrash(state, projectId);
+  const trashReadOnly = isProjectTrashReadOnly(state, projectId);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [trashNotice, setTrashNotice] = useState<{
+    itemId: string | null;
+    message: string;
+    token: number;
+  } | null>(null);
+  const menuSelectionRef = useRef<{
+    start: number;
+    end: number;
+    valueSnapshot: string;
+  } | null>(null);
+  const [menuSelection, setMenuSelection] = useState<{
+    start: number;
+    end: number;
+    valueSnapshot: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!trashNotice) return;
+    const timer = window.setTimeout(() => {
+      setTrashNotice((prev) => (prev && prev.token === trashNotice.token ? null : prev));
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [trashNotice]);
+
+  useEffect(() => {
+    if (focusMode) {
+      setTrashOpen(false);
+    }
+  }, [focusMode]);
+
+  const captureMenuSelection = (event?: React.PointerEvent<HTMLButtonElement>) => {
+    const el = ref.current;
+    if (!el) return;
+    if (event && event.type === 'pointerdown') {
+      keepBodyFocusOnPointerDown(el, event);
+    }
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? start;
+    const snapshot = { start, end, valueSnapshot: el.value };
+    menuSelectionRef.current = snapshot;
+    setMenuSelection(snapshot);
+  };
+
+  const hasMenuSelection = Boolean(
+    menuSelection &&
+      menuSelection.end > menuSelection.start &&
+      countWords(menuSelection.valueSnapshot.slice(menuSelection.start, menuSelection.end)) > 0,
+  );
+
+  onTrashCaptureRef.current = (payload) => {
+    if (isProjectTrashReadOnly(state, projectId)) return null;
+    const itemId = generateUuidV4();
+    const deletedAtMs = payload.capturedAtMs;
+    const sortOrder = nextTrashSortOrder(trashItems, deletedAtMs);
+    const item: TrashItem = createTrashItem({
+      itemId,
+      chapterId: chapter.id,
+      chapterTitleSnapshot: chapter.title,
+      content: payload.deletedText,
+      wordCount: payload.wordCount,
+      beforeAnchor: payload.beforeAnchor,
+      afterAnchor: payload.afterAnchor,
+      charOffset: payload.charOffset,
+      deletedAtMs,
+      sortOrder,
+    });
+    const result = actions.addTrashItem(projectId, item, { immediate: false });
+    if (result.kind === 'blocked-full') {
+      setTrashNotice({
+        itemId: null,
+        message: trashBlockedMessage(result.reason),
+        token: Date.now(),
+      });
+      return null;
+    }
+    setTrashNotice({
+      itemId,
+      message:
+        result.evictedCount > 0 ? trashCornerAddedWithEvict(result.evictedCount) : TRASH_CORNER_ADDED,
+      token: Date.now(),
+    });
+    return itemId;
+  };
+
+  onTrashUndoRef.current = (itemId) => {
+    actions.removeTrashItem(projectId, itemId, { immediate: false });
+    setTrashNotice((prev) => (prev && prev.itemId === itemId ? null : prev));
+  };
+
+  const handleMoveSelectionToTrash = () => {
+    if (isComposingRef.current) {
+      actions.toast(TRASH_MOVE_COMPOSING_TOAST);
+      return;
+    }
+    if (trashReadOnly) {
+      actions.toast(TRASH_MOVE_READONLY_TOAST);
+      return;
+    }
+    const snap = menuSelectionRef.current ?? menuSelection;
+    const el = ref.current;
+    if (!snap || !el || el.value !== snap.valueSnapshot || snap.end <= snap.start) return;
+    const anchor = extractTrashAnchor(snap.valueSnapshot, snap.start, snap.end);
+    if (anchor.wordCount <= 0) return;
+
+    const nowMs = Date.now();
+    const item = createTrashItem({
+      itemId: generateUuidV4(),
+      chapterId: chapter.id,
+      chapterTitleSnapshot: chapter.title,
+      content: anchor.deletedText,
+      wordCount: anchor.wordCount,
+      beforeAnchor: anchor.beforeAnchor,
+      afterAnchor: anchor.afterAnchor,
+      charOffset: anchor.charOffset,
+      deletedAtMs: nowMs,
+      sortOrder: nextTrashSortOrder(trashItems, nowMs),
+    });
+
+    const preview = insertTrashItemWithLimit(trashItems, item);
+    if (preview.kind === 'blocked-full') {
+      setTrashNotice({
+        itemId: null,
+        message: trashBlockedMessage(preview.reason),
+        token: Date.now(),
+      });
+      return;
+    }
+
+    const nextBody =
+      snap.valueSnapshot.slice(0, snap.start) + snap.valueSnapshot.slice(snap.end);
+    if (!replaceText(nextBody, snap.start)) {
+      actions.toast(TRASH_MOVE_COMPOSING_TOAST);
+      return;
+    }
+
+    const result = actions.addTrashItem(projectId, item, { immediate: true });
+    if (result.kind === 'added') {
+      setTrashNotice({
+        itemId: item.itemId,
+        message:
+          result.evictedCount > 0 ? trashCornerAddedWithEvict(result.evictedCount) : TRASH_CORNER_ADDED,
+        token: Date.now(),
+      });
+    }
+  };
+
+  const handlePutBackFromTrash = (
+    item: TrashItem,
+    targetNodeId: string,
+    _initialPlan: TrashPutBackPlan,
+    isPicked: boolean,
+  ): boolean => {
+    if (isComposingRef.current) {
+      return false;
+    }
+    if (targetNodeId === chapter.id) {
+      const el = ref.current;
+      const liveBody = el?.value ?? chapter.content ?? '';
+      const plan = isPicked
+        ? appendToChapterEndPlan(liveBody, item.content, 'end')
+        : computePutBackPlan(liveBody, item);
+      if (!replaceText(plan.nextBody, plan.insertEnd)) {
+        return false;
+      }
+      actions.removeTrashItem(projectId, item.itemId, { immediate: true });
+      if (el) {
+        el.setSelectionRange(plan.insertStart, plan.insertStart);
+        try {
+          const box = measureCaret(el);
+          if (box) {
+            el.scrollTop = Math.max(0, box.top - el.clientHeight * 0.35);
+          }
+        } catch {
+          // 沒有版面計算的環境略過
+        }
+        el.setSelectionRange(plan.insertEnd, plan.insertEnd);
+      }
+      setTrashOpen(false);
+      actions.toast(
+        isPicked
+          ? trashPutBackPickedToast(chapter.title)
+          : plan.placement === 'original'
+            ? TRASH_PUT_BACK_ORIGINAL_TOAST
+            : TRASH_PUT_BACK_END_TOAST,
+      );
+      return true;
+    }
+
+    const targetNode = project ? isTrashOriginalNodeAlive(project.nodes, targetNodeId) : null;
+    if (!targetNode) return false;
+    const plan = isPicked
+      ? appendToChapterEndPlan(targetNode.content ?? '', item.content, 'end')
+      : computePutBackPlan(targetNode.content ?? '', item);
+    const toastMessage = isPicked
+      ? trashPutBackPickedToast(targetNode.title)
+      : plan.placement === 'original'
+        ? TRASH_PUT_BACK_ORIGINAL_TOAST
+        : TRASH_PUT_BACK_END_TOAST;
+    actions.putBackTrashItem(projectId, item.itemId, targetNodeId, plan.nextBody);
+    setTrashOpen(false);
+    navigate(`/p/${projectId}/write/${targetNodeId}`, {
+      state: {
+        trashJumpOffset: plan.insertStart,
+        trashJumpEnd: plan.insertEnd,
+        trashToast: toastMessage,
+      },
+    });
+    return true;
+  };
+
+  const extraMenuItems: FormatExtraMenuItem[] = [
+    {
+      id: 'trash-open',
+      label: TRASH_MENU_OPEN,
+      badge: trashItems.length > 0 ? trashMenuBadge(trashItems.length) : undefined,
+      onSelect: () => setTrashOpen(true),
+    },
+    ...(hasMenuSelection
+      ? [
+          {
+            id: 'trash-move-selection',
+            label: TRASH_MENU_MOVE_SELECTION,
+            onSelect: handleMoveSelectionToTrash,
+          },
+        ]
+      : []),
+  ];
+
   // WO-122：排版小工具（頁首／橫拿「⋯」→ 排版）。專注模式不露出，進入專注時關掉殘留視窗。
   const formatTools = useFormatTools({
     projectId,
@@ -290,6 +556,15 @@ export function EditorPane({
     isComposingRef,
     replaceText,
     focusMode,
+    getMenuItemCount: () => {
+      const snap = menuSelectionRef.current;
+      const hasSel = Boolean(
+        snap &&
+          snap.end > snap.start &&
+          countWords(snap.valueSnapshot.slice(snap.start, snap.end)) > 0,
+      );
+      return 2 + (hasSel ? 1 : 0);
+    },
   });
   onUserEditRef.current = () => {
     if (formatTools.hasSnapshot) formatTools.dismissNotice();
@@ -501,36 +776,70 @@ export function EditorPane({
   }, [sidePanels.right, isCardsOpen]);
 
   const placedCursor = useRef<string | null>(null);
+  const pendingTrashToastRef = useRef<string | null>(null);
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el || !project) return;
+    const jumpState = location.state as {
+      trashJumpOffset?: number;
+      trashJumpEnd?: number;
+      trashToast?: string;
+    } | null;
     if (placedCursor.current !== chapter.id) {
       placedCursor.current = chapter.id;
-      // WO-65：先用這個裝置記住的位置（同一章才用）；離開前在打字就叫回鍵盤，收著就只放好游標
-      const memo = caretToRestore(readWritePlace(projectId), chapter.id, el.value.length);
-      if (memo) {
-        if (memo.keyboard) {
-          try {
-            el.focus({ preventScroll: true });
-          } catch {
-            el.focus();
-          }
+      if (typeof jumpState?.trashJumpOffset === 'number') {
+        const jumpStart = Math.max(0, Math.min(jumpState.trashJumpOffset, el.value.length));
+        const jumpEnd =
+          typeof jumpState.trashJumpEnd === 'number'
+            ? Math.max(jumpStart, Math.min(jumpState.trashJumpEnd, el.value.length))
+            : jumpStart;
+        el.setSelectionRange(jumpStart, jumpStart);
+        let top = 0;
+        try {
+          const box = measureCaret(el);
+          if (box) top = Math.max(0, box.top - el.clientHeight * 0.35);
+        } catch {
+          // 沒有版面計算的環境略過
         }
-        el.setSelectionRange(memo.selectionStart, memo.selectionEnd);
-        const top = scrollTopToRestore(memo, el.clientWidth, el.scrollHeight - el.clientHeight);
         el.scrollTop = top;
-        userScrollRef.current = { top, width: el.clientWidth, max: Math.max(0, el.scrollHeight - el.clientHeight) };
-        settleScrollRef.current = { top, until: Date.now() + 1500 };
-        const reapply = () => {
-          const settle = settleScrollRef.current;
-          if (!settle || Date.now() > settle.until || !ref.current) return;
-          ref.current.scrollTop = settle.top;
+        el.setSelectionRange(jumpEnd, jumpEnd);
+        userScrollRef.current = {
+          top,
+          width: el.clientWidth,
+          max: Math.max(0, el.scrollHeight - el.clientHeight),
         };
-        window.requestAnimationFrame(() => window.requestAnimationFrame(reapply));
-        void document.fonts?.ready.then(() => window.requestAnimationFrame(reapply)).catch(() => undefined);
-      } else if (project.lastOpenedNodeId === chapter.id) {
-        const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
-        el.setSelectionRange(cursor, cursor);
+        settleScrollRef.current = { top, until: Date.now() + 1500 };
+        if (typeof jumpState.trashToast === 'string' && jumpState.trashToast) {
+          pendingTrashToastRef.current = jumpState.trashToast;
+        }
+        navigate(location.pathname, { replace: true, state: null });
+      } else {
+        // WO-65：先用這個裝置記住的位置（同一章才用）；離開前在打字就叫回鍵盤，收著就只放好游標
+        const memo = caretToRestore(readWritePlace(projectId), chapter.id, el.value.length);
+        if (memo) {
+          if (memo.keyboard) {
+            try {
+              el.focus({ preventScroll: true });
+            } catch {
+              el.focus();
+            }
+          }
+          el.setSelectionRange(memo.selectionStart, memo.selectionEnd);
+          const top = scrollTopToRestore(memo, el.clientWidth, el.scrollHeight - el.clientHeight);
+          el.scrollTop = top;
+          userScrollRef.current = { top, width: el.clientWidth, max: Math.max(0, el.scrollHeight - el.clientHeight) };
+          settleScrollRef.current = { top, until: Date.now() + 1500 };
+          const reapply = () => {
+            const settle = settleScrollRef.current;
+            if (!settle || Date.now() > settle.until || !ref.current) return;
+            ref.current.scrollTop = settle.top;
+          };
+          window.requestAnimationFrame(() => window.requestAnimationFrame(reapply));
+          void document.fonts?.ready.then(() => window.requestAnimationFrame(reapply)).catch(() => undefined);
+        } else if (project.lastOpenedNodeId === chapter.id) {
+          const cursor = Math.max(0, Math.min(project.lastCursor ?? 0, el.value.length));
+          el.setSelectionRange(cursor, cursor);
+        }
       }
       writePlaceReadyRef.current = true;
       saveWritePlaceRef.current();
@@ -547,6 +856,21 @@ export function EditorPane({
       },
     });
   }, [chapter.id, project, bodyFontScale, ref]);
+
+  // WO-138：跨章放回的說明提示待 Workspace 依 pathname 清空舊 toast 後再顯示
+  useEffect(() => {
+    const message = pendingTrashToastRef.current;
+    if (!message) return;
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      pendingTrashToastRef.current = null;
+      actions.toast(message);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chapter.id, actions]);
 
   useLayoutEffect(() => {
     const textarea = ref.current;
@@ -721,6 +1045,7 @@ export function EditorPane({
         .filter(Boolean)
         .join(' ')}
       data-testid="editor"
+      data-trash-open={trashOpen ? 'true' : undefined}
       data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
       data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
     >
@@ -815,7 +1140,12 @@ export function EditorPane({
           <span className="view-cards-label">{VIEW_CARDS_BUTTON}</span>
         </button>
         {!focusMode ? (
-          <FormatMoreButton tools={formatTools} className="format-more-button" testId="format-more-topbar" />
+          <FormatMoreButton
+            tools={formatTools}
+            className="format-more-button"
+            testId="format-more-topbar"
+            onPointerDown={captureMenuSelection}
+          />
         ) : null}
         {headerKind === 'stale' && staleDays != null ? (
           <StaleSaveReminder days={staleDays} onSave={saveFromReminder} />
@@ -889,10 +1219,38 @@ export function EditorPane({
         <span className="floating-button-label">{FOCUS_MODE_LANDSCAPE_ENTER_ARIA}</span>
       </button>
       {!focusMode ? (
-        <FormatMoreButton tools={formatTools} className="format-more-floating" testId="format-more-landscape" />
+        <FormatMoreButton
+          tools={formatTools}
+          className="format-more-floating"
+          testId="format-more-landscape"
+          onPointerDown={captureMenuSelection}
+        />
       ) : null}
-      <FormatLayer tools={formatTools} />
+      <FormatLayer tools={formatTools} extraMenuItems={extraMenuItems} />
       {!focusMode ? <FormatNotice tools={formatTools} /> : null}
+      {!focusMode && trashNotice ? (
+        <TrashCornerNotice
+          message={trashNotice.message}
+          onOpen={() => {
+            setTrashNotice(null);
+            setTrashOpen(true);
+          }}
+          onDismiss={() => setTrashNotice(null)}
+        />
+      ) : null}
+      <TrashSheet
+        open={trashOpen && !focusMode}
+        items={trashItems}
+        trashRead={trashRead}
+        nodes={project?.nodes ?? []}
+        layoutMode={layoutMode}
+        isComposing={() => isComposingRef.current}
+        onClose={() => setTrashOpen(false)}
+        onUpdateReason={(itemId, reason) => actions.updateTrashReason(projectId, itemId, reason)}
+        onPutBack={handlePutBackFromTrash}
+        onDiscard={(item) => actions.removeTrashItem(projectId, item.itemId, { immediate: true })}
+        onUndoDiscard={(item) => actions.restoreDeletedTrashItem(projectId, item, { immediate: true })}
+      />
       <textarea
         ref={ref}
         className={[
