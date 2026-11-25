@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-137（暫定，待九方審）
+  {
+    version: '0.5.0',
+    items: [
+      '替每份稿子建立固定識別紀錄，方便日後重複開檔或跨裝置時認出同一部稿子（打開舊稿不會主動改寫原檔，等你下次儲存時才寫入）',
+      '統一稿子附加資料的相容規則：電腦版可照常開啟新存的稿子，遇到新版新增的附加資料也會原樣保留，不影響正文、目錄與卡片',
+    ],
+  },
   // WO-135（暫定，待九方審）
   {
     version: '0.4.4',

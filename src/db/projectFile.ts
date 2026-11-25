@@ -1,6 +1,7 @@
 import type { ChapterNode } from '../data/demo';
 import { countBookWords } from '../domain/wordCount';
 import type { ProgressCode } from '../domain/labels';
+import { readBookMeta, writeBookMeta, type BookMetaRead, type BookMetaWritable } from './bookMeta';
 import {
   applyMigrations,
   CURRENT_SCHEMA_VERSION,
@@ -134,6 +135,8 @@ export interface LoadedFile {
   transfer: TransferRead;
   /** WO-128：稿子內附加表的時間線資料（只讀，不建表）。 */
   timeline: TimelineRead;
+  /** WO-137：稿子內附加表的固定身分證（只讀，不建表）。 */
+  bookMeta: BookMetaRead;
 }
 
 type ChapterNodeWithRaw = ChapterNode & {
@@ -488,6 +491,7 @@ export function readFileProject(sql: Sql): LoadedFile {
     wordCount: treeWordCount(tree),
     transfer: readTransferData(sql),
     timeline,
+    bookMeta: readBookMeta(sql),
   };
 }
 
@@ -1015,6 +1019,8 @@ export function writeFileProject(
   importEvents?: Readonly<Record<string, TransferEvent>>,
   /** WO-103：這份稿子的匯出全文事件；與匯入事件同一筆交易寫入。 */
   exportEvents?: Readonly<Record<string, TransferEvent>>,
+  /** WO-137：稿件固定身分證；不給就維持 P0-4 零寫入，完全不碰 jiufangm_book_meta。 */
+  bookMeta?: BookMetaWritable,
 ): void {
   const fkRow = sql.select('PRAGMA foreign_keys')[0];
   const prevForeignKeys = fkRow && Number(fkRow.foreign_keys) ? 1 : 0;
@@ -1032,6 +1038,8 @@ export function writeFileProject(
     // WO-100：附加事件與正文同一筆交易；任何一步失敗整筆回復，不會只存到正文。
     // WO-103：匯出事件也在同一筆交易；兩者都沒給時完全不碰附加表。
     if (importEvents || exportEvents) writeTransferEvents(sql, importEvents ?? {}, exportEvents ?? {});
+    // WO-137：未傳 bookMeta 時維持 P0-4 零寫入；傳入時於同一筆交易寫入並讀回核對。
+    if (bookMeta) writeBookMeta(sql, bookMeta);
     sql.exec('COMMIT');
   } catch (error) {
     try {

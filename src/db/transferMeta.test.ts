@@ -168,7 +168,7 @@ describe('WO-100 附加資料錯誤：不可讀成 0 後覆寫', () => {
   }
 
   const broken: Array<[string, (sql: Sql) => void]> = [
-    ['未知附加修訂值', (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 2`)],
+    ['修訂值非正整數（0）', (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 0`)],
     ['事件寫作日損壞', (sql) => sql.exec(`UPDATE ${TRANSFER_EVENTS_TABLE} SET day_key = '十一月十日'`)],
     ['事件時間損壞', (sql) => sql.exec(`UPDATE ${TRANSFER_EVENTS_TABLE} SET at_ms = 'abc'`)],
     ['中繼資料列不見', (sql) => sql.exec(`DELETE FROM ${TRANSFER_META_TABLE}`)],
@@ -176,12 +176,12 @@ describe('WO-100 附加資料錯誤：不可讀成 0 後覆寫', () => {
     ['匯出預留欄損壞', (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET export_count = -1`)],
   ];
 
-  it.each(broken)('WO-100：%s → 讀為 invalid；存檔不動附加表；外部存檔前檢查擋下', async (_label, breakIt) => {
+  it.each(broken)('WO-100／WO-137：%s → 讀為 corrupt；存檔不動附加表；外部存檔前檢查擋下', async (_label, breakIt) => {
     const bad = await mutate(await baseWithEvent(), breakIt);
     const before = await withDb(bad, (sql) => dumpTables(sql, TRANSFER_TABLES.filter((name) => tableNames(sql).has(name))));
     await withDb(bad, (sql) => {
-      expect(readTransferData(sql).kind).toBe('invalid');
-      expect(readFileProject(sql).transfer.kind).toBe('invalid');
+      expect(readTransferData(sql).kind).toBe('corrupt');
+      expect(readFileProject(sql).transfer.kind).toBe('corrupt');
     });
     // 本機副本照常存正文，但附加表原樣不動（不當 0 覆寫、不補寫新事件）
     const book = await readBookBytes('壞.db', bad, 'file-bad');
@@ -192,6 +192,31 @@ describe('WO-100 附加資料錯誤：不可讀成 0 後覆寫', () => {
       expect(dumpTables(sql, TRANSFER_TABLES.filter((name) => tableNames(sql).has(name)))).toEqual(before);
       expect(readFileProject(sql).tree[0]!.children![0]!.content).toBe('改過的假正文');
       expect(() => assertTransferDataWritable(sql)).toThrow(TransferDataError);
+    });
+  });
+
+  it('WO-137：較新修訂值（format_revision = 2）＋未知欄位讀為 newer-revision，唯讀保留且放行正文存檔', async () => {
+    const newer = await mutate(await baseWithEvent(), (sql) => {
+      sql.exec(`ALTER TABLE ${TRANSFER_META_TABLE} ADD COLUMN future_flag TEXT DEFAULT 'v2-keep'`);
+      sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 2`);
+    });
+    const before = await withDb(newer, (sql) => dumpTables(sql, TRANSFER_TABLES));
+    await withDb(newer, (sql) => {
+      expect(readTransferData(sql)).toEqual({ kind: 'newer-revision', revision: 2 });
+      expect(() => assertTransferDataWritable(sql)).not.toThrow();
+    });
+
+    const book = await readBookBytes('較新版.db', newer, 'file-newer');
+    const tree = structuredClone(book.tree);
+    tree[0]!.children![0]!.content = '【範例】較新版附加表下修改正文';
+    const saved = await writeBookBytes(newer, book.info, tree, book.cards, book.logs, {
+      'imp-a': EVENT_A,
+      'imp-b': EVENT_B,
+    });
+    await withDb(saved, (sql) => {
+      expect(dumpTables(sql, TRANSFER_TABLES)).toEqual(before);
+      expect(readFileProject(sql).tree[0]!.children![0]!.content).toBe('【範例】較新版附加表下修改正文');
+      expect(() => assertTransferDataWritable(sql)).not.toThrow();
     });
   });
 

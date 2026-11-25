@@ -4,6 +4,8 @@ import { appSpace } from './browserSpace';
 import { isBookRemoved, markBookRemoved } from './removedBooks';
 import type { StoredBook } from './appSpace';
 import { externalFileFromStored, type BookFileMark } from '../domain/bookTitle';
+import type { BookMetaRead, BookMetaWritable } from './bookMeta';
+import { generateUuidV4, isPositiveSafeInteger, isValidUuidV4 } from './extensionMeta';
 import { readFileProject, writeFileProject, type FileCard, type FileLog, type FileProjectInfo } from './projectFile';
 import type { TimelineRead } from './timelineMeta';
 import type { TransferEvent, TransferRead } from './transferMeta';
@@ -111,6 +113,50 @@ export interface ImportedBook {
   transfer: TransferRead;
   /** WO-128：檔內附加表的時間線資料狀態。 */
   timeline: TimelineRead;
+  /** WO-137：檔內附加表的固定身分證讀取結果。 */
+  bookMeta?: BookMetaRead;
+  /** WO-137：此稿件在記憶體／中繼層的有效固定身分證（舊檔未存前先於記憶體／.json 暫配）。 */
+  bookUuid?: string;
+  bookCreatedAtMs?: number;
+  originBookUuid?: string | null;
+  bookMetaPersisted?: boolean;
+}
+
+export type BookIdentityFallback = Partial<
+  Pick<StoredBook, 'bookUuid' | 'bookCreatedAtMs' | 'originBookUuid' | 'bookMetaPersisted'>
+>;
+
+export type StoredBookMark = BookFileMark & BookIdentityFallback;
+
+function resolveLoadedBookIdentity(
+  bookMeta: BookMetaRead,
+  now: Date,
+  fallback?: BookIdentityFallback,
+): {
+  bookUuid: string;
+  bookCreatedAtMs: number;
+  originBookUuid: string | null;
+  bookMetaPersisted: boolean;
+} {
+  if (bookMeta.kind === 'ok') {
+    return {
+      bookUuid: bookMeta.meta.bookUuid,
+      bookCreatedAtMs: bookMeta.meta.createdAtMs,
+      originBookUuid: bookMeta.meta.originBookUuid,
+      bookMetaPersisted: true,
+    };
+  }
+  const fallbackUuid = isValidUuidV4(fallback?.bookUuid) ? fallback.bookUuid : generateUuidV4();
+  const fallbackCreatedAt = isPositiveSafeInteger(fallback?.bookCreatedAtMs)
+    ? fallback.bookCreatedAtMs
+    : Math.max(1, Math.trunc(now.getTime()));
+  const fallbackOrigin = isValidUuidV4(fallback?.originBookUuid) ? fallback.originBookUuid : null;
+  return {
+    bookUuid: fallbackUuid,
+    bookCreatedAtMs: fallbackCreatedAt,
+    originBookUuid: fallbackOrigin,
+    bookMetaPersisted: false,
+  };
 }
 
 /** 從檔案裡的寫作紀錄排出每日目標結算狀態（WO-69 單元測試也用來核對重開結果）。 */
@@ -150,6 +196,7 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         title: loaded.info.title,
         titleSavePending: item.titleSavePending,
       });
+      const identity = resolveLoadedBookIdentity(loaded.bookMeta, now, item);
       books.push({
         key: item.key,
         filename: item.filename,
@@ -166,6 +213,8 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
         titleSavePending: mark.titleSavePending,
         transfer: loaded.transfer,
         timeline: loaded.timeline,
+        bookMeta: loaded.bookMeta,
+        ...identity,
       });
     } catch {
       // 單本暫存讀壞時略過，避免拖垮其餘已存稿件載入。
@@ -181,7 +230,13 @@ export async function loadStoredBooks(now = new Date()): Promise<ImportedBook[]>
  * WO-100：把使用者選入的 .db 位元組讀成一份稿子（不寫入 App 本機）。
  * 回傳的 bytes 是重新匯出的位元組；原始位元組的指紋請在呼叫前另外算（本機事件對應用）。
  */
-export async function readBookBytes(filename: string, bytes: Uint8Array, key: string, now = new Date()): Promise<ImportedBook> {
+export async function readBookBytes(
+  filename: string,
+  bytes: Uint8Array,
+  key: string,
+  now = new Date(),
+  fallbackIdentity?: BookIdentityFallback,
+): Promise<ImportedBook> {
   if (!hasSqliteHeader(bytes)) {
     throw new DatabaseOpenError('not-jiufang');
   }
@@ -194,6 +249,7 @@ export async function readBookBytes(filename: string, bytes: Uint8Array, key: st
   try {
     const loaded = readFileProject(db.sql);
     const exported = db.exportBytes();
+    const identity = resolveLoadedBookIdentity(loaded.bookMeta, now, fallbackIdentity);
     return {
       key,
       filename: filename || '未命名.db',
@@ -210,6 +266,8 @@ export async function readBookBytes(filename: string, bytes: Uint8Array, key: st
       titleSavePending: null,
       transfer: loaded.transfer,
       timeline: loaded.timeline,
+      bookMeta: loaded.bookMeta,
+      ...identity,
     };
   } finally {
     db.close();
@@ -227,6 +285,10 @@ export async function importBook(filename: string, bytes: Uint8Array, now = new 
       hasExternalFile: true,
       titleInFile: book.info.title,
       titleSavePending: null,
+      bookUuid: book.bookUuid,
+      bookCreatedAtMs: book.bookCreatedAtMs,
+      originBookUuid: book.originBookUuid,
+      bookMetaPersisted: book.bookMetaPersisted,
     });
   } catch {
     throw new DatabaseOpenError('storage-failed');
@@ -246,10 +308,11 @@ export async function writeBookBytes(
   logs: FileLog[],
   importEvents?: Readonly<Record<string, TransferEvent>>,
   exportEvents?: Readonly<Record<string, TransferEvent>>,
+  bookMeta?: BookMetaWritable,
 ): Promise<Uint8Array> {
   const db = await openMemoryDb(base ?? new Uint8Array());
   try {
-    writeFileProject(db.sql, info, tree, cards, logs, importEvents, exportEvents);
+    writeFileProject(db.sql, info, tree, cards, logs, importEvents, exportEvents, bookMeta);
     return db.exportBytes();
   } finally {
     db.close();
@@ -264,19 +327,24 @@ export async function saveBookBytes(
   tree: ImportedBook['tree'],
   cards: FileCard[],
   logs: FileLog[],
-  bookkeeping?: BookFileMark,
+  bookkeeping?: StoredBookMark,
   persist = true,
   importEvents?: Readonly<Record<string, TransferEvent>>,
   exportEvents?: Readonly<Record<string, TransferEvent>>,
+  bookMeta?: BookMetaWritable,
 ): Promise<Uint8Array> {
   return serializeBookWrite(key, async () => {
     const existing = await getBook(key);
-    const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents, exportEvents);
+    const exported = await writeBookBytes(existing?.bytes, info, tree, cards, logs, importEvents, exportEvents, bookMeta);
     if (!persist) return exported;
-    const mark = bookkeeping ?? {
+    const mark: StoredBookMark = bookkeeping ?? {
       titleInFile: existing?.titleInFile ?? null,
-      hasExternalFile: existing?.hasExternalFile,
+      hasExternalFile: Boolean(existing?.hasExternalFile),
       titleSavePending: existing?.titleSavePending ?? null,
+      bookUuid: existing?.bookUuid,
+      bookCreatedAtMs: existing?.bookCreatedAtMs,
+      originBookUuid: existing?.originBookUuid,
+      bookMetaPersisted: existing?.bookMetaPersisted,
     };
     await putBookDirect({
       key,
@@ -286,6 +354,26 @@ export async function saveBookBytes(
       titleInFile: mark.titleInFile,
       hasExternalFile: mark.hasExternalFile,
       titleSavePending: mark.titleSavePending,
+      ...(isValidUuidV4(mark.bookUuid)
+        ? { bookUuid: mark.bookUuid }
+        : isValidUuidV4(existing?.bookUuid)
+          ? { bookUuid: existing.bookUuid }
+          : {}),
+      ...(isPositiveSafeInteger(mark.bookCreatedAtMs)
+        ? { bookCreatedAtMs: mark.bookCreatedAtMs }
+        : isPositiveSafeInteger(existing?.bookCreatedAtMs)
+          ? { bookCreatedAtMs: existing.bookCreatedAtMs }
+          : {}),
+      ...(mark.originBookUuid !== undefined
+        ? { originBookUuid: mark.originBookUuid }
+        : existing?.originBookUuid !== undefined
+          ? { originBookUuid: existing.originBookUuid }
+          : {}),
+      ...(typeof mark.bookMetaPersisted === 'boolean'
+        ? { bookMetaPersisted: mark.bookMetaPersisted }
+        : typeof existing?.bookMetaPersisted === 'boolean'
+          ? { bookMetaPersisted: existing.bookMetaPersisted }
+          : {}),
     });
     return exported;
   });

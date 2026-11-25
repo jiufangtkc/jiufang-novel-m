@@ -612,18 +612,25 @@ describe('WO-100 舊本機紀錄遷移', () => {
 });
 
 describe('WO-100 格式錯誤與匯出預留（稿子狀態層）', () => {
-  it('WO-100：附加資料損壞（不支援的修訂值）的檔：不讀成 0 覆寫；本機副本不動附加表；外部存檔前檢查擋下', async () => {
+  it('WO-100／WO-137：附加資料損壞（corrupt）的檔：不讀成 0 覆寫；本機副本不動附加表；外部存檔前檢查擋下（較新修訂值則放行）', async () => {
     const good = await fakeDb('修訂值假稿', [], { 'imp-1': E1 });
-    const bad = await mutate(good, (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 99`));
+    const newer = await mutate(good, (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 99`));
+    const openedNewer = await openDb(createState(NOW), newer, 'file-newer');
+    expect(openedNewer.book.transfer).toEqual({ kind: 'newer-revision', revision: 99 });
+    const newerProject = openedNewer.state.projects.find((item) => item.id === 'file-newer')!;
+    const newerLocalCopy = await manuscriptBytesOn(openedNewer.state, newerProject, openedNewer.book.bytes);
+    await expect(verifyBytesForSave(newerLocalCopy)).resolves.toBeUndefined();
+
+    const bad = await mutate(good, (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 'v99'`));
     const opened = await openDb(createState(NOW), bad, 'file-bad');
-    expect(opened.book.transfer.kind).toBe('invalid');
+    expect(opened.book.transfer.kind).toBe('corrupt');
     // 本機副本（底稿即開檔後的副本）照常寫正文，但附加表原樣
     const project = opened.state.projects.find((item) => item.id === 'file-bad')!;
     const localCopy = await manuscriptBytesOn(opened.state, project, opened.book.bytes);
     const db = await openMemoryDb(localCopy);
     try {
-      expect(db.sql.select(`SELECT format_revision FROM ${TRANSFER_META_TABLE}`)[0]!.format_revision).toBe(99);
-      expect(readFileProject(db.sql).transfer.kind).toBe('invalid');
+      expect(db.sql.select(`SELECT format_revision FROM ${TRANSFER_META_TABLE}`)[0]!.format_revision).toBe('v99');
+      expect(readFileProject(db.sql).transfer.kind).toBe('corrupt');
     } finally {
       db.close();
     }

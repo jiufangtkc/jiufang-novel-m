@@ -1,11 +1,21 @@
-import { columnNames, tableNames, type Sql } from './sql';
+import {
+  inspectExtensionMetaTable,
+  isNonNegativeSafeInteger,
+  resolveAliveRef,
+  selectKnownColumns,
+  updateKnownColumns,
+  type AliveEntityIds,
+  type ExtensionReadState,
+} from './extensionMeta';
+import { type Sql } from './sql';
 
 /**
  * WO-128：事件時間線附加資料寫進稿子的資料庫，跟著稿子走。
+ * WO-137：對齊 jiufangm_* 統一四態擴充規範（absent / ok / newer-revision / corrupt）。
  *
  * 存法：稿子內兩張「獨立、具 jiufangm_ 命名空間」的附加資料表。
  * - 不在電腦版既有 cards 表加欄（維持固定 8 欄）、不污染 categories_meta 或 cards.sort_order。
- * - 不動 schema_version，CURRENT_SCHEMA_VERSION 維持 14；本單另有自己的附加格式修訂值（目前 1）。
+ * - 不動 schema_version，CURRENT_SCHEMA_VERSION 維持 14；format_revision 維持 1（確保 0.4.4 可開）。
  * - 刻意不宣告 SQLite FOREIGN KEY 指向 cards(id) 或 chapters(id)，避免電腦版開啟外鍵刪除時被擋下。
  * - 讀檔時只讀、不建表；建立與寫入只在存檔交易（writeFileProject）裡做，採懶建立（無時間線資料不建表）。
  *
@@ -38,17 +48,9 @@ export interface TimelineWritableCard {
   chapterId?: string | null;
 }
 
-export type TimelineRead =
-  /** 沒有附加表：這份檔尚未使用時間線附加資料（舊檔或未設定任何時間線屬性）。 */
-  | { kind: 'absent' }
-  /** 合法附加資料；entries 以 card_id 為鍵。 */
-  | {
-      kind: 'ok';
-      revision: number;
-      entries: Record<string, TimelineCardEntry>;
-    }
-  /** 附加資料損壞、結構不完整或不支援的修訂值：不可當作空資料覆寫。 */
-  | { kind: 'invalid'; reason: string };
+export type TimelineRead = ExtensionReadState<{
+  entries: Record<string, TimelineCardEntry>;
+}>;
 
 /** 時間線附加資料有破壞疑慮時丟出；存檔交易會整筆回復。 */
 export class TimelineDataError extends Error {
@@ -60,44 +62,30 @@ export class TimelineDataError extends Error {
 
 type Inspection =
   | { kind: 'absent' }
-  | { kind: 'invalid'; reason: string }
+  | { kind: 'newer-revision'; revision: number }
+  | { kind: 'corrupt'; reason: string }
   | { kind: 'ok'; revision: number; rows: Map<string, TimelineCardEntry> };
 
-function isInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value);
-}
-
 function inspectTimeline(sql: Sql): Inspection {
-  const tables = tableNames(sql);
-  const hasMeta = tables.has(TIMELINE_META_TABLE);
-  const hasEvents = tables.has(TIMELINE_EVENTS_TABLE);
-  if (!hasMeta && !hasEvents) return { kind: 'absent' };
-  if (!hasMeta || !hasEvents) return { kind: 'invalid', reason: '時間線附加資料表不完整' };
-
-  const metaCols = columnNames(sql, TIMELINE_META_TABLE);
-  if (META_COLUMNS.some((col) => !metaCols.has(col))) {
-    return { kind: 'invalid', reason: '時間線中繼資料欄位不完整' };
-  }
-  const eventCols = columnNames(sql, TIMELINE_EVENTS_TABLE);
-  if (EVENT_COLUMNS.some((col) => !eventCols.has(col))) {
-    return { kind: 'invalid', reason: '時間線事件欄位不完整' };
-  }
-
-  const metaRows = sql.select(`SELECT id, format_revision FROM ${TIMELINE_META_TABLE}`);
-  if (metaRows.length !== 1) return { kind: 'invalid', reason: '時間線中繼資料列數不對' };
-  const meta = metaRows[0]!;
-  if (meta.id !== 1) return { kind: 'invalid', reason: '時間線中繼資料代號不對' };
-  if (!isInteger(meta.format_revision)) {
-    return { kind: 'invalid', reason: '時間線格式修訂值損壞' };
-  }
-  if (meta.format_revision !== TIMELINE_FORMAT_REVISION) {
-    return { kind: 'invalid', reason: `不支援的時間線格式修訂值 ${meta.format_revision}` };
+  const inspection = inspectExtensionMetaTable(sql, {
+    metaTable: TIMELINE_META_TABLE,
+    requiredMetaColumns: META_COLUMNS,
+    companionTables: [
+      {
+        table: TIMELINE_EVENTS_TABLE,
+        requiredColumns: EVENT_COLUMNS,
+        label: '時間線事件',
+      },
+    ],
+    supportedRevision: TIMELINE_FORMAT_REVISION,
+    label: '時間線',
+  });
+  if (inspection.kind !== 'ok') {
+    return inspection;
   }
 
   const rows = new Map<string, TimelineCardEntry>();
-  for (const row of sql.select(
-    `SELECT card_id, story_time, timeline_order, chapter_id FROM ${TIMELINE_EVENTS_TABLE}`,
-  )) {
+  for (const row of selectKnownColumns(sql, TIMELINE_EVENTS_TABLE, EVENT_COLUMNS)) {
     const {
       card_id: cardId,
       story_time: storyTime,
@@ -105,19 +93,19 @@ function inspectTimeline(sql: Sql): Inspection {
       chapter_id: chapterId,
     } = row;
     if (typeof cardId !== 'string' || cardId === '') {
-      return { kind: 'invalid', reason: '時間線卡片代號損壞' };
+      return { kind: 'corrupt', reason: '時間線卡片代號損壞' };
     }
     if (typeof storyTime !== 'string') {
-      return { kind: 'invalid', reason: '時間線故事時間損壞' };
+      return { kind: 'corrupt', reason: '時間線故事時間損壞' };
     }
-    if (timelineOrder !== null && (!isInteger(timelineOrder) || timelineOrder < 0)) {
-      return { kind: 'invalid', reason: '時間線順序損壞' };
+    if (timelineOrder !== null && !isNonNegativeSafeInteger(timelineOrder)) {
+      return { kind: 'corrupt', reason: '時間線順序損壞' };
     }
     if (chapterId !== null && typeof chapterId !== 'string') {
-      return { kind: 'invalid', reason: '時間線章節代號損壞' };
+      return { kind: 'corrupt', reason: '時間線章節代號損壞' };
     }
     if (rows.has(cardId)) {
-      return { kind: 'invalid', reason: '時間線卡片代號重複' };
+      return { kind: 'corrupt', reason: '時間線卡片代號重複' };
     }
     rows.set(cardId, {
       storyTime,
@@ -126,19 +114,28 @@ function inspectTimeline(sql: Sql): Inspection {
     });
   }
 
-  return { kind: 'ok', revision: meta.format_revision, rows };
+  return { kind: 'ok', revision: inspection.revision, rows };
 }
 
-/** 讀出這份檔的時間線附加資料。只讀，不建表、不改寫。 */
-export function readTimelineData(sql: Sql): TimelineRead {
+/**
+ * 讀出這份檔的時間線附加資料。只讀，不建表、不改寫。
+ * 若提供 alive（現存章節與卡片 ID），會將已刪卡片紀錄略過、已刪章節的 chapterId 安全降級為 null。
+ */
+export function readTimelineData(
+  sql: Sql,
+  alive?: Pick<AliveEntityIds, 'cardIds' | 'chapterIds'>,
+): TimelineRead {
   const result = inspectTimeline(sql);
   if (result.kind !== 'ok') return result;
   const entries: Record<string, TimelineCardEntry> = {};
   for (const [cardId, row] of result.rows) {
+    if (alive && !alive.cardIds.has(cardId)) {
+      continue;
+    }
     entries[cardId] = {
       storyTime: row.storyTime,
       timelineOrder: row.timelineOrder,
-      chapterId: row.chapterId,
+      chapterId: alive ? resolveAliveRef(row.chapterId, alive.chapterIds) : row.chapterId,
     };
   }
   return { kind: 'ok', revision: result.revision, entries };
@@ -149,15 +146,16 @@ export function readTimelineData(sql: Sql): TimelineRead {
  *
  * - 懶建立：沒有附加表且所有卡片都沒有非預設時間線資料時，什麼都不做、不建表，確保舊檔與 P0-4 零寫入。
  * - 差異同步：只針對有變動的列發 INSERT／UPDATE／DELETE；已刪除或已清空全部三欄的卡片會移除其附加列。
- * - 損壞或未知修訂值防護：當 inspectTimeline 為 invalid 時不動原附加表（不讀成空資料覆寫），回傳 'invalid'。
+ * - 更新既有列只明確寫入本版已知欄位，保留未來未知欄位原值。
+ * - 較新修訂值（newer-revision）或已損壞（corrupt）：原表完全不動，回傳對應狀態。
  * - 寫完於交易內讀回核對，不符即丟出 TimelineDataError 觸發 ROLLBACK。
  */
 export function writeTimelineData(
   sql: Sql,
   cards: readonly TimelineWritableCard[],
-): 'written' | 'skipped' | 'invalid' {
+): 'written' | 'skipped' | 'newer-revision' | 'corrupt' {
   const current = inspectTimeline(sql);
-  if (current.kind === 'invalid') return 'invalid';
+  if (current.kind === 'newer-revision' || current.kind === 'corrupt') return current.kind;
 
   const wanted = new Map<string, TimelineCardEntry>();
   const seenCardIds = new Set<string>();
@@ -169,7 +167,7 @@ export function writeTimelineData(
     if (
       card.timelineOrder !== undefined &&
       card.timelineOrder !== null &&
-      (!isInteger(card.timelineOrder) || card.timelineOrder < 0)
+      !isNonNegativeSafeInteger(card.timelineOrder)
     ) {
       throw new TimelineDataError('要寫入的時間線順序格式不對');
     }
@@ -220,10 +218,12 @@ export function writeTimelineData(
   }
 
   const existing = current.kind === 'ok' ? current.rows : new Map<string, TimelineCardEntry>();
+  let mutated = current.kind === 'absent';
 
   for (const existingCardId of existing.keys()) {
     if (!wanted.has(existingCardId)) {
       sql.run(`DELETE FROM ${TIMELINE_EVENTS_TABLE} WHERE card_id = ?`, [existingCardId]);
+      mutated = true;
     }
   }
 
@@ -237,12 +237,18 @@ export function writeTimelineData(
       ) {
         continue;
       }
-      sql.run(
-        `UPDATE ${TIMELINE_EVENTS_TABLE}
-         SET story_time = ?, timeline_order = ?, chapter_id = ?
-         WHERE card_id = ?`,
-        [entry.storyTime, entry.timelineOrder, entry.chapterId, cardId],
+      updateKnownColumns(
+        sql,
+        TIMELINE_EVENTS_TABLE,
+        [
+          ['story_time', entry.storyTime],
+          ['timeline_order', entry.timelineOrder],
+          ['chapter_id', entry.chapterId],
+        ],
+        'card_id = ?',
+        [cardId],
       );
+      mutated = true;
       continue;
     }
     sql.run(
@@ -250,7 +256,10 @@ export function writeTimelineData(
        VALUES (?, ?, ?, ?)`,
       [cardId, entry.storyTime, entry.timelineOrder, entry.chapterId],
     );
+    mutated = true;
   }
+
+  if (!mutated) return 'skipped';
 
   const after = readTimelineData(sql);
   if (after.kind !== 'ok') {
@@ -274,8 +283,11 @@ export function writeTimelineData(
   return 'written';
 }
 
-/** 外部存檔前的檢查：時間線附加資料有破壞疑慮就丟出錯誤，沿用既有「存檔失敗」處理。 */
+/**
+ * 外部存檔前的檢查：僅當時間線附加資料真的損壞（corrupt）時丟出錯誤；
+ * absent、ok 與較新修訂值（newer-revision）一律放行正文存檔。
+ */
 export function assertTimelineDataWritable(sql: Sql): void {
   const result = inspectTimeline(sql);
-  if (result.kind === 'invalid') throw new TimelineDataError(result.reason);
+  if (result.kind === 'corrupt') throw new TimelineDataError(result.reason);
 }
