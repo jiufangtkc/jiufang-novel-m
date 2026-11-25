@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AUTOSAVE_FAILED_ARIA,
   AUTOSAVE_FAILED_BADGE,
@@ -30,6 +30,27 @@ import { firstFileNode } from '../state/testing/firstFile';
 import { SaveHeaderStatus } from './SaveHeaderStatus';
 
 const MODES: LayoutMode[] = ['phone-portrait', 'phone-landscape', 'medium', 'wide'];
+const FIXED_NOW = new Date(2026, 10, 21, 10, 30, 0);
+const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'] as const;
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0');
+}
+
+function expectedClock(date: Date): string {
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+}
+
+function expectedEarlierDateTime(when: Date, now: Date): string {
+  const month = when.getMonth() + 1;
+  const day = when.getDate();
+  const weekday = WEEKDAYS[when.getDay()];
+  const datePart =
+    when.getFullYear() === now.getFullYear()
+      ? `${month}月${day}日（${weekday}）`
+      : `${when.getFullYear()}年${month}月${day}日（${weekday}）`;
+  return `${datePart} ${expectedClock(when)}`;
+}
 
 function cssBlock(css: string, selector: string): string {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -45,7 +66,7 @@ function makeNonSampleBookState(options?: { savedAtMs?: number; startedMs?: numb
   projectId: string;
   chapter: ChapterNode;
 } {
-  const nowMs = Date.parse('2026-11-21T04:50:00Z');
+  const nowMs = Date.now();
   const id = 'p-1763697600000';
   let state = createState(new Date(nowMs));
   state = reduce(state, {
@@ -102,10 +123,21 @@ function renderEditor(state: SampleState, projectId: string, chapter: ChapterNod
 }
 
 describe('WO-130 乙段：頁首存檔標示狀態與四版面 DOM 恆定', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(FIXED_NOW);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it('SaveHeaderStatus 正確輸出權限恢復、失敗、未存過、已自動存檔時間、上次存檔時間與隱藏狀態', () => {
-    const now = new Date('2026-11-21T10:30:00');
-    const savedToday = new Date('2026-11-21T09:05:00').getTime();
-    const savedEarlier = new Date('2026-11-19T21:15:00').getTime();
+    const now = new Date();
+    const savedTodayDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 9, 5, 0);
+    const savedToday = savedTodayDate.getTime();
+    const savedEarlierDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 2, 21, 15, 0);
+    const savedEarlier = savedEarlierDate.getTime();
 
     const resumeHtml = renderToStaticMarkup(
       createElement(SaveHeaderStatus, {
@@ -185,7 +217,7 @@ describe('WO-130 乙段：頁首存檔標示狀態與四版面 DOM 恆定', () =
       }),
     );
     expect(autoTimeHtml).toContain('<span');
-    expect(autoTimeHtml).toContain(`>${autosavedAtLabel('09:05')}</span>`);
+    expect(autoTimeHtml).toContain(`>${autosavedAtLabel(expectedClock(savedTodayDate))}</span>`);
 
     const manualTimeHtml = renderToStaticMarkup(
       createElement(SaveHeaderStatus, {
@@ -200,7 +232,7 @@ describe('WO-130 乙段：頁首存檔標示狀態與四版面 DOM 恆定', () =
       }),
     );
     expect(manualTimeHtml).toContain('<span');
-    expect(manualTimeHtml).toContain(`>${lastFileSavedLabel('11月19日（四） 21:15')}</span>`);
+    expect(manualTimeHtml).toContain(`>${lastFileSavedLabel(expectedEarlierDateTime(savedEarlierDate, now))}</span>`);
 
     expect(
       renderToStaticMarkup(
