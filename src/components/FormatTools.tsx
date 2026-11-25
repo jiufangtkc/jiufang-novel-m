@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from 'react';
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from 'react';
 import { executeFormat, executeUndo, type FormatFlowDeps } from '../editor/formatFlow';
 import type { FormatScope } from '../editor/formatScope';
 import type { FormatKind } from '../editor/formatText';
@@ -36,6 +43,13 @@ import {
   formatConfirmSentence,
 } from '../copy/userFacing';
 
+export interface FormatExtraMenuItem {
+  id: string;
+  label: string;
+  badge?: string;
+  onSelect: () => void;
+}
+
 export type FormatStep = 'menu' | 'kind' | 'scope' | 'confirm';
 
 const KIND_LABEL: Record<FormatKind, string> = {
@@ -48,8 +62,12 @@ const SCOPE_LABEL: Record<FormatScope, string> = {
   chapter: FORMAT_SCOPE_CHAPTER,
   book: FORMAT_SCOPE_BOOK,
 };
-const MENU_WIDTH = 168;
-const MENU_HEIGHT = 64;
+const MENU_WIDTH = 204;
+const MENU_ITEM_HEIGHT = 48;
+
+function menuHeightFor(itemCount: number): number {
+  return 16 + Math.max(1, itemCount) * MENU_ITEM_HEIGHT;
+}
 
 interface FlowState {
   step: FormatStep;
@@ -59,14 +77,15 @@ interface FlowState {
 }
 
 /** 選單放在入口旁邊；入口在畫面邊緣時往內收，不超出畫面。 */
-function menuPositionFor(origin: HTMLElement | null): { left: number; top: number } {
+function menuPositionFor(origin: HTMLElement | null, itemCount = 1): { left: number; top: number } {
   const vw = typeof window === 'undefined' ? 390 : window.innerWidth;
   const vh = typeof window === 'undefined' ? 844 : window.innerHeight;
+  const menuHeight = menuHeightFor(itemCount);
   const rect = origin?.getBoundingClientRect();
   if (!rect) return { left: Math.max(8, vw - MENU_WIDTH - 12), top: 64 };
   const left = Math.min(Math.max(8, rect.right - MENU_WIDTH), Math.max(8, vw - MENU_WIDTH - 8));
   const below = rect.bottom + 4;
-  const top = below + MENU_HEIGHT <= vh - 8 ? below : Math.max(8, rect.top - MENU_HEIGHT - 4);
+  const top = below + menuHeight <= vh - 8 ? below : Math.max(8, rect.top - menuHeight - 4);
   return { left, top };
 }
 
@@ -81,8 +100,9 @@ export function useFormatTools(options: {
   isComposingRef: RefObject<boolean>;
   replaceText: (next: string, caret: number) => boolean;
   focusMode: boolean;
+  getMenuItemCount?: () => number;
 }) {
-  const { projectId, chapterId, textareaRef, isComposingRef, replaceText, focusMode } = options;
+  const { projectId, chapterId, textareaRef, isComposingRef, replaceText, focusMode, getMenuItemCount } = options;
   const { state, actions } = useSample();
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -90,6 +110,8 @@ export function useFormatTools(options: {
   actionsRef.current = actions;
   const replaceRef = useRef(replaceText);
   replaceRef.current = replaceText;
+  const getMenuItemCountRef = useRef(getMenuItemCount);
+  getMenuItemCountRef.current = getMenuItemCount;
   const [flow, setFlow] = useState<FlowState | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
   const openedFor = useRef({ projectId, chapterId });
@@ -105,6 +127,11 @@ export function useFormatTools(options: {
     restoreFocus();
   };
 
+  const dismissMenu = () => {
+    setFlow(null);
+    originRef.current = null;
+  };
+
   // 進入專注模式時關掉殘留的選單／視窗（專注模式不露出頁首與「⋯」）
   useEffect(() => {
     if (focusMode) {
@@ -117,7 +144,8 @@ export function useFormatTools(options: {
     if (focusMode) return;
     originRef.current = origin;
     openedFor.current = { projectId, chapterId };
-    setFlow({ step: 'menu', kind: null, scope: null, menuPos: menuPositionFor(origin) });
+    const itemCount = Math.max(1, getMenuItemCountRef.current?.() ?? 1);
+    setFlow({ step: 'menu', kind: null, scope: null, menuPos: menuPositionFor(origin, itemCount) });
   };
 
   const deps = (): FormatFlowDeps => ({
@@ -182,6 +210,7 @@ export function useFormatTools(options: {
     isOpen: flow !== null,
     open,
     close,
+    dismissMenu,
     confirm,
     undo,
     dismissNotice: () => actionsRef.current.clearFormatUndo(),
@@ -208,7 +237,9 @@ export function FormatMoreButton(props: {
   tools: FormatTools;
   className: string;
   testId: string;
+  onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
 }) {
+  const pointerDownHandledRef = useRef(false);
   return (
     <button
       type="button"
@@ -217,7 +248,26 @@ export function FormatMoreButton(props: {
       aria-haspopup="menu"
       aria-expanded={props.tools.isOpen}
       data-testid={props.testId}
-      onClick={(event) => props.tools.open(event.currentTarget)}
+      onPointerDown={(event) => {
+        pointerDownHandledRef.current = true;
+        props.onPointerDown?.(event);
+      }}
+      onPointerCancel={() => {
+        pointerDownHandledRef.current = false;
+      }}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          pointerDownHandledRef.current = false;
+        }
+      }}
+      onClick={(event) => {
+        const handledOnPointerDown = pointerDownHandledRef.current;
+        pointerDownHandledRef.current = false;
+        if (!handledOnPointerDown) {
+          props.onPointerDown?.(event as unknown as ReactPointerEvent<HTMLButtonElement>);
+        }
+        props.tools.open(event.currentTarget);
+      }}
     >
       <span aria-hidden="true" className="format-more-glyph">
         {FORMAT_MORE_GLYPH}
@@ -245,7 +295,13 @@ function trapTab(event: ReactKeyboardEvent<HTMLElement>) {
 }
 
 /** 選單與三步視窗。只在非專注模式、流程開著時產生。 */
-export function FormatLayer({ tools }: { tools: FormatTools }) {
+export function FormatLayer({
+  tools,
+  extraMenuItems = [],
+}: {
+  tools: FormatTools;
+  extraMenuItems?: readonly FormatExtraMenuItem[];
+}) {
   const { flow } = tools;
   const panelRef = useRef<HTMLDivElement>(null);
   const step = flow?.step ?? null;
@@ -284,8 +340,24 @@ export function FormatLayer({ tools }: { tools: FormatTools }) {
           data-testid="format-menu"
         >
           <button type="button" role="menuitem" className="menu-item" onClick={tools.pick.menu} data-testid="format-menu-item">
-            {FORMAT_MENU_ITEM}
+            <span>{FORMAT_MENU_ITEM}</span>
           </button>
+          {extraMenuItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              role="menuitem"
+              className="menu-item"
+              data-testid={`format-menu-${item.id}`}
+              onClick={() => {
+                tools.dismissMenu();
+                item.onSelect();
+              }}
+            >
+              <span>{item.label}</span>
+              {item.badge ? <small>{item.badge}</small> : null}
+            </button>
+          ))}
         </div>
       </div>
     );
