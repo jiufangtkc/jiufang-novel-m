@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ChapterNode } from '../data/demo';
 import { LayoutProvider, type LayoutMode, type WideColumns } from '../layout';
 import { createState, reduce, SampleProvider } from '../state/sampleStore';
@@ -151,39 +151,45 @@ describe('WO-117：CSS 顯示規則（每個情況至少一份、不重複）', 
 
   it('WO-132 嚴-7：非範例書只在頁首角落顯示單一存檔狀態，底列不重複渲染 save-status，專注底列採同一說法', () => {
     const nowMs = Date.parse('2026-11-23T17:10:00Z');
-    const id = 'p-1763917800000';
-    let s = createState(new Date(nowMs));
-    s = reduce(s, { type: 'add-project', id, title: '【範例】單一狀態檢查', shape: 'novel', startedMs: nowMs });
-    s = reduce(s, { type: 'focus-project', id });
-    const ch = firstFileNode(s.projects.find((p) => p.id === id)!.nodes)!;
-    s = reduce(s, { type: 'commit-text', projectId: id, nodeId: ch.id, text: '【範例】測試內文' });
-    const updatedCh = firstFileNode(s.projects.find((p) => p.id === id)!.nodes)!;
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(nowMs);
+    try {
+      const id = 'p-1763917800000';
+      let s = createState(new Date(nowMs));
+      s = reduce(s, { type: 'add-project', id, title: '【範例】單一狀態檢查', shape: 'novel', startedMs: nowMs });
+      s = reduce(s, { type: 'focus-project', id });
+      const ch = firstFileNode(s.projects.find((p) => p.id === id)!.nodes)!;
+      s = reduce(s, { type: 'commit-text', projectId: id, nodeId: ch.id, text: '【範例】測試內文' });
+      const updatedCh = firstFileNode(s.projects.find((p) => p.id === id)!.nodes)!;
 
-    const html = renderToStaticMarkup(
-      createElement(
-        SampleProvider,
-        { initialState: s },
+      const html = renderToStaticMarkup(
         createElement(
-          LayoutProvider,
-          { initialMode: 'phone-portrait', initialWideColumns: null, initialPanels: { focusMode: false } },
+          SampleProvider,
+          { initialState: s },
           createElement(
-            MemoryRouter,
-            { initialEntries: [`/p/${id}/write/${updatedCh.id}`] },
+            LayoutProvider,
+            { initialMode: 'phone-portrait', initialWideColumns: null, initialPanels: { focusMode: false } },
             createElement(
-              Routes,
-              null,
-              createElement(Route, {
-                path: '/p/:projectId/write/:chapterId',
-                element: createElement(EditorPane, { projectId: id, chapter: updatedCh }),
-              }),
+              MemoryRouter,
+              { initialEntries: [`/p/${id}/write/${updatedCh.id}`] },
+              createElement(
+                Routes,
+                null,
+                createElement(Route, {
+                  path: '/p/:projectId/write/:chapterId',
+                  element: createElement(EditorPane, { projectId: id, chapter: updatedCh }),
+                }),
+              ),
             ),
           ),
         ),
-      ),
-    );
-    expect(count(html, 'data-testid="save-header-status"')).toBe(1);
-    expect(count(html, 'data-testid="save-status"')).toBe(0);
-    expect(html).not.toContain('今天還沒另存');
-    expect(html).toContain('還沒存成檔案');
+      );
+      expect(count(html, 'data-testid="save-header-status"')).toBe(1);
+      expect(count(html, 'data-testid="save-status"')).toBe(0);
+      expect(html).not.toContain('今天還沒另存');
+      expect(html).toContain('還沒存成檔案');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
