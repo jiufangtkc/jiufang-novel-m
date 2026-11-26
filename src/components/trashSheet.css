@@ -1,0 +1,467 @@
+/* WO-138：刪稿暫存區角落提示與底部清單樣式。
+   色票一律沿用既有 CSS 變數，全部觸控熱區至少 44px。 */
+
+/* ---- 角落提示區（操作回饋與選取字數共用堆疊，不重疊） ---- */
+.trash-corner-stack {
+  position: fixed;
+  right: 12px;
+  top: calc(var(--safe-top, 0px) + 60px);
+  z-index: 240;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: min(380px, calc(100vw - 24px));
+  pointer-events: none;
+}
+
+html[data-layout="phone-portrait"] .editor .topbar.has-save-reminder ~ .trash-corner-stack {
+  top: calc(var(--safe-top, 0px) + 92px);
+}
+
+html[data-layout="phone-landscape"] .trash-corner-stack {
+  top: calc(var(--safe-top, 0px) + 60px);
+  right: 12px;
+  max-width: min(360px, calc(100vw - 140px));
+}
+
+html:not(.landscape-writing)[data-layout="phone-landscape"] .editor .topbar:has(.stale-save-reminder) ~ .trash-corner-stack {
+  top: calc(var(--safe-top, 0px) + 92px);
+}
+
+html.landscape-writing[data-layout="phone-landscape"] .trash-corner-stack {
+  top: calc(var(--safe-top, 0px) + 8px);
+  right: 64px;
+  max-width: min(360px, calc(100vw - 140px));
+}
+
+html[data-layout="wide"] .trash-corner-stack,
+html[data-layout="medium"] .trash-corner-stack {
+  top: auto;
+  bottom: calc(20px + var(--safe-bottom, 0px));
+  right: 20px;
+  flex-direction: column-reverse;
+}
+
+/* ---- 角落可點擊提示（非打斷、不影響 <Toast />） ---- */
+.trash-corner-notice {
+  position: fixed;
+  right: 12px;
+  top: calc(var(--safe-top, 0px) + 56px);
+  z-index: 240;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(380px, calc(100vw - 24px));
+  padding: 4px 6px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+}
+
+.trash-corner-stack .trash-corner-notice {
+  position: static;
+  max-width: 100%;
+  pointer-events: auto;
+}
+
+html[data-layout="phone-landscape"] .trash-corner-notice {
+  top: calc(var(--safe-top, 0px) + 60px);
+  right: 12px;
+  max-width: min(360px, calc(100vw - 140px));
+}
+
+html.landscape-writing[data-layout="phone-landscape"] .trash-corner-notice {
+  top: calc(var(--safe-top, 0px) + 8px);
+  right: 64px;
+  max-width: min(360px, calc(100vw - 140px));
+}
+
+html[data-layout="wide"] .trash-corner-notice,
+html[data-layout="medium"] .trash-corner-notice {
+  top: auto;
+  bottom: calc(20px + var(--safe-bottom, 0px));
+  right: 20px;
+}
+
+/* ---- 選取字數角落提示（純資訊、不可點、不擋把手） ---- */
+.trash-selection-notice {
+  max-width: 100%;
+  padding: 4px 10px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.28);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: right;
+  box-sizing: border-box;
+  pointer-events: none;
+  user-select: none;
+}
+
+.trash-selection-notice.is-threshold {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--panel) 88%, var(--accent) 12%);
+  color: var(--text);
+}
+
+html[data-focus-mode="true"] .trash-corner-stack,
+html[data-focus-mode="true"] .trash-corner-notice,
+html[data-focus-mode="true"] .trash-selection-notice,
+html[data-focus-mode="true"] .trash-sheet-backdrop {
+  display: none !important;
+}
+
+.trash-corner-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  text-align: left;
+  cursor: pointer;
+}
+
+.trash-corner-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.trash-corner-view {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.trash-corner-close {
+  flex-shrink: 0;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.trash-corner-main:hover,
+.trash-corner-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.trash-corner-main:focus-visible,
+.trash-corner-close:focus-visible,
+.trash-header-btn:focus-visible,
+.trash-item-btn:focus-visible,
+.trash-reason-input:focus-visible,
+.trash-pick-item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- 刪稿暫存區底部清單（四種版面共用，覆蓋側欄） ---- */
+.trash-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 280;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.trash-sheet {
+  width: min(560px, 100%);
+  max-height: min(84dvh, 680px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+html[data-layout="phone-landscape"] .trash-sheet {
+  max-height: 94dvh;
+}
+
+.trash-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.trash-sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+}
+
+.trash-header-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.trash-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.trash-sheet-status {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.trash-status-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.trash-status-banner.is-warning {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.trash-status-banner.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.trash-usage-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trash-usage-summary {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.trash-limit-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.trash-limit-hint.is-locked {
+  border-color: var(--danger);
+}
+
+.trash-undo-bar {
+  margin: 0;
+}
+
+.trash-empty {
+  margin: 12px 0;
+}
+
+.trash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trash-list-item {
+  list-style: none;
+}
+
+.trash-item-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.trash-item-btn:hover {
+  border-color: var(--accent);
+}
+
+.trash-item-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trash-item-chapter {
+  font-weight: 600;
+  font-size: 14px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash-item-words {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.trash-item-preview {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.trash-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.trash-item-reason {
+  color: var(--accent);
+}
+
+.trash-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.trash-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.trash-detail-content {
+  min-height: 180px;
+  max-height: 260px;
+}
+
+.trash-reason-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trash-reason-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.trash-reason-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.trash-reason-input {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  resize: vertical;
+}
+
+.trash-reason-save {
+  flex-shrink: 0;
+  min-height: 44px;
+  padding: 0 14px;
+}
+
+.trash-detail-actions .button,
+.trash-confirm-dialog .button {
+  min-height: 44px;
+}
+
+.trash-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.trash-pick-item {
+  min-height: 44px;
+  border: 1px solid var(--border);
+  padding: 8px 12px;
+}
+
+.trash-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 290;
+  align-items: center;
+  justify-content: center;
+}
+
+.trash-confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
+

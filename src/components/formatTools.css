@@ -92,7 +92,7 @@ html[data-focus-mode="true"] .format-backdrop {
 }
 .format-menu {
   position: fixed;
-  width: 168px;
+  width: 204px;
   padding: 4px;
   border-radius: 12px;
   background: var(--panel);
@@ -101,6 +101,15 @@ html[data-focus-mode="true"] .format-backdrop {
 }
 .format-menu .menu-item {
   width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.format-menu .menu-item small {
+  color: var(--muted);
+  font-size: 13px;
+  flex-shrink: 0;
 }
 .format-menu .menu-item:focus-visible,
 .format-option:focus-visible,

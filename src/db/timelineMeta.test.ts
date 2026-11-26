@@ -3,6 +3,7 @@ import { CATEGORY_CHARACTER, CATEGORY_TIMELINE } from '../domain/cardCategories'
 import { addCard, updateCardTitle } from '../domain/cardOps';
 import { manuscriptBytesOn, reduce, verifyBytesForSave } from '../state/sampleStore';
 import { demoFixtureState } from '../state/testing/sampleFixture';
+import { collectAliveEntityIds } from './extensionMeta';
 import { readBookBytes, writeBookBytes } from './library';
 import { CURRENT_SCHEMA_VERSION, currentSchemaVersion } from './migrations';
 import { openNodeSql } from './nodeSql';
@@ -41,7 +42,7 @@ import { openMemoryDb } from './wasmDb';
  * 1. 舊檔安全（v1 升 v14、v14 無附加表、desktopSampleDb 開啟不建表、schema 維持 14、不改動直接寫回零 DML 與逐表逐列逐欄相同）
  * 2. 時間線資料往返（storyTime、timelineOrder、chapterId 讀寫還原、懶建立、差異同步、孤兒列清理、cards 8 欄與 ai_chat／未知欄／未知表／BLOB／快照保護）
  * 3. 電腦版 8 欄結構模型往返（模擬只認識 8 欄 cards 的電腦版讀取、修改並保留未知表存回後，手機版重開三欄完整保留）
- * 4. 損壞與交易回滾（format_revision > 1、缺表、欄位型別損壞 → invalid 不覆寫且 verifyBytesForSave 擋下；中途失敗整筆 ROLLBACK）
+ * 4. 損壞防護、newer-revision 放行與空參照容錯（format_revision = 0、缺表、欄位型別損壞 → corrupt；format_revision = 2 → newer-revision 唯讀保留並放行正文存檔；電腦版刪章刪卡空參照不壞檔）
  * 5. 升格往返（promote-stored 前已設時間線資料，升格寫入記憶體資料庫再讀回逐欄不變）
  *
  * 全數使用記憶體 SQLite 與程式產生的範例資料，不建立或讀取任何實體檔案。
@@ -700,7 +701,7 @@ describe('WO-128 9.2.4 損壞與未知版本防護、交易回滾原子性', () 
   }
 
   const brokenCases: Array<[string, (sql: Sql) => void]> = [
-    ['未知更高修訂值 format_revision = 2', (sql) => sql.exec(`UPDATE ${TIMELINE_META_TABLE} SET format_revision = 2`)],
+    ['修訂值非正整數（0）', (sql) => sql.exec(`UPDATE ${TIMELINE_META_TABLE} SET format_revision = 0`)],
     ['修訂值非整數', (sql) => sql.exec(`UPDATE ${TIMELINE_META_TABLE} SET format_revision = 'v1'`)],
     ['中繼資料列被清空', (sql) => sql.exec(`DELETE FROM ${TIMELINE_META_TABLE}`)],
     ['缺 jiufangm_timeline_meta 表', (sql) => sql.exec(`DROP TABLE ${TIMELINE_META_TABLE}`)],
@@ -712,7 +713,7 @@ describe('WO-128 9.2.4 損壞與未知版本防護、交易回滾原子性', () 
   ];
 
   it.each(brokenCases)(
-    '損壞防護：%s → 讀為 invalid、本機寫入不覆寫原附加表、verifyBytesForSave 與 assertTimelineDataWritable 擋下外部存檔',
+    '損壞防護：%s → 讀為 corrupt、本機寫入不覆寫原附加表、verifyBytesForSave 與 assertTimelineDataWritable 擋下外部存檔',
     async (_label, breakIt) => {
       const bad = await mutate(await baseWithTimeline(), breakIt);
       const beforeTimelineTables = await withDb(bad, (sql) =>
@@ -723,11 +724,11 @@ describe('WO-128 9.2.4 損壞與未知版本防護、交易回滾原子性', () 
       );
 
       await withDb(bad, (sql) => {
-        expect(readTimelineData(sql).kind).toBe('invalid');
-        expect(readFileProject(sql).timeline.kind).toBe('invalid');
+        expect(readTimelineData(sql).kind).toBe('corrupt');
+        expect(readFileProject(sql).timeline.kind).toBe('corrupt');
       });
 
-      // 本機暫存可正常寫入正文與卡片，但絕不把損壞或未來版本的時間線附加表當成空資料覆寫
+      // 本機暫存可正常寫入正文與卡片，但絕不把損壞的時間線附加表當成空資料覆寫
       const book = await readBookBytes('損壞稿', bad, 'file-bad');
       const nextTree = structuredClone(book.tree);
       nextTree[0]!.children![0]!.content = '【範例】本機暫存修改後的正文';
@@ -755,6 +756,82 @@ describe('WO-128 9.2.4 損壞與未知版本防護、交易回滾原子性', () 
       await expect(verifyBytesForSave(saved)).rejects.toThrow(TimelineDataError);
     },
   );
+
+  it('WO-137：較新修訂值（format_revision = 2）＋未知欄位讀為 newer-revision，唯讀保留且 verifyBytesForSave 放行正文存檔', async () => {
+    const newer = await mutate(await baseWithTimeline(), (sql) => {
+      sql.exec(`ALTER TABLE ${TIMELINE_EVENTS_TABLE} ADD COLUMN future_tag TEXT DEFAULT 'v2-tag'`);
+      sql.exec(`UPDATE ${TIMELINE_META_TABLE} SET format_revision = 2`);
+    });
+    const beforeTimelineTables = await withDb(newer, (sql) => dumpTables(sql, TIMELINE_TABLES));
+
+    await withDb(newer, (sql) => {
+      expect(readTimelineData(sql)).toEqual({ kind: 'newer-revision', revision: 2 });
+      expect(() => assertTimelineDataWritable(sql)).not.toThrow();
+    });
+
+    const book = await readBookBytes('較新版時間線', newer, 'file-tl-newer');
+    const nextTree = structuredClone(book.tree);
+    nextTree[0]!.children![0]!.content = '【範例】較新版時間線下修改的正文';
+    const saved = await writeBookBytes(newer, book.info, nextTree, book.cards, book.logs);
+
+    await expect(verifyBytesForSave(saved)).resolves.toBeUndefined();
+    await withDb(saved, (sql) => {
+      expect(dumpTables(sql, TIMELINE_TABLES)).toEqual(beforeTimelineTables);
+      expect(readFileProject(sql).tree[0]!.children![0]!.content).toBe(
+        '【範例】較新版時間線下修改的正文',
+      );
+    });
+  });
+
+  it('WO-137：已知表帶未來未知欄位時更新不清空未知欄；電腦版刪章刪卡後空參照讀取不壞檔不改寫，下次存檔清理孤兒卡', async () => {
+    const base = await baseWithTimeline();
+    const withExtraAndDangling = await mutate(base, (sql) => {
+      sql.exec(`ALTER TABLE ${TIMELINE_EVENTS_TABLE} ADD COLUMN future_note TEXT DEFAULT 'keep-note'`);
+      // 加入一張將被電腦版刪除的卡片及其時間線列，與指向將被刪除章節的連章
+      sql.run(
+        'INSERT INTO cards (id, parent_id, category, title, content, color, is_collapsed, sort_order) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        ['tl-orphan-card', null, CATEGORY_TIMELINE, '【範例】即將被電腦版刪除的事件', '', SAMPLE_DEFAULT_COLOR, 0, 9],
+      );
+      sql.run(
+        `INSERT INTO ${TIMELINE_EVENTS_TABLE} (card_id, story_time, timeline_order, chapter_id, future_note)
+         VALUES (?, ?, ?, ?, ?)`,
+        ['tl-orphan-card', '會被電腦版刪掉的事件', 5, 'ch-sample-doc-1', 'orphan-note'],
+      );
+      // 模擬電腦版刪除卡片與對應章節
+      sql.run("DELETE FROM cards WHERE id = 'tl-orphan-card'");
+      sql.run("DELETE FROM chapters WHERE id = 'ch-sample-doc-1'");
+    });
+
+    // 1) 開檔讀取：不拋錯、不判 corrupt、不主動改寫，且以 alive 檢驗安全降級
+    await withDb(withExtraAndDangling, (sql) => {
+      const loaded = readFileProject(sql);
+      expect(loaded.timeline.kind).toBe('ok');
+      const alive = collectAliveEntityIds(loaded.tree, loaded.cards);
+      const safeTimeline = readTimelineData(sql, alive);
+      expect(safeTimeline.kind).toBe('ok');
+      if (safeTimeline.kind === 'ok') {
+        expect(safeTimeline.entries['tl-orphan-card']).toBeUndefined();
+        expect(safeTimeline.entries['tl-event-1']?.chapterId).toBeNull();
+      }
+      // 原資料庫列未被讀檔改動
+      expect(sql.select(`SELECT card_id FROM ${TIMELINE_EVENTS_TABLE} WHERE card_id = 'tl-orphan-card'`)).toHaveLength(1);
+    });
+
+    // 2) 下次實質修改並存檔：保留未知欄位 future_note，並自動清理孤兒卡片列
+    const book = await readBookBytes('空參照稿', withExtraAndDangling, 'file-dangling');
+    const updatedCards = book.cards.map((card) =>
+      card.id === 'tl-event-1'
+        ? { ...card, storyTime: '十年前・更新後', timelineOrder: 0, chapterId: null }
+        : card,
+    );
+    const saved = await writeBookBytes(withExtraAndDangling, book.info, book.tree, updatedCards, book.logs);
+    await withDb(saved, (sql) => {
+      expect(sql.select(`SELECT card_id FROM ${TIMELINE_EVENTS_TABLE} WHERE card_id = 'tl-orphan-card'`)).toEqual([]);
+      expect(sql.select(`SELECT story_time, future_note FROM ${TIMELINE_EVENTS_TABLE} WHERE card_id = 'tl-event-1'`)).toEqual([
+        { story_time: '十年前・更新後', future_note: 'keep-note' },
+      ]);
+    });
+  });
 
   it('交易回滾：寫入時間線附加表中途拋錯時，整筆交易 ROLLBACK，正文、卡片與附加表全部回到寫入前狀態', async () => {
     const bytes = await richDesktopBytesWithTimelineCards();

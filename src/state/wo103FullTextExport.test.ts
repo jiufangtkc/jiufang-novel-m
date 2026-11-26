@@ -739,7 +739,7 @@ describe('WO-103 匯出事件寫進 .db（主 schema 14、附加修訂值 1）',
 
   it('附加資料損壞：不當 0 覆寫、不寫進匯出事件，外部存檔驗證擋下；本機可靠紀錄照算', async () => {
     const good = await fakeDb('壞檔', { 'imp-x': EXP_A });
-    const broken = await mutate(good, (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 9`));
+    const broken = await mutate(good, (sql) => sql.exec(`UPDATE ${TRANSFER_META_TABLE} SET format_revision = 0`));
     let state = await openDb(createState(NOW), broken, 'file-bad');
     state = (await exportOnce(state, { projectId: 'file-bad' }, { snapshot: async () => ({ key: 'file-bad', bytes: new Uint8Array() }) })).state;
     expect(total(state, 'file-bad')).toBe(1);
@@ -747,7 +747,7 @@ describe('WO-103 匯出事件寫進 .db（主 schema 14、附加修訂值 1）',
     const saved = await manuscriptBytesOn(state, project, broken);
     await expect(verifyBytesForSave(saved)).rejects.toThrow();
     await inDb(saved, (sql) => {
-      expect(sql.select(`SELECT format_revision FROM ${TRANSFER_META_TABLE}`)).toEqual([{ format_revision: 9 }]);
+      expect(sql.select(`SELECT format_revision FROM ${TRANSFER_META_TABLE}`)).toEqual([{ format_revision: 0 }]);
       expect(sql.select(`SELECT kind FROM ${TRANSFER_EVENTS_TABLE}`)).toEqual([{ kind: 'import' }]);
     });
   });

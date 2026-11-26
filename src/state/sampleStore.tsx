@@ -136,21 +136,32 @@ import {
   shareDatabase,
   writeBookBytes,
   type ImportedBook,
+  type StoredBookMark,
 } from '../db/library';
 import { isBookRemoved, removedBookIds } from '../db/removedBooks';
 import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
 import type { FormatChange, FormatSnapshot, FormatSnapshotEntry } from '../editor/formatScope';
+import {
+  BOOK_META_FORMAT_REVISION,
+  assertBookMetaWritable,
+  type BookMetaRead,
+  type BookMetaWritable,
+} from '../db/bookMeta';
+import { generateUuidV4, isPositiveSafeInteger, isValidUuidV4 } from '../db/extensionMeta';
 import { assertTimelineDataWritable, type TimelineRead } from '../db/timelineMeta';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
+import { assertTrashDataWritable, TRASH_FORMAT_REVISION, type TrashRead } from '../db/trashMeta';
 import {
   bindLeaveFlush,
   clearLiveDraft,
+  consumeLiveExcludedWordDelta,
   flushLiveDraftNow,
   flushOpenDraft,
   isLiveDraftComposing,
   loadLiveDraft,
   notePersistedDraft,
   readLiveDraftFromEditor,
+  readLiveExcludedWordDelta,
   type LiveDraft,
 } from '../editor/liveDraft';
 import {
@@ -213,6 +224,13 @@ import {
   reorderTimelineByOrderedIds,
   type TimelineDropTarget,
 } from '../domain/timeline';
+import {
+  insertTrashItemWithLimit,
+  isTrashOriginalNodeAlive,
+  sortTrashItems,
+  type TrashInsertResult,
+  type TrashItem,
+} from '../domain/trash';
 import {
   newChapterId,
   newManuscriptFirstNodeId,
@@ -307,8 +325,12 @@ export interface FileExtras {
   logs: FileLog[];
   /** WO-100：開檔時讀到的檔內附加資料（匯入事件）。沒有代表不是從檔案讀來的（例如剛升格的新稿）。 */
   transfer?: TransferRead;
-  /** WO-128：開檔時讀到的時間線附加資料狀態（absent / ok / invalid）。 */
+  /** WO-128：開檔時讀到的時間線附加資料狀態（absent / ok / newer-revision / corrupt）。 */
   timeline?: TimelineRead;
+  /** WO-137：開檔時讀到的稿件固定身分證狀態（absent / ok / newer-revision / corrupt）。 */
+  bookMeta?: BookMetaRead;
+  /** WO-138：開檔時讀到的刪稿暫存區狀態（absent / ok / newer-revision / corrupt）。 */
+  trash?: TrashRead;
 }
 
 export type Action =
@@ -323,6 +345,8 @@ export type Action =
       startedMs?: number;
       /** WO-109：新稿子的全書目標（由本機設定 new-book-goal 帶入）；沒給或不合法用 100,000。 */
       bookGoal?: number;
+      /** WO-137：預先指定的稿件固定身分證 UUID v4。 */
+      bookUuid?: string;
     }
   | { type: 'note-started'; startedById: Record<string, number> }
   | { type: 'import-text'; project: DemoProject; dayKey: string; startedMs: number; importEvents: ImportEventRecord }
@@ -331,7 +355,14 @@ export type Action =
   | { type: 'remember-place'; projectId: string; nodeId: string; cursor: number }
   | { type: 'toggle'; projectId: string; nodeId: string }
   | { type: 'set-progress'; projectId: string; nodeId: string; progress: ProgressCode }
-  | { type: 'commit-text'; projectId: string; nodeId: string; text: string }
+  | {
+      type: 'commit-text';
+      projectId: string;
+      nodeId: string;
+      text: string;
+      countForToday?: boolean;
+      excludedWordDelta?: number;
+    }
   | { type: 'note-large'; delta: TextDelta }
   /** WO-122：排版。changes 是要由 store 寫入的章幕（目前開著的章幕已由寫作框同步寫入，不必再列）；snapshot 是整次排版前的快照。 */
   | { type: 'format-apply'; projectId: string; changes: FormatChange[]; snapshot: FormatSnapshot }
@@ -369,6 +400,15 @@ export type Action =
   | { type: 'rename-book'; projectId: string; title: string; titleSavePending: BookFileMark['titleSavePending'] }
   | { type: 'defer-title-save'; projectId: string }
   | { type: 'note-title-in-file'; projectId: string }
+  | { type: 'mark-book-meta-persisted'; projectId: string }
+  | {
+      type: 'set-book-identity';
+      projectId: string;
+      bookUuid: string;
+      bookCreatedAtMs: number;
+      originBookUuid: string | null;
+      persisted: boolean;
+    }
   | { type: 'promote-stored'; projectId: string; key: string; filename: string }
   | { type: 'set-cards'; projectId: string; cards: FileCard[] }
   | { type: 'update-card'; projectId: string; cardId: string; patch: UpdateCardPatch }
@@ -412,14 +452,30 @@ export type Action =
       delta?: -1 | 1;
       targetIndex?: number;
       drop?: TimelineDropTarget;
+    }
+  /** WO-138：刪稿暫存區操作。 */
+  | { type: 'trash-add'; projectId: string; item: TrashItem }
+  | { type: 'trash-remove'; projectId: string; itemId: string }
+  | { type: 'trash-restore-deleted'; projectId: string; item: TrashItem }
+  | { type: 'trash-update-reason'; projectId: string; itemId: string; reason: string }
+  | {
+      type: 'trash-put-back';
+      projectId: string;
+      itemId: string;
+      targetNodeId: string;
+      nextBody: string;
     };
 
 
-function bookkeepingOf(project: DemoProject): BookFileMark {
+function bookkeepingOf(project: DemoProject): StoredBookMark {
   return {
     titleInFile: project.titleInFile ?? null,
     hasExternalFile: Boolean(project.hasExternalFile),
     titleSavePending: project.titleSavePending ?? null,
+    ...(isValidUuidV4(project.bookUuid) ? { bookUuid: project.bookUuid } : {}),
+    ...(isPositiveSafeInteger(project.bookCreatedAtMs) ? { bookCreatedAtMs: project.bookCreatedAtMs } : {}),
+    ...(project.originBookUuid !== undefined ? { originBookUuid: project.originBookUuid } : {}),
+    ...(typeof project.bookMetaPersisted === 'boolean' ? { bookMetaPersisted: project.bookMetaPersisted } : {}),
   };
 }
 
@@ -721,6 +777,10 @@ export function attachActionForBook(
       hasExternalFile: book.hasExternalFile,
       titleInFile: book.titleInFile,
       titleSavePending: book.titleSavePending,
+      bookUuid: book.bookUuid,
+      bookCreatedAtMs: book.bookCreatedAtMs,
+      originBookUuid: book.originBookUuid,
+      bookMetaPersisted: book.bookMetaPersisted,
     },
     schedule: book.schedule,
     extras: {
@@ -729,6 +789,8 @@ export function attachActionForBook(
       logs: book.logs,
       transfer: book.transfer,
       timeline: book.timeline,
+      bookMeta: book.bookMeta,
+      trash: book.trash,
     },
   };
 }
@@ -1079,6 +1141,80 @@ function applyProjectCards(
   };
 }
 
+/** WO-138：讀取目前稿件的刪稿暫存區四態狀態（非檔案稿與舊稿皆為可讀）。 */
+export function getProjectTrashRead(state: SampleState, projectId: string): TrashRead {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return { kind: 'absent' };
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const trash = state.fileExtras[key]?.trash;
+    if (trash) return trash;
+  }
+  const items = project.trashItems ?? [];
+  return items.length > 0
+    ? { kind: 'ok', revision: TRASH_FORMAT_REVISION, items }
+    : { kind: 'absent' };
+}
+
+/** WO-138：統一取得目前稿件的刪稿暫存區清單。 */
+export function getProjectTrash(state: SampleState, projectId: string): TrashItem[] {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return [];
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const trash = state.fileExtras[key]?.trash;
+    if (trash) {
+      if (trash.kind === 'ok') return trash.items;
+      if (trash.kind === 'newer-revision' || trash.kind === 'corrupt') return [];
+    }
+  }
+  return project.trashItems ?? [];
+}
+
+/** WO-138：若為較新修訂值或損壞狀態，暫存區須維持唯讀不改寫。 */
+export function isProjectTrashReadOnly(state: SampleState, projectId: string): boolean {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project || project.origin !== 'file') return false;
+  const key = project.dbKey ?? project.id;
+  const kind = state.fileExtras[key]?.trash?.kind;
+  return kind === 'newer-revision' || kind === 'corrupt';
+}
+
+function applyProjectTrash(
+  state: SampleState,
+  projectId: string,
+  nextItems: readonly TrashItem[],
+): SampleState {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project || isProjectTrashReadOnly(state, projectId)) return state;
+  const sorted = sortTrashItems(nextItems);
+  const key = project.dbKey ?? project.id;
+  const extra = state.fileExtras[key];
+  let nextFileExtras = state.fileExtras;
+  if (extra) {
+    const nextTrash: TrashRead =
+      extra.trash?.kind === 'absent' && sorted.length === 0
+        ? { kind: 'absent' }
+        : { kind: 'ok', revision: TRASH_FORMAT_REVISION, items: sorted };
+    nextFileExtras = {
+      ...state.fileExtras,
+      [key]: {
+        ...extra,
+        trash: nextTrash,
+      },
+    };
+  }
+  return {
+    ...state,
+    projects: mapProject(state.projects, projectId, (current) => ({
+      ...current,
+      updatedLabel: '剛剛',
+      trashItems: sorted,
+    })),
+    fileExtras: nextFileExtras,
+  };
+}
+
 export function buildFileProjectInfo(state: SampleState, project: DemoProject): FileProjectInfo {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -1281,7 +1417,19 @@ export function buildPromotedFileExtras(
     state.fileExtras[key] ??
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ??
     state.fileExtras[project.id];
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.trash && project.trashItems?.length) {
+      return {
+        ...existing,
+        trash: {
+          kind: 'ok',
+          revision: TRASH_FORMAT_REVISION,
+          items: sortTrashItems(project.trashItems),
+        },
+      };
+    }
+    return existing;
+  }
 
   // WO-69：升格成檔案時只帶這份稿子自己的目標與寫作紀錄。
   const own = trackingOf(state, project, new Date());
@@ -1311,6 +1459,9 @@ export function buildPromotedFileExtras(
         }))
       : [],
     logs: toFileLogs(own.logs),
+    trash: project.trashItems?.length
+      ? { kind: 'ok', revision: TRASH_FORMAT_REVISION, items: sortTrashItems(project.trashItems) }
+      : { kind: 'absent' },
   };
 }
 
@@ -1331,6 +1482,11 @@ const NON_TEXT_CONTENT_ACTIONS = new Set<Action['type']>([
   'add-timeline-event',
   'reorder-timeline',
   'move-timeline-event',
+  'trash-add',
+  'trash-remove',
+  'trash-restore-deleted',
+  'trash-update-reason',
+  'trash-put-back',
 ]);
 
 export function reduce(state: SampleState, action: Action): SampleState {
@@ -1468,11 +1624,93 @@ function reduceBase(state: SampleState, action: Action): SampleState {
           titleSavePending: null,
         })),
       };
+    case 'mark-book-meta-persisted': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const key = project.dbKey ?? project.id;
+      const extra = state.fileExtras[key];
+      if (extra?.bookMeta?.kind === 'newer-revision' || extra?.bookMeta?.kind === 'corrupt') {
+        return state;
+      }
+      const existingMeta = extra?.bookMeta?.kind === 'ok' ? extra.bookMeta.meta : null;
+      const bookUuid = isValidUuidV4(project.bookUuid)
+        ? project.bookUuid
+        : existingMeta?.bookUuid ?? generateUuidV4();
+      const bookCreatedAtMs = isPositiveSafeInteger(project.bookCreatedAtMs)
+        ? project.bookCreatedAtMs
+        : existingMeta?.createdAtMs ??
+          (startedMsFromProjectId(project.id, now.getTime()) ?? Math.max(1, now.getTime()));
+      const originBookUuid =
+        project.originBookUuid !== undefined
+          ? project.originBookUuid
+          : existingMeta?.originBookUuid ?? null;
+      const nextBookMeta: BookMetaRead = {
+        kind: 'ok',
+        revision: BOOK_META_FORMAT_REVISION,
+        meta: { bookUuid, createdAtMs: bookCreatedAtMs, originBookUuid },
+      };
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          bookUuid,
+          bookCreatedAtMs,
+          originBookUuid,
+          bookMetaPersisted: true,
+        })),
+        fileExtras: extra
+          ? {
+              ...state.fileExtras,
+              [key]: { ...extra, bookMeta: nextBookMeta },
+            }
+          : state.fileExtras,
+      };
+    }
+    case 'set-book-identity': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const key = project.dbKey ?? project.id;
+      const extra = state.fileExtras[key];
+      const nextBookMeta: BookMetaRead | undefined = action.persisted
+        ? {
+            kind: 'ok',
+            revision: BOOK_META_FORMAT_REVISION,
+            meta: {
+              bookUuid: action.bookUuid,
+              createdAtMs: action.bookCreatedAtMs,
+              originBookUuid: action.originBookUuid,
+            },
+          }
+        : extra?.bookMeta;
+      return {
+        ...state,
+        projects: mapProject(state.projects, action.projectId, (current) => ({
+          ...current,
+          bookUuid: action.bookUuid,
+          bookCreatedAtMs: action.bookCreatedAtMs,
+          originBookUuid: action.originBookUuid,
+          bookMetaPersisted: action.persisted,
+        })),
+        fileExtras: extra
+          ? {
+              ...state.fileExtras,
+              [key]: {
+                ...extra,
+                ...(nextBookMeta ? { bookMeta: nextBookMeta } : {}),
+              },
+            }
+          : state.fileExtras,
+      };
+    }
     case 'promote-stored': {
       const project = state.projects.find((item) => item.id === action.projectId);
       if (!project) return state;
       const key = project.dbKey ?? action.key;
       const extras = buildPromotedFileExtras(state, project, key);
+      const bookUuid = isValidUuidV4(project.bookUuid) ? project.bookUuid : generateUuidV4();
+      const bookCreatedAtMs = isPositiveSafeInteger(project.bookCreatedAtMs)
+        ? project.bookCreatedAtMs
+        : startedMsFromProjectId(project.id, now.getTime()) ?? Math.max(1, now.getTime());
       return {
         ...state,
         projects: mapProject(state.projects, action.projectId, (current) => ({
@@ -1480,6 +1718,10 @@ function reduceBase(state: SampleState, action: Action): SampleState {
           origin: 'file',
           dbKey: key,
           filename: current.filename || action.filename,
+          bookUuid,
+          bookCreatedAtMs,
+          originBookUuid: current.originBookUuid ?? null,
+          bookMetaPersisted: current.bookMetaPersisted ?? false,
         })),
         fileExtras: { ...state.fileExtras, [key]: extras },
         goalById: {
@@ -1530,6 +1772,10 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
         expandedCategoriesRaw: null,
         categoriesMetaRaw: '{}',
+        bookUuid: isValidUuidV4(action.bookUuid) ? action.bookUuid : generateUuidV4(),
+        bookCreatedAtMs: isPositiveSafeInteger(action.startedMs) ? action.startedMs : now.getTime(),
+        originBookUuid: null,
+        bookMetaPersisted: false,
         nodes: single
           ? [{ id: chapterId, type: 'file', title, progress: 'Draft', content: '' }]
           : [
@@ -1620,7 +1866,12 @@ function reduceBase(state: SampleState, action: Action): SampleState {
       const node = project ? findNode(project.nodes, action.nodeId) : null;
       if (!project || !node || (node.content ?? '') === action.text) return state;
       // WO-76：不分來源，一律用同一套算法比較改前與改後的整章字數。
-      const deltaWords = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      // WO-138：從刪稿暫存區放回、移入暫存區的刪除與系統復原撤回，不計入今日字數。
+      const rawDeltaWords = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      const deltaWords =
+        action.countForToday === false
+          ? 0
+          : rawDeltaWords - (action.excludedWordDelta ?? 0);
       // WO-69：字數只記進被改的那份稿子自己的紀錄，不記到其他稿子或範例書。
       const own = trackingOf(state, project, now);
       const schedule = applyWordDelta(own.schedule, deltaWords, now);
@@ -1896,6 +2147,56 @@ function reduceBase(state: SampleState, action: Action): SampleState {
       if (!changed) return state;
       return applyProjectCards(state, action.projectId, () => moved);
     }
+    case 'trash-add': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      const result = insertTrashItemWithLimit(currentTrash, action.item);
+      if (result.kind !== 'added') return state;
+      return applyProjectTrash(state, action.projectId, result.items);
+    }
+    case 'trash-remove': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      const nextTrash = currentTrash.filter((item) => item.itemId !== action.itemId);
+      if (nextTrash.length === currentTrash.length) return state;
+      return applyProjectTrash(state, action.projectId, nextTrash);
+    }
+    case 'trash-restore-deleted': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      if (currentTrash.some((item) => item.itemId === action.item.itemId)) return state;
+      const result = insertTrashItemWithLimit(currentTrash, action.item);
+      if (result.kind !== 'added') return state;
+      return applyProjectTrash(state, action.projectId, result.items);
+    }
+    case 'trash-update-reason': {
+      if (isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      let changed = false;
+      const nextTrash = currentTrash.map((item) => {
+        if (item.itemId !== action.itemId || item.reason === action.reason) return item;
+        changed = true;
+        return { ...item, reason: action.reason };
+      });
+      if (!changed) return state;
+      return applyProjectTrash(state, action.projectId, nextTrash);
+    }
+    case 'trash-put-back': {
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project || isProjectTrashReadOnly(state, action.projectId)) return state;
+      const currentTrash = getProjectTrash(state, action.projectId);
+      if (!currentTrash.some((item) => item.itemId === action.itemId)) return state;
+      if (!isTrashOriginalNodeAlive(project.nodes, action.targetNodeId)) return state;
+      const afterCommit = reduceBase(state, {
+        type: 'commit-text',
+        projectId: action.projectId,
+        nodeId: action.targetNodeId,
+        text: action.nextBody,
+        countForToday: false,
+      });
+      const remainingTrash = currentTrash.filter((item) => item.itemId !== action.itemId);
+      return applyProjectTrash(afterCommit, action.projectId, remainingTrash);
+    }
     case 'set-nodes': {
       const nextWithNodes: SampleState = {
         ...state,
@@ -1978,7 +2279,12 @@ interface SampleActions {
   rememberPlace: (projectId: string, nodeId: string, cursor: number) => void;
   toggleNode: (projectId: string, nodeId: string) => void;
   setProgress: (projectId: string, nodeId: string, progress: ProgressCode) => void;
-  commitText: (projectId: string, nodeId: string, text: string) => void;
+  commitText: (
+    projectId: string,
+    nodeId: string,
+    text: string,
+    options?: { countForToday?: boolean; excludedWordDelta?: number },
+  ) => void;
   noteLarge: (delta: TextDelta) => void;
   /** WO-122：排版整批寫入（其他章幕）與快照；走 format-apply，不經 noteLarge。 */
   applyFormat: (projectId: string, changes: FormatChange[], snapshot: FormatSnapshot) => void;
@@ -2052,6 +2358,25 @@ interface SampleActions {
     cardId: string,
     move: { delta?: -1 | 1; targetIndex?: number; drop?: TimelineDropTarget },
   ) => void;
+  /** WO-138：刪稿暫存區操作。 */
+  addTrashItem: (
+    projectId: string,
+    item: TrashItem,
+    options?: { immediate?: boolean },
+  ) => TrashInsertResult;
+  removeTrashItem: (projectId: string, itemId: string, options?: { immediate?: boolean }) => void;
+  restoreDeletedTrashItem: (
+    projectId: string,
+    item: TrashItem,
+    options?: { immediate?: boolean },
+  ) => TrashInsertResult;
+  updateTrashReason: (projectId: string, itemId: string, reason: string) => void;
+  putBackTrashItem: (
+    projectId: string,
+    itemId: string,
+    targetNodeId: string,
+    nextBody: string,
+  ) => void;
   focusProject: (id: string) => void;
   attachImported: (payload: {
     project: DemoProject;
@@ -2120,8 +2445,10 @@ export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
       validateJiufangDatabase(db.sql);
       db.sql.select('SELECT id FROM project_info LIMIT 1');
       db.sql.select('SELECT id FROM chapters LIMIT 1');
+      assertBookMetaWritable(db.sql);
       assertTransferDataWritable(db.sql);
       assertTimelineDataWritable(db.sql);
+      assertTrashDataWritable(db.sql);
       return currentSchemaVersion(db.sql);
     } finally {
       db.close();
@@ -2139,10 +2466,46 @@ function browserSaveEnv(): SaveEnvironment {
   };
 }
 
+/** WO-137：組出存檔時要寫進 jiufangm_book_meta 的固定身分證；若檔內為較新修訂值或已損壞則回傳 undefined（唯讀保留）。 */
+export function manuscriptBookMeta(
+  state: SampleState,
+  project: DemoProject,
+  options?: { overrideBookMeta?: BookMetaWritable; nowMs?: number },
+): BookMetaWritable | undefined {
+  const key = project.dbKey ?? project.id;
+  const extra = (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ?? state.fileExtras[key];
+  if (extra?.bookMeta?.kind === 'newer-revision' || extra?.bookMeta?.kind === 'corrupt') {
+    return undefined;
+  }
+  if (options?.overrideBookMeta) {
+    return options.overrideBookMeta;
+  }
+  const existingMeta = extra?.bookMeta?.kind === 'ok' ? extra.bookMeta.meta : null;
+  const bookUuid = isValidUuidV4(project.bookUuid)
+    ? project.bookUuid
+    : existingMeta
+      ? existingMeta.bookUuid
+      : generateUuidV4();
+  const createdAtMs = isPositiveSafeInteger(project.bookCreatedAtMs)
+    ? project.bookCreatedAtMs
+    : existingMeta
+      ? existingMeta.createdAtMs
+      : startedMsFromProjectId(project.id, options?.nowMs ?? Date.now()) ??
+        Math.max(1, Math.trunc(options?.nowMs ?? Date.now()));
+  const originBookUuid =
+    project.originBookUuid !== undefined
+      ? project.originBookUuid
+      : existingMeta
+        ? existingMeta.originBookUuid
+        : null;
+  return { bookUuid, createdAtMs, originBookUuid };
+}
+
 /** WO-69：另存或暫存時要寫進檔案的內容。寫作紀錄只取這份稿子自己的。 */
 export function manuscriptSnapshotParts(
   state: SampleState,
   project: DemoProject,
+  options?: { includeBookMeta?: boolean; overrideBookMeta?: BookMetaWritable },
 ): {
   key: string;
   info: FileProjectInfo;
@@ -2150,6 +2513,8 @@ export function manuscriptSnapshotParts(
   logs: FileLog[];
   importEvents: ProjectImportEvents;
   exportEvents: ProjectImportEvents;
+  bookMeta: BookMetaWritable | undefined;
+  trashItems: TrashItem[] | undefined;
 } {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -2161,7 +2526,24 @@ export function manuscriptSnapshotParts(
   const importEvents = projectImportEventsOf(state, project.id);
   // WO-103：匯出事件同一份快照、同一筆交易寫進 .db。
   const exportEvents = projectExportEventsOf(state, project.id);
-  return { key, info, cards: extra?.cards ?? project.cards ?? [], logs, importEvents, exportEvents };
+  const bookMeta =
+    options?.includeBookMeta === false
+      ? undefined
+      : manuscriptBookMeta(state, project, { overrideBookMeta: options?.overrideBookMeta });
+  const trashItems =
+    extra?.trash?.kind === 'newer-revision' || extra?.trash?.kind === 'corrupt'
+      ? undefined
+      : getProjectTrash(state, project.id);
+  return {
+    key,
+    info,
+    cards: extra?.cards ?? project.cards ?? [],
+    logs,
+    importEvents,
+    exportEvents,
+    bookMeta,
+    trashItems,
+  };
 }
 
 /** WO-100：在給定的底稿位元組上建出這份稿子的 .db（與 snapshotManuscript 同一套內容；測試也用）。 */
@@ -2170,16 +2552,43 @@ export async function manuscriptBytesOn(
   project: DemoProject,
   base: Uint8Array | null,
 ): Promise<Uint8Array> {
-  const { info, cards, logs, importEvents, exportEvents } = manuscriptSnapshotParts(state, project);
-  return writeBookBytes(base, info, project.nodes, cards, logs, importEvents, exportEvents);
+  const { info, cards, logs, importEvents, exportEvents, bookMeta, trashItems } = manuscriptSnapshotParts(
+    state,
+    project,
+  );
+  return writeBookBytes(
+    base,
+    info,
+    project.nodes,
+    cards,
+    logs,
+    importEvents,
+    exportEvents,
+    bookMeta,
+    trashItems,
+  );
 }
 
 async function snapshotManuscript(
   state: SampleState,
   project: DemoProject,
   persist = true,
+  options?: { includeBookMeta?: boolean; overrideBookMeta?: BookMetaWritable },
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const { key, info, cards, logs, importEvents, exportEvents } = manuscriptSnapshotParts(state, project);
+  const { key, info, cards, logs, importEvents, exportEvents, bookMeta, trashItems } = manuscriptSnapshotParts(
+    state,
+    project,
+    options,
+  );
+  const baseMark = bookkeepingOf(project);
+  const mark: StoredBookMark = options?.overrideBookMeta
+    ? {
+        ...baseMark,
+        bookUuid: options.overrideBookMeta.bookUuid,
+        bookCreatedAtMs: options.overrideBookMeta.createdAtMs,
+        originBookUuid: options.overrideBookMeta.originBookUuid ?? null,
+      }
+    : baseMark;
   const bytes = await saveBookBytes(
     key,
     projectSaveFilename(project.title, project.filename),
@@ -2188,10 +2597,12 @@ async function snapshotManuscript(
     project.nodes,
     cards,
     logs,
-    bookkeepingOf(project),
+    mark,
     persist,
     importEvents,
     exportEvents,
+    bookMeta,
+    trashItems,
   );
   return { key, bytes };
 }
@@ -2242,6 +2653,7 @@ export function withLiveDraftCommitted(
   projectId: string,
   live: Omit<LiveDraft, 'at'> | null,
   isComposing: boolean,
+  excludedWordDelta = 0,
 ): { state: SampleState; project: DemoProject; action: Extract<Action, { type: 'commit-text' }> | null } {
   const project = state.projects.find((item) => item.id === projectId)!;
   if (isComposing || !live || live.projectId !== projectId || !project) {
@@ -2256,6 +2668,7 @@ export function withLiveDraftCommitted(
     projectId,
     nodeId: live.chapterId,
     text: live.text,
+    ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
   };
   const nextState = reduce(state, action);
   if (nextState === state) return { state, project, action: null };
@@ -2264,14 +2677,35 @@ export function withLiveDraftCommitted(
 }
 
 function commitLiveDraft(
-  state: SampleState,
+  getState: () => SampleState,
   projectId: string,
   dispatch: (action: Action) => void,
 ): { state: SampleState; project: DemoProject; committed: boolean } {
-  flushLiveDraftNow();
-  const result = withLiveDraftCommitted(state, projectId, readLiveDraftFromEditor(), isLiveDraftComposing());
+  const beforeState = getState();
+  const preFlushExcludedWordDelta = readLiveExcludedWordDelta();
+  const flushed = flushLiveDraftNow();
+  const afterFlushState = getState();
+  const flushedIntoState = afterFlushState !== beforeState;
+  const excludedWordDelta = flushedIntoState
+    ? readLiveExcludedWordDelta()
+    : flushed
+      ? preFlushExcludedWordDelta
+      : isLiveDraftComposing()
+        ? 0
+        : consumeLiveExcludedWordDelta();
+  const result = withLiveDraftCommitted(
+    afterFlushState,
+    projectId,
+    readLiveDraftFromEditor(),
+    isLiveDraftComposing(),
+    excludedWordDelta,
+  );
   if (result.action) dispatch(result.action);
-  return { state: result.state, project: result.project, committed: Boolean(result.action) };
+  return {
+    state: result.state,
+    project: result.project,
+    committed: flushedIntoState || Boolean(result.action),
+  };
 }
 
 function rememberLoadedTarget(
@@ -2294,6 +2728,7 @@ function rememberLoadedTarget(
  */
 export async function runSaveProjectAs(input: {
   state: SampleState;
+  getState?: () => SampleState;
   project: DemoProject;
   dispatch: (action: Action) => void;
   env: SaveEnvironment;
@@ -2309,17 +2744,78 @@ export async function runSaveProjectAs(input: {
 }> {
   const { state, project, dispatch, env } = input;
   const snapshot = input.snapshot ?? snapshotManuscript;
-  const { state: committedState, project: committedProject, committed } = commitLiveDraft(state, project.id, dispatch);
+  const { state: committedState, project: committedProject, committed } = commitLiveDraft(
+    input.getState ?? (() => state),
+    project.id,
+    dispatch,
+  );
   const revAtStart = committedState.contentRevById?.[project.id] ?? 0;
-  const snap = await snapshot(committedState, committedProject, false);
-  const bytes = shareBytesForSaveAs({ prepared: committed ? null : input.preparedBytes, latest: snap.bytes });
+  const extraKey = committedProject.dbKey ?? committedProject.id;
+  const extraBookMeta = committedState.fileExtras[extraKey]?.bookMeta;
+  const canUpdateBookMeta =
+    extraBookMeta?.kind !== 'newer-revision' && extraBookMeta?.kind !== 'corrupt';
+  // WO-137 決-2（方案 A）：只有電腦支援直接寫回、且原本已有外部檔時主動另存，才核發新 UUID 並記住原稿 UUID；
+  // 取消或寫檔失敗維持原證；手機或不支援直接寫回以及新稿首次存檔沿用原證。
+  const shouldBranchBookUuid = Boolean(
+    env.canPickFiles && committedProject.hasExternalFile && canUpdateBookMeta,
+  );
+  const currentBookMeta = canUpdateBookMeta
+    ? manuscriptBookMeta(committedState, committedProject)
+    : undefined;
+  const candidateBranchMeta: BookMetaWritable | undefined =
+    shouldBranchBookUuid && currentBookMeta
+      ? {
+          bookUuid: generateUuidV4(),
+          createdAtMs: Math.max(1, Math.trunc(Date.now())),
+          originBookUuid: currentBookMeta.bookUuid,
+        }
+      : undefined;
+
+  const snap = await snapshot(
+    committedState,
+    committedProject,
+    false,
+    candidateBranchMeta ? { overrideBookMeta: candidateBranchMeta } : undefined,
+  );
+  const bytes = shouldBranchBookUuid
+    ? snap.bytes
+    : shareBytesForSaveAs({ prepared: committed ? null : input.preparedBytes, latest: snap.bytes });
   const outcome = await saveProjectAsNew(env, snap.key, bytes, exportDbFilename(committedProject.title));
   let localStashOk = true;
   if (outcome.kind === 'saved-as' || outcome.kind === 'handed-off') {
+    const projectForStash: DemoProject =
+      candidateBranchMeta && outcome.kind === 'saved-as'
+        ? {
+            ...committedProject,
+            bookUuid: candidateBranchMeta.bookUuid,
+            bookCreatedAtMs: candidateBranchMeta.createdAtMs,
+            originBookUuid: candidateBranchMeta.originBookUuid ?? null,
+            bookMetaPersisted: true,
+          }
+        : committedProject;
     try {
-      await snapshot(committedState, committedProject, true);
+      await snapshot(
+        committedState,
+        projectForStash,
+        true,
+        candidateBranchMeta && outcome.kind === 'saved-as'
+          ? { overrideBookMeta: candidateBranchMeta }
+          : undefined,
+      );
     } catch {
       localStashOk = false;
+    }
+    if (candidateBranchMeta && outcome.kind === 'saved-as') {
+      dispatch({
+        type: 'set-book-identity',
+        projectId: project.id,
+        bookUuid: candidateBranchMeta.bookUuid,
+        bookCreatedAtMs: candidateBranchMeta.createdAtMs,
+        originBookUuid: candidateBranchMeta.originBookUuid ?? null,
+        persisted: canUpdateBookMeta,
+      });
+    } else if (canUpdateBookMeta) {
+      dispatch({ type: 'mark-book-meta-persisted', projectId: project.id });
     }
     if (localStashOk) {
       dispatch({
@@ -2367,6 +2863,7 @@ export function buildImportedProject(
   title: string,
   chapters: readonly SplitChapter[],
   bookGoal: number = NEW_BOOK_GOAL_DEFAULT,
+  createdAtMs: number = Date.now(),
 ): DemoProject {
   const firstId = newChapterId(id);
   const nodes: ChapterNode[] = chapters.map((chapter, index) => ({
@@ -2388,6 +2885,10 @@ export function buildImportedProject(
     categoryOrderRaw: DEFAULT_PROJECT_CATEGORY_ORDER_RAW,
     expandedCategoriesRaw: null,
     categoriesMetaRaw: '{}',
+    bookUuid: generateUuidV4(),
+    bookCreatedAtMs: Math.max(1, Math.trunc(createdAtMs)),
+    originBookUuid: null,
+    bookMetaPersisted: false,
     nodes,
   };
 }
@@ -2584,6 +3085,7 @@ export function commitTextImport(input: {
       importTitleFromFilename(input.filename),
       chapters,
       input.newBookGoal ?? readNewBookGoal(store),
+      ms,
     );
     const dayKey = freshSchedule(state, at).open?.dayKey ?? writingDayKey(at, state.schedule.dayEndHour);
     const eventId = (input.newEventId ?? defaultImportEventId)(id);
@@ -2994,6 +3496,7 @@ export async function executeBackgroundAutoSave(
         deps.dispatch({ type: 'record-project-save', projectId, atMs });
         deps.dispatch({ type: 'set-filename', projectId, filename: outcome.filename });
         deps.dispatch({ type: 'note-title-in-file', projectId });
+        deps.dispatch({ type: 'mark-book-meta-persisted', projectId });
         deps.dispatch({ type: 'clear-dirty-after-file-save', projectId, clearDirty });
         deps.onSaved(projectId);
         const store = deps.store === undefined ? deviceStore() : deps.store;
@@ -3202,8 +3705,11 @@ export async function runManualSaveProject(input: {
         fallbackFile: remembered ?? null,
         onRemember: (file) => rememberOpenFile(key, file),
         buildBytes: async () => {
-          const snapState = input.getState();
-          const { state: committedState, project: snapProject } = commitLiveDraft(snapState, project.id, dispatch);
+          const { state: committedState, project: snapProject } = commitLiveDraft(
+            input.getState,
+            project.id,
+            dispatch,
+          );
           revAtStart = committedState.contentRevById?.[project.id] ?? revAtStart;
           let snap: { key: string; bytes: Uint8Array };
           try {
@@ -3252,6 +3758,7 @@ export async function runManualSaveProject(input: {
         const latestRev = input.getState().contentRevById?.[project.id] ?? 0;
         const clearDirty = shouldClearDirtyAfterSave(revAtStart, latestRev);
         input.lastSavedRevById[project.id] = revAtStart;
+        dispatch({ type: 'mark-book-meta-persisted', projectId: project.id });
         dispatch({
           type: 'clear-dirty-after-file-save',
           projectId: project.id,
@@ -3464,6 +3971,12 @@ export async function persistFileBookStash(input: {
       if (isBookRemoved(project.id) || isBookRemoved(dbKey)) return false;
       if (isStale()) return true;
       try {
+        const includeBookMetaInLocalDb =
+          Boolean(project.bookMetaPersisted) || !project.hasExternalFile;
+        const trashItems =
+          extra.trash?.kind === 'newer-revision' || extra.trash?.kind === 'corrupt'
+            ? undefined
+            : getProjectTrash(state, project.id);
         await save(
           dbKey,
           localDbFilename(project.title, project.filename),
@@ -3476,6 +3989,8 @@ export async function persistFileBookStash(input: {
           true,
           projectImportEventsOf(state, project.id),
           projectExportEventsOf(state, project.id),
+          includeBookMetaInLocalDb ? manuscriptBookMeta(state, project) : undefined,
+          trashItems,
         );
         coordinator.markPersisted(dbKey, contentRev, generation);
         input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
@@ -3900,6 +4415,7 @@ export function SampleProvider({
       let projects = current.projects;
       const editorLive = readLiveDraftFromEditor();
       const live = editorLive && !isBookRemoved(editorLive.projectId) ? editorLive : null;
+      const excludedWordDelta = live ? consumeLiveExcludedWordDelta() : 0;
       try {
         if (typeof localStorage !== 'undefined') {
           projects = flushOpenDraft({ store: localStorage, projects: current.projects, read: () => live });
@@ -3908,14 +4424,26 @@ export function SampleProvider({
         projects = current.projects;
       }
       if (live) {
-        dispatch({ type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text });
+        dispatch({
+          type: 'commit-text',
+          projectId: live.projectId,
+          nodeId: live.chapterId,
+          text: live.text,
+          ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+        });
       }
       // WO-77：離開前正文已寫進本機，今天字數也要同步留下，不等畫面更新（頁面可能馬上關掉）。
       const store = deviceStore();
       if (store) {
         try {
           const tracked = live
-            ? reduce(current, { type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text })
+            ? reduce(current, {
+                type: 'commit-text',
+                projectId: live.projectId,
+                nodeId: live.chapterId,
+                text: live.text,
+                ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+              })
             : current;
           persistDeviceSaveRecord(store, tracked);
         } catch {
@@ -3926,7 +4454,11 @@ export function SampleProvider({
       const project = projects.find((item) => item.id === projectId);
       if (!project) return;
       const startedAt = Date.now();
-      void snapshotManuscript({ ...current, projects }, project)
+      const includeBookMetaInFlush =
+        Boolean(project.bookMetaPersisted) || !project.hasExternalFile;
+      void snapshotManuscript({ ...current, projects }, project, true, {
+        includeBookMeta: includeBookMetaInFlush,
+      })
         .then((result) => {
           if (live && typeof localStorage !== 'undefined') notePersistedDraft(localStorage, live, startedAt);
           dispatch({ type: 'record-auto-save', projectId: project.id, atMs: startedAt });
@@ -3989,8 +4521,39 @@ export function SampleProvider({
     return () => window.clearTimeout(timer);
   }, [state.toast]);
 
-  const actions = useMemo<SampleActions>(
-    () => ({
+  const actions = useMemo<SampleActions>(() => {
+    const dispatchTrashAction = (
+      projectId: string,
+      action: Action,
+      immediate: boolean,
+    ): void => {
+      const prev = stateRef.current;
+      dispatch(action);
+      if (immediate && stateRef.current !== prev) {
+        void persistProjectNow({
+          state: stateRef.current,
+          projectId,
+          dispatch,
+          onStashResult: markStashResult,
+          coordinator: fileStashCoordinatorRef.current ?? undefined,
+        });
+      }
+    };
+    const insertTrashAction = (
+      projectId: string,
+      item: TrashItem,
+      type: 'trash-add' | 'trash-restore-deleted',
+      immediate: boolean,
+    ): TrashInsertResult => {
+      if (isProjectTrashReadOnly(stateRef.current, projectId)) {
+        return { kind: 'blocked-full', items: [], reason: 'all-annotated' };
+      }
+      const result = insertTrashItemWithLimit(getProjectTrash(stateRef.current, projectId), item);
+      if (result.kind !== 'added') return result;
+      dispatchTrashAction(projectId, { type, projectId, item }, immediate);
+      return result;
+    };
+    return {
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
       removeFromDevice: async (id) => {
         const project = stateRef.current.projects.find((item) => item.id === id);
@@ -4014,8 +4577,15 @@ export function SampleProvider({
       toggleNode: (projectId, nodeId) => dispatch({ type: 'toggle', projectId, nodeId }),
       setProgress: (projectId, nodeId, progress) =>
         dispatch({ type: 'set-progress', projectId, nodeId, progress }),
-      commitText: (projectId, nodeId, text) =>
-        dispatch({ type: 'commit-text', projectId, nodeId, text }),
+      commitText: (projectId, nodeId, text, options) =>
+        dispatch({
+          type: 'commit-text',
+          projectId,
+          nodeId,
+          text,
+          ...(options?.countForToday !== undefined ? { countForToday: options.countForToday } : {}),
+          ...(options?.excludedWordDelta !== undefined ? { excludedWordDelta: options.excludedWordDelta } : {}),
+        }),
       noteLarge: (delta) => dispatch({ type: 'note-large', delta }),
       applyFormat: (projectId, changes, snapshot) =>
         dispatch({ type: 'format-apply', projectId, changes, snapshot }),
@@ -4116,6 +4686,28 @@ export function SampleProvider({
         dispatch({ type: 'reorder-timeline', projectId, orderedIds }),
       moveTimelineEvent: (projectId, cardId, move) =>
         dispatch({ type: 'move-timeline-event', projectId, cardId, ...move }),
+      addTrashItem: (projectId, item, options) =>
+        insertTrashAction(projectId, item, 'trash-add', Boolean(options?.immediate)),
+      removeTrashItem: (projectId, itemId, options) =>
+        dispatchTrashAction(
+          projectId,
+          { type: 'trash-remove', projectId, itemId },
+          options?.immediate !== false,
+        ),
+      restoreDeletedTrashItem: (projectId, item, options) =>
+        insertTrashAction(projectId, item, 'trash-restore-deleted', options?.immediate !== false),
+      updateTrashReason: (projectId, itemId, reason) =>
+        dispatchTrashAction(
+          projectId,
+          { type: 'trash-update-reason', projectId, itemId, reason },
+          true,
+        ),
+      putBackTrashItem: (projectId, itemId, targetNodeId, nextBody) =>
+        dispatchTrashAction(
+          projectId,
+          { type: 'trash-put-back', projectId, itemId, targetNodeId, nextBody },
+          true,
+        ),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {
@@ -4197,7 +4789,11 @@ export function SampleProvider({
         const project = latestState.projects.find((item) => item.id === latestState.activeProjectId);
         if (!project) return;
         try {
-          const { state: committedState, project: committedProject } = commitLiveDraft(latestState, project.id, dispatch);
+          const { state: committedState, project: committedProject } = commitLiveDraft(
+            () => stateRef.current,
+            project.id,
+            dispatch,
+          );
           const { key } = await snapshotManuscript(committedState, committedProject);
           dispatch({
             type: 'promote-stored',
@@ -4296,6 +4892,7 @@ export function SampleProvider({
           try {
             const { bytes, outcome, revAtStart, rememberedFile, localStashOk } = await runSaveProjectAs({
               state: latestState,
+              getState: () => stateRef.current,
               project,
               dispatch,
               env,
@@ -4370,9 +4967,8 @@ export function SampleProvider({
         if (message === stateRef.current.toast) return;
         dispatch({ type: 'toast', message });
       },
-    }),
-    [state],
-  );
+    };
+  }, [state]);
 
   const achievementCount = countAchievements(state.schedule.settled);
   const isGlowing = glowing(state.schedule);

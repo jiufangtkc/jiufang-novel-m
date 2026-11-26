@@ -8,16 +8,24 @@ import { decideEnterKey, IME_ENTER_WINDOW_MS, removeSpuriousLineBreak } from './
 import { createIdleGate, IDLE_MS } from './idleGate';
 import { classifyTextDelta, type TextChangeSource, type TextDelta } from '../domain/writingLog';
 import { textForBoundChapter } from './chapterSurface';
+import { createTrashCaptureTracker, type TrashCapturePayload } from './trashCapture';
+
+export interface CommitTextOptions {
+  countForToday?: boolean;
+  excludedWordDelta?: number;
+}
 
 interface WritingSurfaceOptions {
   bookId: string;
   chapterId: string;
   openingText: string;
-  onCommit: (text: string) => void;
+  onCommit: (text: string, options?: CommitTextOptions) => void;
   onLarge: (delta: TextDelta) => void;
   onDuration: (seconds: number) => void;
   onToast: (message: string) => void;
   onUserEdit?: () => void;
+  onTrashCapture?: (payload: TrashCapturePayload) => string | null;
+  onTrashUndo?: (itemId: string) => void;
 }
 
 export function useWritingSurface({
@@ -29,6 +37,8 @@ export function useWritingSurface({
   onDuration,
   onToast,
   onUserEdit,
+  onTrashCapture,
+  onTrashUndo,
 }: WritingSurfaceOptions) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const [dirty, setDirty] = useState(false);
@@ -37,18 +47,22 @@ export function useWritingSurface({
   const onDurationRef = useRef(onDuration);
   const onToastRef = useRef(onToast);
   const onUserEditRef = useRef(onUserEdit);
+  const onTrashCaptureRef = useRef(onTrashCapture);
+  const onTrashUndoRef = useRef(onTrashUndo);
   onCommitRef.current = onCommit;
   onLargeRef.current = onLarge;
   onDurationRef.current = onDuration;
   onToastRef.current = onToast;
   onUserEditRef.current = onUserEdit;
+  onTrashCaptureRef.current = onTrashCapture;
+  onTrashUndoRef.current = onTrashUndo;
   const openingRef = useRef(openingText);
   openingRef.current = openingText;
   /**
    * WO-76 乙段：按「改成全形」或「復原」時整段換掉這一章正文。
    * 組字中不換（回傳 false）。換完立刻走既有 commit-text，字數照甲段算法更新。
    */
-  const replaceRef = useRef<(next: string, caret: number) => boolean>(() => false);
+  const replaceRef = useRef<(next: string, caret: number, options?: { countForToday?: boolean }) => boolean>(() => false);
 
   useEffect(() => {
     const textarea = ref.current;
@@ -71,18 +85,29 @@ export function useWritingSurface({
     const source = { current: 'type' as TextChangeSource };
     const latest = { current: textarea.value };
     const lock = { current: false };
+    const trashCapture = createTrashCaptureTracker();
+    let pendingUncountedDelta = 0;
+    const gate = createIdleGate(IDLE_MS);
+    const consumePendingUncountedDelta = (cancelIdle = false) => {
+      const excludedWordDelta = pendingUncountedDelta;
+      pendingUncountedDelta = 0;
+      if (cancelIdle && !composing.current) gate.cancel();
+      return excludedWordDelta;
+    };
     setLiveReader(
       () => ({ projectId: bookId, chapterId, text: textarea.value }),
       () => composing.current,
+      () => pendingUncountedDelta,
+      () => consumePendingUncountedDelta(true),
     );
     setLiveFlusher(() => {
-      if (composing.current) return;
+      if (composing.current) return false;
       gate.cancel();
       flush();
+      return true;
     });
     let lastActivity = 0;
     let billedUntil = 0;
-    const gate = createIdleGate(IDLE_MS);
 
     const bill = () => {
       if (!lastActivity) return;
@@ -102,19 +127,52 @@ export function useWritingSurface({
     const flush = (fromCleanup = false) => {
       if (composing.current) return;
       bill();
-      commit(textarea.value);
+      const excludedWordDelta = consumePendingUncountedDelta(false);
+      commit(
+        textarea.value,
+        excludedWordDelta !== 0 ? { excludedWordDelta } : undefined,
+      );
       if (!fromCleanup) setDirty(false);
+    };
+
+    const flushUncounted = () => {
+      bill();
+      pendingUncountedDelta = 0;
+      commit(textarea.value, { countForToday: false });
+      setDirty(false);
     };
 
     const process = (nextSource?: TextChangeSource) => {
       if (composing.current) return;
       const next = textarea.value;
       if (next === latest.current) return;
-      const delta = classifyTextDelta(latest.current, next, { source: nextSource ?? source.current });
+      const effectiveSource = nextSource ?? source.current;
+      const before = latest.current;
+      const delta = classifyTextDelta(before, next, { source: effectiveSource });
+      const prevAutoTrash = trashCapture.getLastAutoTrash();
+      const trashOutcome = trashCapture.handleEdit({
+        chapterId,
+        before,
+        after: next,
+        source: effectiveSource,
+        nowMs: Date.now(),
+      });
       latest.current = next;
       source.current = 'type';
       mark();
       if (delta.largeInsert || delta.largeDelete) noteLarge(delta);
+      if (trashOutcome.kind === 'undo') {
+        if (prevAutoTrash && prevAutoTrash.itemId === trashOutcome.itemId) {
+          pendingUncountedDelta -= prevAutoTrash.deletionWordDelta;
+        }
+        onTrashUndoRef.current?.(trashOutcome.itemId);
+      } else if (trashOutcome.kind === 'capture') {
+        const capturedId = onTrashCaptureRef.current?.(trashOutcome.payload) ?? null;
+        if (capturedId) {
+          pendingUncountedDelta += trashOutcome.payload.deletionWordDelta;
+          trashCapture.rememberAutoTrash(capturedId, chapterId, trashOutcome.payload);
+        }
+      }
       setDirty(true);
     };
 
@@ -143,6 +201,7 @@ export function useWritingSurface({
       }
       const start = textarea.selectionStart ?? textarea.value.length;
       const end = textarea.selectionEnd ?? start;
+      trashCapture.noteSelection(start, end, latest.current.length);
       source.current = 'paste';
       textarea.setRangeText(decision.text, start, end, 'end');
       onUserEditRef.current?.();
@@ -152,25 +211,39 @@ export function useWritingSurface({
       gate.schedule(() => flush());
     };
 
-    replaceRef.current = (next: string, caret: number) => {
+    replaceRef.current = (next: string, caret: number, options?: { countForToday?: boolean }) => {
       if (composing.current) return false;
+      if (options?.countForToday === false) {
+        gate.cancel();
+        flush();
+      }
       const scrollTop = textarea.scrollTop;
       const hadFocus = document.activeElement === textarea;
       textarea.value = next;
       textarea.setSelectionRange(caret, caret);
       textarea.scrollTop = scrollTop;
       // 不算成「大量文字出現」：只是同一章的標點換成全形，前後字數由 commit-text 相減。
+      trashCapture.clear();
       latest.current = next;
       source.current = 'type';
       mark();
       gate.cancel();
-      flush();
+      if (options?.countForToday === false) {
+        flushUncounted();
+      } else {
+        flush();
+      }
       if (hadFocus) revealCaret(textarea);
       return true;
     };
 
     const onCompositionStart = () => {
       composing.current = true;
+      trashCapture.noteSelection(
+        textarea.selectionStart ?? 0,
+        textarea.selectionEnd ?? 0,
+        latest.current.length,
+      );
       gate.setComposing(true);
       onUserEditRef.current?.();
     };
@@ -212,6 +285,18 @@ export function useWritingSurface({
         if (event.cancelable) event.preventDefault();
         const incoming = event.dataTransfer?.getData('text/plain') ?? event.data;
         applyPaste(incoming ?? null);
+        return;
+      }
+      if (event.inputType === 'historyUndo') {
+        trashCapture.noteHistoryUndo();
+        return;
+      }
+      if (!composing.current && !event.isComposing) {
+        trashCapture.noteSelection(
+          textarea.selectionStart ?? 0,
+          textarea.selectionEnd ?? 0,
+          latest.current.length,
+        );
       }
     };
     const selectedText = () => {
@@ -239,6 +324,7 @@ export function useWritingSurface({
       event.preventDefault();
       rememberBookClip(bookId, { text });
       event.clipboardData?.setData('text/plain', text);
+      trashCapture.noteSelection(start, end, latest.current.length);
       textarea.setRangeText('', start, end, 'end');
       onUserEditRef.current?.();
       process('type');
@@ -263,6 +349,9 @@ export function useWritingSurface({
       const input = event as InputEvent;
       if (composing.current || input.isComposing) return;
       if (input.inputType === 'insertCompositionText' || input.inputType === 'deleteCompositionText') return;
+      if (input.inputType === 'historyUndo') {
+        trashCapture.noteHistoryUndo();
+      }
       onUserEditRef.current?.();
       process();
       gate.schedule(() => flush());
@@ -293,6 +382,7 @@ export function useWritingSurface({
 
     return () => {
       replaceRef.current = () => false;
+      trashCapture.clear();
       setLiveFlusher(null);
       flush(true);
       gate.cancel();
@@ -315,6 +405,7 @@ export function useWritingSurface({
     };
   }, [bookId, chapterId]);
 
-  const replaceText = (next: string, caret: number) => replaceRef.current(next, caret);
+  const replaceText = (next: string, caret: number, options?: { countForToday?: boolean }) =>
+    replaceRef.current(next, caret, options);
   return { ref, dirty, replaceText };
 }

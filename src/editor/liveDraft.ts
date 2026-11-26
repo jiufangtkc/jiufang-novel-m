@@ -12,22 +12,28 @@ export interface LiveDraft {
 
 let reader: (() => Omit<LiveDraft, 'at'> | null) | null = null;
 let composingReader: (() => boolean) | null = null;
-let flusher: (() => void) | null = null;
+let excludedWordDeltaReader: (() => number) | null = null;
+let excludedWordDeltaConsumer: (() => number) | null = null;
+let flusher: (() => boolean | void) | null = null;
 
 export function setLiveReader(
   next: (() => Omit<LiveDraft, 'at'> | null) | null,
   composing?: (() => boolean) | null,
+  excludedWordDelta?: (() => number) | null,
+  consumeExcludedWordDelta?: (() => number) | null,
 ) {
   reader = next;
   composingReader = next ? (composing ?? null) : null;
+  excludedWordDeltaReader = next ? (excludedWordDelta ?? null) : null;
+  excludedWordDeltaConsumer = next ? (consumeExcludedWordDelta ?? null) : null;
 }
 
-export function setLiveFlusher(next: (() => void) | null) {
+export function setLiveFlusher(next: (() => boolean | void) | null) {
   flusher = next;
 }
 
-export function flushLiveDraftNow(): void {
-  flusher?.();
+export function flushLiveDraftNow(): boolean {
+  return flusher ? flusher() !== false : false;
 }
 
 export function readLiveDraftFromEditor(): Omit<LiveDraft, 'at'> | null {
@@ -36,6 +42,15 @@ export function readLiveDraftFromEditor(): Omit<LiveDraft, 'at'> | null {
 
 export function isLiveDraftComposing(): boolean {
   return composingReader ? composingReader() : false;
+}
+
+export function readLiveExcludedWordDelta(): number {
+  return excludedWordDeltaReader ? excludedWordDeltaReader() : 0;
+}
+
+export function consumeLiveExcludedWordDelta(): number {
+  if (excludedWordDeltaConsumer) return excludedWordDeltaConsumer();
+  return excludedWordDeltaReader ? excludedWordDeltaReader() : 0;
 }
 
 export function writeLiveDraft(store: KeyValueStore, draft: LiveDraft) {
