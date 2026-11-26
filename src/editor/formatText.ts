@@ -6,9 +6,16 @@
  * 換行支援 LF 與 CRLF；單獨 CR 視為行內字元。空行 = 空字串或只含 U+0020、U+3000、Tab、CR 的行。
  */
 
-export type FormatKind = 'indent' | 'strip-blank' | 'space-paragraphs';
+import { unifyPunctuation } from './unifyPunctuation';
 
-export const FORMAT_KINDS: readonly FormatKind[] = ['indent', 'strip-blank', 'space-paragraphs'];
+export type FormatKind = 'indent' | 'strip-blank' | 'space-paragraphs' | 'unify-punctuation';
+
+export const FORMAT_KINDS: readonly FormatKind[] = [
+  'indent',
+  'strip-blank',
+  'space-paragraphs',
+  'unify-punctuation',
+];
 
 const INDENT = '　　';
 const BLANK_LINE = /^[ 　\t\r]*$/u;
@@ -97,5 +104,7 @@ export function formatText(kind: FormatKind, text: string): string {
       return stripBlankLines(text);
     case 'space-paragraphs':
       return spaceParagraphs(text);
+    case 'unify-punctuation':
+      return unifyPunctuation(text).text;
   }
 }

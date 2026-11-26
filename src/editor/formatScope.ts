@@ -5,6 +5,7 @@
 import type { ChapterNode } from '../data/demo';
 import { findNode } from '../data/demo';
 import { formatText, type FormatKind } from './formatText';
+import { unifyPunctuation } from './unifyPunctuation';
 
 export type FormatScope = 'chapter' | 'book';
 
@@ -13,6 +14,8 @@ export interface FormatChange {
   /** 排版前的完整正文（以使用者眼前最新的字為準） */
   before: string;
   after: string;
+  /** WO-139：僅在 kind === 'unify-punctuation' 時帶入本次替換處數 */
+  replacementCount?: number;
 }
 
 export interface FormatSnapshotEntry {
@@ -28,11 +31,12 @@ export interface FormatSnapshot {
   scope: FormatScope;
   /** 只含本次有變更的章幕 */
   entries: FormatSnapshotEntry[];
+  /** WO-139：僅在 kind === 'unify-punctuation' 時帶入本次總替換處數 */
+  replacementCount?: number;
 }
 
 export type FormatPlan =
-  | { status: 'ok'; changes: FormatChange[] }
-  /** 目前章幕不存在，或不是章／幕 */
+  | { status: 'ok'; changes: FormatChange[]; totalReplacements?: number }
   | { status: 'no-target' };
 
 export function isWritableNode(node: ChapterNode | null | undefined): node is ChapterNode {
@@ -68,6 +72,24 @@ export function planFormat(input: {
   if (!isWritableNode(current)) return { status: 'no-target' };
   const targets = input.scope === 'chapter' ? [current] : collectWritableNodes(input.nodes);
   const changes: FormatChange[] = [];
+  if (input.kind === 'unify-punctuation') {
+    let totalReplacements = 0;
+    for (const node of targets) {
+      const before =
+        node.id === input.currentId && typeof input.liveText === 'string' ? input.liveText : (node.content ?? '');
+      const result = unifyPunctuation(before);
+      if (result.text !== before) {
+        changes.push({
+          nodeId: node.id,
+          before,
+          after: result.text,
+          replacementCount: result.replacementCount,
+        });
+        totalReplacements += result.replacementCount;
+      }
+    }
+    return { status: 'ok', changes, totalReplacements };
+  }
   for (const node of targets) {
     const before =
       node.id === input.currentId && typeof input.liveText === 'string' ? input.liveText : (node.content ?? '');
@@ -83,7 +105,7 @@ export function snapshotOf(input: {
   scope: FormatScope;
   changes: readonly FormatChange[];
 }): FormatSnapshot {
-  return {
+  const base: FormatSnapshot = {
     projectId: input.projectId,
     kind: input.kind,
     scope: input.scope,
@@ -93,6 +115,11 @@ export function snapshotOf(input: {
       after: change.after,
     })),
   };
+  if (input.kind === 'unify-punctuation') {
+    const replacementCount = input.changes.reduce((sum, change) => sum + (change.replacementCount ?? 0), 0);
+    return { ...base, replacementCount };
+  }
+  return base;
 }
 
 export type UndoPlan =

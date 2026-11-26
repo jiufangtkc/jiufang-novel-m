@@ -91,6 +91,7 @@ export interface HalfWidthController {
   convertOne: (mark: HalfWidthMark) => void;
   skip: () => void;
   undo: () => void;
+  rescan: () => void;
 }
 
 export function useHalfWidthReminder({
@@ -289,6 +290,10 @@ export function useHalfWidthReminder({
   }, [chapterId, textareaRef, paint, placeBubble]);
 
   const scan = () => scannerRef.current?.rescan();
+  const rescan = useCallback(() => {
+    scannerRef.current?.rescan();
+    setBubble(null);
+  }, []);
 
   // 字級、版面、專注模式、開關改了，或正文框大小改了，就重畫一次底線位置。
   useLayoutEffect(() => {
@@ -369,7 +374,7 @@ export function useHalfWidthReminder({
     setSkipTick((value) => value + 1);
   };
 
-  return { count, typing, skipped, result, bubble, overlayRef, convertAll, convertOne, skip, undo };
+  return { count, typing, skipped, result, bubble, overlayRef, convertAll, convertOne, skip, undo, rescan };
 }
 
 /** 按下時不搶走正文的焦點，鍵盤不收起。 */
