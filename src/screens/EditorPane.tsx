@@ -10,6 +10,7 @@ import { DailyProgressBar } from '../components/DailyProgressBar';
 import { FormatLayer, FormatMoreButton, FormatNotice, useFormatTools, type FormatExtraMenuItem } from '../components/FormatTools';
 import '../components/formatTools.css';
 import { TrashCornerNotice } from '../components/TrashCornerNotice';
+import { TrashSelectionNotice } from '../components/TrashSelectionNotice';
 import { TrashSheet } from '../components/TrashSheet';
 import '../components/trashSheet.css';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
@@ -96,6 +97,7 @@ import {
   subscribeCardEdit,
 } from '../state/writingCardEditSession';
 import { focusWritingBody } from '../editor/focusWriting';
+import { flushLiveDraftNow } from '../editor/liveDraft';
 import { useWritingKeyboard } from '../editor/useWritingKeyboard';
 import { useWritingSurface } from '../editor/useWritingSurface';
 import {
@@ -153,7 +155,7 @@ export function EditorPane({
     bookId: projectId,
     chapterId: chapter.id,
     openingText: chapter.content ?? '',
-    onCommit: (text) => actions.commitText(projectId, chapter.id, text),
+    onCommit: (text, options) => actions.commitText(projectId, chapter.id, text, options),
     onLarge: actions.noteLarge,
     onDuration: actions.addDuration,
     onToast: (message) => actions.toast(message),
@@ -335,6 +337,56 @@ export function EditorPane({
     end: number;
     valueSnapshot: string;
   } | null>(null);
+  const [selectionWordCount, setSelectionWordCount] = useState<number | null>(null);
+  const syncSelectionWordCount = () => {
+    const el = ref.current;
+    if (!el || isComposingRef.current || document.activeElement !== el) {
+      setSelectionWordCount(null);
+      return;
+    }
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? start;
+    if (end <= start) {
+      setSelectionWordCount(null);
+      return;
+    }
+    setSelectionWordCount(countWords(el.value.slice(start, end)));
+  };
+  const syncSelectionRef = useRef(syncSelectionWordCount);
+  syncSelectionRef.current = syncSelectionWordCount;
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const sync = () => syncSelectionRef.current();
+    const clear = () => setSelectionWordCount(null);
+    const onSelectionChange = () => {
+      if (document.activeElement === el) sync();
+    };
+    const events: Array<[string, () => void]> = [
+      ['select', sync],
+      ['pointerup', sync],
+      ['keyup', sync],
+      ['input', sync],
+      ['focus', sync],
+      ['blur', clear],
+      ['compositionstart', clear],
+      ['compositionend', sync],
+    ];
+    for (const [name, handler] of events) el.addEventListener(name, handler);
+    document.addEventListener('selectionchange', onSelectionChange);
+    return () => {
+      for (const [name, handler] of events) el.removeEventListener(name, handler);
+      document.removeEventListener('selectionchange', onSelectionChange);
+      setSelectionWordCount(null);
+    };
+  }, [ref, chapter.id]);
+
+  useEffect(() => {
+    syncSelectionRef.current();
+  }, [chapter.content, trashOpen, focusMode]);
+
+  const showSelectionNotice = !focusMode && !trashOpen && selectionWordCount !== null;
 
   useEffect(() => {
     if (!trashNotice) return;
@@ -450,7 +502,7 @@ export function EditorPane({
 
     const nextBody =
       snap.valueSnapshot.slice(0, snap.start) + snap.valueSnapshot.slice(snap.end);
-    if (!replaceText(nextBody, snap.start)) {
+    if (!replaceText(nextBody, snap.start, { countForToday: false })) {
       actions.toast(TRASH_MOVE_COMPOSING_TOAST);
       return;
     }
@@ -481,7 +533,7 @@ export function EditorPane({
       const plan = isPicked
         ? appendToChapterEndPlan(liveBody, item.content, 'end')
         : computePutBackPlan(liveBody, item);
-      if (!replaceText(plan.nextBody, plan.insertEnd)) {
+      if (!replaceText(plan.nextBody, plan.insertEnd, { countForToday: false })) {
         return false;
       }
       actions.removeTrashItem(projectId, item.itemId, { immediate: true });
@@ -1009,6 +1061,7 @@ export function EditorPane({
 
   function go(id: string | null) {
     if (!id) return;
+    flushLiveDraftNow();
     const el = ref.current;
     const text = el?.value ?? chapter.content ?? '';
     const cursor = el?.selectionStart ?? 0;
@@ -1228,15 +1281,22 @@ export function EditorPane({
       ) : null}
       <FormatLayer tools={formatTools} extraMenuItems={extraMenuItems} />
       {!focusMode ? <FormatNotice tools={formatTools} /> : null}
-      {!focusMode && trashNotice ? (
-        <TrashCornerNotice
-          message={trashNotice.message}
-          onOpen={() => {
-            setTrashNotice(null);
-            setTrashOpen(true);
-          }}
-          onDismiss={() => setTrashNotice(null)}
-        />
+      {!focusMode && (trashNotice || showSelectionNotice) ? (
+        <div className="trash-corner-stack">
+          {trashNotice ? (
+            <TrashCornerNotice
+              message={trashNotice.message}
+              onOpen={() => {
+                setTrashNotice(null);
+                setTrashOpen(true);
+              }}
+              onDismiss={() => setTrashNotice(null)}
+            />
+          ) : null}
+          {showSelectionNotice ? (
+            <TrashSelectionNotice wordCount={selectionWordCount} />
+          ) : null}
+        </div>
       ) : null}
       <TrashSheet
         open={trashOpen && !focusMode}

@@ -2,7 +2,17 @@ import { describe, expect, it } from 'vitest';
 import type { DemoProject } from '../data/demo';
 import { findNode } from '../data/demo';
 import { loadProjects, type KeyValueStore } from '../domain/outline';
-import { applyLiveDraft, bindLeaveFlush, flushOpenDraft, loadLiveDraft } from './liveDraft';
+import {
+  applyLiveDraft,
+  bindLeaveFlush,
+  consumeLiveExcludedWordDelta,
+  flushLiveDraftNow,
+  flushOpenDraft,
+  loadLiveDraft,
+  readLiveExcludedWordDelta,
+  setLiveFlusher,
+  setLiveReader,
+} from './liveDraft';
 
 function memoryStore(): KeyValueStore {
   const map = new Map<string, string>();
@@ -92,5 +102,35 @@ describe('離開時立刻暫存', () => {
     listeners.get('pagehide')?.();
     listeners.get('beforeunload')?.();
     expect(calls).toEqual(['flush', 'flush', 'flush']);
+  });
+
+  it('consumeLiveExcludedWordDelta 只消費一次並歸零，flushLiveDraftNow 回報是否實際送出', () => {
+    let pending = -120;
+    let composing = false;
+    try {
+      setLiveReader(
+        () => ({ projectId: 'p1', chapterId: 'ch-1', text: '' }),
+        () => composing,
+        () => pending,
+        () => {
+          const val = pending;
+          pending = 0;
+          return val;
+        },
+      );
+      expect(readLiveExcludedWordDelta()).toBe(-120);
+      expect(consumeLiveExcludedWordDelta()).toBe(-120);
+      expect(readLiveExcludedWordDelta()).toBe(0);
+      expect(consumeLiveExcludedWordDelta()).toBe(0);
+
+      setLiveFlusher(() => !composing);
+      composing = true;
+      expect(flushLiveDraftNow()).toBe(false);
+      composing = false;
+      expect(flushLiveDraftNow()).toBe(true);
+    } finally {
+      setLiveFlusher(null);
+      setLiveReader(null);
+    }
   });
 });

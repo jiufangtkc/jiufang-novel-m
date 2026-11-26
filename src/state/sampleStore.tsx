@@ -154,12 +154,14 @@ import { assertTrashDataWritable, TRASH_FORMAT_REVISION, type TrashRead } from '
 import {
   bindLeaveFlush,
   clearLiveDraft,
+  consumeLiveExcludedWordDelta,
   flushLiveDraftNow,
   flushOpenDraft,
   isLiveDraftComposing,
   loadLiveDraft,
   notePersistedDraft,
   readLiveDraftFromEditor,
+  readLiveExcludedWordDelta,
   type LiveDraft,
 } from '../editor/liveDraft';
 import {
@@ -353,7 +355,14 @@ export type Action =
   | { type: 'remember-place'; projectId: string; nodeId: string; cursor: number }
   | { type: 'toggle'; projectId: string; nodeId: string }
   | { type: 'set-progress'; projectId: string; nodeId: string; progress: ProgressCode }
-  | { type: 'commit-text'; projectId: string; nodeId: string; text: string }
+  | {
+      type: 'commit-text';
+      projectId: string;
+      nodeId: string;
+      text: string;
+      countForToday?: boolean;
+      excludedWordDelta?: number;
+    }
   | { type: 'note-large'; delta: TextDelta }
   /** WO-122：排版。changes 是要由 store 寫入的章幕（目前開著的章幕已由寫作框同步寫入，不必再列）；snapshot 是整次排版前的快照。 */
   | { type: 'format-apply'; projectId: string; changes: FormatChange[]; snapshot: FormatSnapshot }
@@ -1857,7 +1866,12 @@ function reduceBase(state: SampleState, action: Action): SampleState {
       const node = project ? findNode(project.nodes, action.nodeId) : null;
       if (!project || !node || (node.content ?? '') === action.text) return state;
       // WO-76：不分來源，一律用同一套算法比較改前與改後的整章字數。
-      const deltaWords = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      // WO-138：從刪稿暫存區放回、移入暫存區的刪除與系統復原撤回，不計入今日字數。
+      const rawDeltaWords = classifyTextDelta(node.content ?? '', action.text, { source: 'unknown' }).wordDelta;
+      const deltaWords =
+        action.countForToday === false
+          ? 0
+          : rawDeltaWords - (action.excludedWordDelta ?? 0);
       // WO-69：字數只記進被改的那份稿子自己的紀錄，不記到其他稿子或範例書。
       const own = trackingOf(state, project, now);
       const schedule = applyWordDelta(own.schedule, deltaWords, now);
@@ -2178,6 +2192,7 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         projectId: action.projectId,
         nodeId: action.targetNodeId,
         text: action.nextBody,
+        countForToday: false,
       });
       const remainingTrash = currentTrash.filter((item) => item.itemId !== action.itemId);
       return applyProjectTrash(afterCommit, action.projectId, remainingTrash);
@@ -2264,7 +2279,12 @@ interface SampleActions {
   rememberPlace: (projectId: string, nodeId: string, cursor: number) => void;
   toggleNode: (projectId: string, nodeId: string) => void;
   setProgress: (projectId: string, nodeId: string, progress: ProgressCode) => void;
-  commitText: (projectId: string, nodeId: string, text: string) => void;
+  commitText: (
+    projectId: string,
+    nodeId: string,
+    text: string,
+    options?: { countForToday?: boolean; excludedWordDelta?: number },
+  ) => void;
   noteLarge: (delta: TextDelta) => void;
   /** WO-122：排版整批寫入（其他章幕）與快照；走 format-apply，不經 noteLarge。 */
   applyFormat: (projectId: string, changes: FormatChange[], snapshot: FormatSnapshot) => void;
@@ -2633,6 +2653,7 @@ export function withLiveDraftCommitted(
   projectId: string,
   live: Omit<LiveDraft, 'at'> | null,
   isComposing: boolean,
+  excludedWordDelta = 0,
 ): { state: SampleState; project: DemoProject; action: Extract<Action, { type: 'commit-text' }> | null } {
   const project = state.projects.find((item) => item.id === projectId)!;
   if (isComposing || !live || live.projectId !== projectId || !project) {
@@ -2647,6 +2668,7 @@ export function withLiveDraftCommitted(
     projectId,
     nodeId: live.chapterId,
     text: live.text,
+    ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
   };
   const nextState = reduce(state, action);
   if (nextState === state) return { state, project, action: null };
@@ -2655,14 +2677,35 @@ export function withLiveDraftCommitted(
 }
 
 function commitLiveDraft(
-  state: SampleState,
+  getState: () => SampleState,
   projectId: string,
   dispatch: (action: Action) => void,
 ): { state: SampleState; project: DemoProject; committed: boolean } {
-  flushLiveDraftNow();
-  const result = withLiveDraftCommitted(state, projectId, readLiveDraftFromEditor(), isLiveDraftComposing());
+  const beforeState = getState();
+  const preFlushExcludedWordDelta = readLiveExcludedWordDelta();
+  const flushed = flushLiveDraftNow();
+  const afterFlushState = getState();
+  const flushedIntoState = afterFlushState !== beforeState;
+  const excludedWordDelta = flushedIntoState
+    ? readLiveExcludedWordDelta()
+    : flushed
+      ? preFlushExcludedWordDelta
+      : isLiveDraftComposing()
+        ? 0
+        : consumeLiveExcludedWordDelta();
+  const result = withLiveDraftCommitted(
+    afterFlushState,
+    projectId,
+    readLiveDraftFromEditor(),
+    isLiveDraftComposing(),
+    excludedWordDelta,
+  );
   if (result.action) dispatch(result.action);
-  return { state: result.state, project: result.project, committed: Boolean(result.action) };
+  return {
+    state: result.state,
+    project: result.project,
+    committed: flushedIntoState || Boolean(result.action),
+  };
 }
 
 function rememberLoadedTarget(
@@ -2685,6 +2728,7 @@ function rememberLoadedTarget(
  */
 export async function runSaveProjectAs(input: {
   state: SampleState;
+  getState?: () => SampleState;
   project: DemoProject;
   dispatch: (action: Action) => void;
   env: SaveEnvironment;
@@ -2700,7 +2744,11 @@ export async function runSaveProjectAs(input: {
 }> {
   const { state, project, dispatch, env } = input;
   const snapshot = input.snapshot ?? snapshotManuscript;
-  const { state: committedState, project: committedProject, committed } = commitLiveDraft(state, project.id, dispatch);
+  const { state: committedState, project: committedProject, committed } = commitLiveDraft(
+    input.getState ?? (() => state),
+    project.id,
+    dispatch,
+  );
   const revAtStart = committedState.contentRevById?.[project.id] ?? 0;
   const extraKey = committedProject.dbKey ?? committedProject.id;
   const extraBookMeta = committedState.fileExtras[extraKey]?.bookMeta;
@@ -3657,8 +3705,11 @@ export async function runManualSaveProject(input: {
         fallbackFile: remembered ?? null,
         onRemember: (file) => rememberOpenFile(key, file),
         buildBytes: async () => {
-          const snapState = input.getState();
-          const { state: committedState, project: snapProject } = commitLiveDraft(snapState, project.id, dispatch);
+          const { state: committedState, project: snapProject } = commitLiveDraft(
+            input.getState,
+            project.id,
+            dispatch,
+          );
           revAtStart = committedState.contentRevById?.[project.id] ?? revAtStart;
           let snap: { key: string; bytes: Uint8Array };
           try {
@@ -4364,6 +4415,7 @@ export function SampleProvider({
       let projects = current.projects;
       const editorLive = readLiveDraftFromEditor();
       const live = editorLive && !isBookRemoved(editorLive.projectId) ? editorLive : null;
+      const excludedWordDelta = live ? consumeLiveExcludedWordDelta() : 0;
       try {
         if (typeof localStorage !== 'undefined') {
           projects = flushOpenDraft({ store: localStorage, projects: current.projects, read: () => live });
@@ -4372,14 +4424,26 @@ export function SampleProvider({
         projects = current.projects;
       }
       if (live) {
-        dispatch({ type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text });
+        dispatch({
+          type: 'commit-text',
+          projectId: live.projectId,
+          nodeId: live.chapterId,
+          text: live.text,
+          ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+        });
       }
       // WO-77：離開前正文已寫進本機，今天字數也要同步留下，不等畫面更新（頁面可能馬上關掉）。
       const store = deviceStore();
       if (store) {
         try {
           const tracked = live
-            ? reduce(current, { type: 'commit-text', projectId: live.projectId, nodeId: live.chapterId, text: live.text })
+            ? reduce(current, {
+                type: 'commit-text',
+                projectId: live.projectId,
+                nodeId: live.chapterId,
+                text: live.text,
+                ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+              })
             : current;
           persistDeviceSaveRecord(store, tracked);
         } catch {
@@ -4513,8 +4577,15 @@ export function SampleProvider({
       toggleNode: (projectId, nodeId) => dispatch({ type: 'toggle', projectId, nodeId }),
       setProgress: (projectId, nodeId, progress) =>
         dispatch({ type: 'set-progress', projectId, nodeId, progress }),
-      commitText: (projectId, nodeId, text) =>
-        dispatch({ type: 'commit-text', projectId, nodeId, text }),
+      commitText: (projectId, nodeId, text, options) =>
+        dispatch({
+          type: 'commit-text',
+          projectId,
+          nodeId,
+          text,
+          ...(options?.countForToday !== undefined ? { countForToday: options.countForToday } : {}),
+          ...(options?.excludedWordDelta !== undefined ? { excludedWordDelta: options.excludedWordDelta } : {}),
+        }),
       noteLarge: (delta) => dispatch({ type: 'note-large', delta }),
       applyFormat: (projectId, changes, snapshot) =>
         dispatch({ type: 'format-apply', projectId, changes, snapshot }),
@@ -4718,7 +4789,11 @@ export function SampleProvider({
         const project = latestState.projects.find((item) => item.id === latestState.activeProjectId);
         if (!project) return;
         try {
-          const { state: committedState, project: committedProject } = commitLiveDraft(latestState, project.id, dispatch);
+          const { state: committedState, project: committedProject } = commitLiveDraft(
+            () => stateRef.current,
+            project.id,
+            dispatch,
+          );
           const { key } = await snapshotManuscript(committedState, committedProject);
           dispatch({
             type: 'promote-stored',
@@ -4817,6 +4892,7 @@ export function SampleProvider({
           try {
             const { bytes, outcome, revAtStart, rememberedFile, localStashOk } = await runSaveProjectAs({
               state: latestState,
+              getState: () => stateRef.current,
               project,
               dispatch,
               env,

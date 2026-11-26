@@ -10,11 +10,16 @@ import { classifyTextDelta, type TextChangeSource, type TextDelta } from '../dom
 import { textForBoundChapter } from './chapterSurface';
 import { createTrashCaptureTracker, type TrashCapturePayload } from './trashCapture';
 
+export interface CommitTextOptions {
+  countForToday?: boolean;
+  excludedWordDelta?: number;
+}
+
 interface WritingSurfaceOptions {
   bookId: string;
   chapterId: string;
   openingText: string;
-  onCommit: (text: string) => void;
+  onCommit: (text: string, options?: CommitTextOptions) => void;
   onLarge: (delta: TextDelta) => void;
   onDuration: (seconds: number) => void;
   onToast: (message: string) => void;
@@ -57,7 +62,7 @@ export function useWritingSurface({
    * WO-76 乙段：按「改成全形」或「復原」時整段換掉這一章正文。
    * 組字中不換（回傳 false）。換完立刻走既有 commit-text，字數照甲段算法更新。
    */
-  const replaceRef = useRef<(next: string, caret: number) => boolean>(() => false);
+  const replaceRef = useRef<(next: string, caret: number, options?: { countForToday?: boolean }) => boolean>(() => false);
 
   useEffect(() => {
     const textarea = ref.current;
@@ -81,18 +86,28 @@ export function useWritingSurface({
     const latest = { current: textarea.value };
     const lock = { current: false };
     const trashCapture = createTrashCaptureTracker();
+    let pendingUncountedDelta = 0;
+    const gate = createIdleGate(IDLE_MS);
+    const consumePendingUncountedDelta = (cancelIdle = false) => {
+      const excludedWordDelta = pendingUncountedDelta;
+      pendingUncountedDelta = 0;
+      if (cancelIdle && !composing.current) gate.cancel();
+      return excludedWordDelta;
+    };
     setLiveReader(
       () => ({ projectId: bookId, chapterId, text: textarea.value }),
       () => composing.current,
+      () => pendingUncountedDelta,
+      () => consumePendingUncountedDelta(true),
     );
     setLiveFlusher(() => {
-      if (composing.current) return;
+      if (composing.current) return false;
       gate.cancel();
       flush();
+      return true;
     });
     let lastActivity = 0;
     let billedUntil = 0;
-    const gate = createIdleGate(IDLE_MS);
 
     const bill = () => {
       if (!lastActivity) return;
@@ -112,8 +127,19 @@ export function useWritingSurface({
     const flush = (fromCleanup = false) => {
       if (composing.current) return;
       bill();
-      commit(textarea.value);
+      const excludedWordDelta = consumePendingUncountedDelta(false);
+      commit(
+        textarea.value,
+        excludedWordDelta !== 0 ? { excludedWordDelta } : undefined,
+      );
       if (!fromCleanup) setDirty(false);
+    };
+
+    const flushUncounted = () => {
+      bill();
+      pendingUncountedDelta = 0;
+      commit(textarea.value, { countForToday: false });
+      setDirty(false);
     };
 
     const process = (nextSource?: TextChangeSource) => {
@@ -123,6 +149,7 @@ export function useWritingSurface({
       const effectiveSource = nextSource ?? source.current;
       const before = latest.current;
       const delta = classifyTextDelta(before, next, { source: effectiveSource });
+      const prevAutoTrash = trashCapture.getLastAutoTrash();
       const trashOutcome = trashCapture.handleEdit({
         chapterId,
         before,
@@ -135,10 +162,14 @@ export function useWritingSurface({
       mark();
       if (delta.largeInsert || delta.largeDelete) noteLarge(delta);
       if (trashOutcome.kind === 'undo') {
+        if (prevAutoTrash && prevAutoTrash.itemId === trashOutcome.itemId) {
+          pendingUncountedDelta -= prevAutoTrash.deletionWordDelta;
+        }
         onTrashUndoRef.current?.(trashOutcome.itemId);
       } else if (trashOutcome.kind === 'capture') {
         const capturedId = onTrashCaptureRef.current?.(trashOutcome.payload) ?? null;
         if (capturedId) {
+          pendingUncountedDelta += trashOutcome.payload.deletionWordDelta;
           trashCapture.rememberAutoTrash(capturedId, chapterId, trashOutcome.payload);
         }
       }
@@ -180,8 +211,12 @@ export function useWritingSurface({
       gate.schedule(() => flush());
     };
 
-    replaceRef.current = (next: string, caret: number) => {
+    replaceRef.current = (next: string, caret: number, options?: { countForToday?: boolean }) => {
       if (composing.current) return false;
+      if (options?.countForToday === false) {
+        gate.cancel();
+        flush();
+      }
       const scrollTop = textarea.scrollTop;
       const hadFocus = document.activeElement === textarea;
       textarea.value = next;
@@ -193,7 +228,11 @@ export function useWritingSurface({
       source.current = 'type';
       mark();
       gate.cancel();
-      flush();
+      if (options?.countForToday === false) {
+        flushUncounted();
+      } else {
+        flush();
+      }
       if (hadFocus) revealCaret(textarea);
       return true;
     };
@@ -366,6 +405,7 @@ export function useWritingSurface({
     };
   }, [bookId, chapterId]);
 
-  const replaceText = (next: string, caret: number) => replaceRef.current(next, caret);
+  const replaceText = (next: string, caret: number, options?: { countForToday?: boolean }) =>
+    replaceRef.current(next, caret, options);
   return { ref, dirty, replaceText };
 }

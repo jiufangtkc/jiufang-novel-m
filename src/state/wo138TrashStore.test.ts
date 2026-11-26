@@ -15,7 +15,15 @@ import {
 } from '../db/trashMeta';
 import { openMemoryDb } from '../db/wasmDb';
 import { loadProjects, type KeyValueStore } from '../domain/outline';
-import { createTrashItem, type TrashItem } from '../domain/trash';
+import { findNode } from '../data/demo';
+import { createTrashItem, listWritableTargetNodes, type TrashItem } from '../domain/trash';
+import {
+  bindLeaveFlush,
+  consumeLiveExcludedWordDelta,
+  setLiveFlusher,
+  setLiveReader,
+} from '../editor/liveDraft';
+import { writingDayKey } from '../domain/dailyGoal';
 import { removeProjectFromDevice } from './removeFromDevice';
 import {
   createState,
@@ -414,6 +422,389 @@ describe('WO-138 第 3 段：sampleStore 最小接線', () => {
       expect(readFileProject(corruptDb.sql).trash.kind).toBe('corrupt');
     } finally {
       corruptDb.close();
+    }
+  });
+
+  it('返工 1 問題 1：刪稿暫存區放回、收進暫存區刪除、復原撤回與丟掉復原皆不扭曲今日字數，小刪除維持扣字', () => {
+    const now = new Date('2026-11-26T10:00:00+08:00');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      let state = reduce(createState(now), {
+        type: 'add-project',
+        id: 'p-wc',
+        title: '【範例】今日字數與暫存區',
+        shape: 'single',
+      });
+      state = reduce(state, { type: 'focus-project', id: 'p-wc' });
+      const chId = state.projects.find((p) => p.id === 'p-wc')!.nodes[0]!.id;
+
+      // 預置原本就有的 150 字舊文（模擬前一天寫的，今天進度從 0 開始）
+      const oldBody = '【範例】' + '霧'.repeat(146);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: oldBody,
+        countForToday: false,
+      });
+      expect(state.schedule.open?.wordCount).toBe(0);
+
+      // 1. 今日字數為 0 時，刪掉 100 字以上（收進暫存區）再放回（同章與跨章皆不增減）
+      const deleted120 = '霧'.repeat(120);
+      const afterAutoDel = oldBody.slice(0, oldBody.length - 120);
+      const trashItem1 = createTrashItem({
+        itemId: 'wc-trash-1',
+        chapterId: chId,
+        chapterTitleSnapshot: '正文',
+        content: deleted120,
+        wordCount: 120,
+        beforeAnchor: '【範例】',
+        afterAnchor: '',
+        charOffset: afterAutoDel.length,
+        deletedAtMs: now.getTime(),
+      });
+      state = reduce(state, { type: 'trash-add', projectId: 'p-wc', item: trashItem1 });
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: afterAutoDel,
+        excludedWordDelta: -120,
+      });
+      expect(state.schedule.open?.wordCount).toBe(0);
+
+      state = reduce(state, {
+        type: 'trash-put-back',
+        projectId: 'p-wc',
+        itemId: trashItem1.itemId,
+        targetNodeId: chId,
+        nextBody: oldBody,
+      });
+      expect(state.schedule.open?.wordCount).toBe(0);
+
+      // 2. 今日已有若干字（打入 40 字）時，收進暫存區不扣、放回不加
+      const withNew40 = oldBody + '新'.repeat(40);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: withNew40,
+      });
+      expect(state.schedule.open?.wordCount).toBe(40);
+
+      // 收進暫存區 120 字（含未沖掉新打 5 字與刪掉 120 字並存情境：淨增 5 字）
+      const typed5AndDeleted120 = withNew40.slice(0, withNew40.length - 120) + '加'.repeat(5);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: typed5AndDeleted120,
+        excludedWordDelta: -120,
+      });
+      expect(state.schedule.open?.wordCount).toBe(45);
+
+      // 手動「移到刪稿暫存區」（countForToday: false）同樣不扣
+      const afterManualMove = typed5AndDeleted120.slice(0, typed5AndDeleted120.length - 15);
+      const manualItem = createTrashItem({
+        itemId: 'wc-trash-manual',
+        chapterId: chId,
+        chapterTitleSnapshot: '正文',
+        content: '字'.repeat(15),
+        wordCount: 15,
+        beforeAnchor: '',
+        afterAnchor: '',
+        charOffset: afterManualMove.length,
+        deletedAtMs: now.getTime() + 1000,
+      });
+      state = reduce(state, { type: 'trash-add', projectId: 'p-wc', item: manualItem });
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: afterManualMove,
+        countForToday: false,
+      });
+      expect(state.schedule.open?.wordCount).toBe(45);
+
+      // 丟掉後 10 秒復原只改清單、不動今日字數
+      state = reduce(state, { type: 'trash-remove', projectId: 'p-wc', itemId: manualItem.itemId });
+      expect(state.schedule.open?.wordCount).toBe(45);
+      state = reduce(state, { type: 'trash-restore-deleted', projectId: 'p-wc', item: manualItem });
+      expect(state.schedule.open?.wordCount).toBe(45);
+
+      // 放回（trash-put-back 與同章 countForToday: false）不加字數
+      state = reduce(state, {
+        type: 'trash-put-back',
+        projectId: 'p-wc',
+        itemId: manualItem.itemId,
+        targetNodeId: chId,
+        nextBody: typed5AndDeleted120,
+      });
+      expect(state.schedule.open?.wordCount).toBe(45);
+
+      // 3. 自動收進後立刻系統復原撤回（excludedWordDelta: +120）不暴增
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: withNew40,
+        excludedWordDelta: 120,
+      });
+      // 上面範例把 '加'.repeat(5) 一起換掉恢復成 withNew40，淨差為 -5（還原後應為 40）
+      expect(state.schedule.open?.wordCount).toBe(40);
+
+      // 4. 不到 100 字、沒有進暫存區的小刪除維持既有算法（從今日字數扣）
+      const afterSmallDelete = withNew40.slice(0, withNew40.length - 12);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-wc',
+        nodeId: chId,
+        text: afterSmallDelete,
+      });
+      expect(state.schedule.open?.wordCount).toBe(28);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('返工 1 修正輪 2 必修 1：600ms 停筆緩衝內刪 ≥ 100 字或系統復原後立刻存檔／另存，快照與 .db 今日字數皆不變', async () => {
+    const now = new Date('2026-11-26T10:00:00+08:00');
+    const todayKey = writingDayKey(now, 0);
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    setupMemoryAppSpace();
+    try {
+      const originalBytes = await generateDesktopSampleBytes();
+      const disk = new FakeDisk('【範例】存檔今日字數.db', originalBytes);
+      const saveAsDisk = new FakeDisk('【範例】另存今日字數.db', new Uint8Array());
+      const { env } = makeFakeEnv({
+        canPickFiles: true,
+        pickSaveLocation: async () => saveAsDisk,
+      });
+      const kv = makeMemoryKeyValueStore();
+
+      let state = createState(now);
+      const dispatch = (action: Action) => {
+        state = reduce(state, action);
+      };
+
+      const opened = await openDatabaseManuscript({
+        filename: disk.name,
+        bytes: originalBytes,
+        diskFile: disk,
+        dispatch,
+        env,
+        store: kv,
+        now,
+      });
+      state = reduce(state, { type: 'focus-project', id: opened.id });
+      const openedProject = state.projects.find((p) => p.id === opened.id)!;
+      const chId = listWritableTargetNodes(openedProject.nodes)[0]!.node.id;
+      const baseBody = '【範例】' + '霧'.repeat(146);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: opened.id,
+        nodeId: chId,
+        text: baseBody,
+        countForToday: false,
+      });
+      // 今日先新打 30 字並先存檔一次，讓今日字數基準為 30
+      const withToday30 = baseBody + '新'.repeat(30);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: opened.id,
+        nodeId: chId,
+        text: withToday30,
+      });
+      expect(state.schedule.open?.wordCount).toBe(30);
+
+      const inflight = { current: null as { kind: 'auto' | 'manual'; projectId: string; promise: Promise<unknown> } | null };
+      const lastSavedRevById: Record<string, number> = { [opened.id]: 0 };
+      const firstSave = await runManualSaveProject({
+        getState: () => state,
+        dispatch,
+        env,
+        inflight,
+        lastSavedRevById,
+        onSaved: () => undefined,
+        store: kv,
+      });
+      expect(firstSave?.kind).toBe('saved');
+
+      // 模擬 useWritingSurface：刪掉 120 字後仍在 600ms 停筆緩衝內
+      let liveText = withToday30.slice(0, withToday30.length - 120);
+      let pendingUncountedDelta = -120;
+      const consumeDelta = () => {
+        const val = pendingUncountedDelta;
+        pendingUncountedDelta = 0;
+        return val;
+      };
+      setLiveReader(
+        () => ({ projectId: opened.id, chapterId: chId, text: liveText }),
+        () => false,
+        () => pendingUncountedDelta,
+        consumeDelta,
+      );
+      setLiveFlusher(() => {
+        const excludedWordDelta = consumeDelta();
+        dispatch({
+          type: 'commit-text',
+          projectId: opened.id,
+          nodeId: chId,
+          text: liveText,
+          ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+        });
+        return true;
+      });
+
+      // 刪 ≥ 100 字後 600ms 內立刻手動存檔：不應多扣 120 字
+      const saveAfterDelete = await runManualSaveProject({
+        getState: () => state,
+        dispatch,
+        env,
+        inflight,
+        lastSavedRevById,
+        onSaved: () => undefined,
+        store: kv,
+      });
+      expect(saveAfterDelete?.kind).toBe('saved');
+      expect(state.schedule.open?.wordCount).toBe(30);
+      const dbAfterDelete = await readBookBytes(disk.name, disk.bytes, 'after-delete-save');
+      expect(dbAfterDelete.logs.find((l) => l.date === todayKey)?.word_count).toBe(30);
+      expect(findNode(dbAfterDelete.tree, chId)?.content).toBe(liveText);
+
+      // 系統復原（+120）後 600ms 內立刻另存專案（即使外部呼叫端只傳進舊 state 快照）：不應暴增 120 字
+      const stateBeforeUndoFlush = state;
+      liveText = withToday30;
+      pendingUncountedDelta = 120;
+      const saveAsAfterUndo = await runSaveProjectAs({
+        state: stateBeforeUndoFlush,
+        project: stateBeforeUndoFlush.projects.find((p) => p.id === opened.id)!,
+        dispatch,
+        env,
+        preparedBytes: null,
+      });
+      expect(saveAsAfterUndo.outcome.kind).toBe('saved-as');
+      expect(state.schedule.open?.wordCount).toBe(30);
+      const dbAfterUndoSaveAs = await readBookBytes(saveAsDisk.name, saveAsDisk.bytes, 'after-undo-save-as');
+      expect(dbAfterUndoSaveAs.logs.find((l) => l.date === todayKey)?.word_count).toBe(30);
+      expect(findNode(dbAfterUndoSaveAs.tree, chId)?.content).toBe(withToday30);
+    } finally {
+      setLiveFlusher(null);
+      setLiveReader(null);
+      vi.useRealTimers();
+    }
+  });
+
+  it('返工 1 修正輪 2 必修 2：600ms 內切分頁／離頁（bindLeaveFlush）已消費並取消計時器，回來再打字不重複扣抵 excludedWordDelta', () => {
+    const now = new Date('2026-11-26T10:00:00+08:00');
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(now);
+    try {
+      let state = reduce(createState(now), {
+        type: 'add-project',
+        id: 'p-leave-flush',
+        title: '【範例】離頁消費字數',
+        shape: 'single',
+      });
+      state = reduce(state, { type: 'focus-project', id: 'p-leave-flush' });
+      const chId = state.projects.find((p) => p.id === 'p-leave-flush')!.nodes[0]!.id;
+      const baseBody = '【範例】' + '霧'.repeat(146);
+      state = reduce(state, {
+        type: 'commit-text',
+        projectId: 'p-leave-flush',
+        nodeId: chId,
+        text: baseBody,
+        countForToday: false,
+      });
+      expect(state.schedule.open?.wordCount).toBe(0);
+
+      let liveText = baseBody.slice(0, baseBody.length - 120);
+      let pendingUncountedDelta = -120;
+      let idleCancelled = false;
+
+      const consumeWithCancel = () => {
+        const val = pendingUncountedDelta;
+        pendingUncountedDelta = 0;
+        idleCancelled = true;
+        return val;
+      };
+      setLiveReader(
+        () => ({ projectId: 'p-leave-flush', chapterId: chId, text: liveText }),
+        () => false,
+        () => pendingUncountedDelta,
+        consumeWithCancel,
+      );
+
+      const listeners = new Map<string, () => void>();
+      const target = {
+        addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+        removeEventListener: (type: string) => listeners.delete(type),
+      };
+      let hidden = false;
+      const doc = {
+        get visibilityState() {
+          return hidden ? 'hidden' : 'visible';
+        },
+        addEventListener: (type: string, listener: () => void) => listeners.set(type, listener),
+        removeEventListener: (type: string) => listeners.delete(type),
+      };
+      const leaveFlush = () => {
+        const excludedWordDelta = consumeLiveExcludedWordDelta();
+        state = reduce(state, {
+          type: 'commit-text',
+          projectId: 'p-leave-flush',
+          nodeId: chId,
+          text: liveText,
+          ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+        });
+      };
+      const unbind = bindLeaveFlush(target, doc, leaveFlush);
+
+      // 1. 刪 ≥ 100 字後 600ms 內切分頁（visibilitychange hidden + pagehide）
+      hidden = true;
+      listeners.get('visibilitychange')?.();
+      listeners.get('pagehide')?.();
+      expect(idleCancelled).toBe(true);
+      expect(pendingUncountedDelta).toBe(0);
+      expect(state.schedule.open?.wordCount).toBe(0);
+
+      // 切回畫面後新打 1 字，後續 flush 送出 commit-text 不應再帶 -120 導致暴增成 121
+      hidden = false;
+      liveText += '新';
+      const flushAfterReturn = () => {
+        const excludedWordDelta = consumeLiveExcludedWordDelta();
+        state = reduce(state, {
+          type: 'commit-text',
+          projectId: 'p-leave-flush',
+          nodeId: chId,
+          text: liveText,
+          ...(excludedWordDelta !== 0 ? { excludedWordDelta } : {}),
+        });
+      };
+      flushAfterReturn();
+      expect(state.schedule.open?.wordCount).toBe(1);
+
+      // 2. 系統復原（+120）後 600ms 內切分頁，回來再打 1 字不應倒扣成 -118
+      idleCancelled = false;
+      liveText = baseBody + '新';
+      pendingUncountedDelta = 120;
+      hidden = true;
+      listeners.get('visibilitychange')?.();
+      expect(idleCancelled).toBe(true);
+      expect(pendingUncountedDelta).toBe(0);
+      expect(state.schedule.open?.wordCount).toBe(1);
+
+      hidden = false;
+      liveText += '字';
+      flushAfterReturn();
+      expect(state.schedule.open?.wordCount).toBe(2);
+
+      unbind();
+    } finally {
+      setLiveReader(null);
+      vi.useRealTimers();
     }
   });
 });

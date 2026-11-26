@@ -81,6 +81,22 @@ function makeSeedProjects() {
           content: '字'.repeat(50_005),
           expanded: true,
         },
+        {
+          id: 'ch-today',
+          type: 'file',
+          title: '第四章　今日字數',
+          progress: 'Draft',
+          content: '【範例】' + '霧'.repeat(120),
+          expanded: true,
+        },
+        {
+          id: 'ch-select',
+          type: 'file',
+          title: '第五章　選取字數',
+          progress: 'Draft',
+          content: '甲 乙\n\n丙丁  戊己庚辛壬癸' + '海'.repeat(100),
+          expanded: true,
+        },
       ],
       cards: [],
       trashItems: [
@@ -257,7 +273,7 @@ describe('WO-138 修正輪 1：真實瀏覽器互動驗收（三大必修＋超�
     } finally {
       await context.close();
     }
-  }, 60000);
+  }, 90000);
 
   it('必修 2：刪稿暫存區開著時，「已記下原因」與「已放回刪稿暫存區」在清單內提示條可見且不被蓋住', async () => {
     const context = await browser.newContext({ viewport: { width: 390, height: 844 }, hasTouch: true });
@@ -307,7 +323,7 @@ describe('WO-138 修正輪 1：真實瀏覽器互動驗收（三大必修＋超�
     } finally {
       await context.close();
     }
-  }, 60000);
+  }, 90000);
 
   it('必修 3：手機觸控選取不到 100 字短段後點「⋯」，保留選取快照並顯示「移到刪稿暫存區」且可送入', async () => {
     const context = await browser.newContext({
@@ -371,7 +387,7 @@ describe('WO-138 修正輪 1：真實瀏覽器互動驗收（三大必修＋超�
     } finally {
       await context.close();
     }
-  }, 60000);
+  }, 90000);
 
   it('鍵盤 Focus + Enter 開啟「⋯」選單仍能補擷取選取並送入暫存區；單筆超過 50,000 字顯示專屬超限提示', async () => {
     const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
@@ -411,6 +427,318 @@ describe('WO-138 修正輪 1：真實瀏覽器互動驗收（三大必修＋超�
       expect((await longTextarea.inputValue()).length).toBe(50_005);
     } finally {
       await context.close();
+    }
+  }, 90000);
+
+  it('返工 1 問題 1：今日字數為 0／有進度時，自動收進、放回、手動移入、復原撤回與丟掉復原都不誤計，小刪除仍照扣', async () => {
+    const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await seedBrowserStorage(context);
+    const page = await context.newPage();
+    try {
+      await page.goto(`${baseUrl}/p/${BOOK_ID}/write/ch-today`, { waitUntil: 'domcontentloaded' });
+      const textarea = page.locator('[data-testid="writing-input"]');
+      const progress = page.locator('[data-testid="daily-progress"]');
+      await textarea.waitFor({ state: 'visible' });
+      expect(await progress.getAttribute('aria-valuenow')).toBe('0');
+
+      // 1. 今日字數為 0 時，全選刪掉 >= 100 字（自動收進暫存區）→ 今日字數仍為 0
+      await textarea.click();
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.locator('[data-testid="trash-corner-notice"]').waitFor({ state: 'visible' });
+      await page.waitForTimeout(1700);
+      expect(await progress.getAttribute('aria-valuenow')).toBe('0');
+
+      // 從暫存區「放回原章」→ 今日字數仍為 0
+      await page.locator('[data-testid="trash-corner-open"]').click();
+      await page.locator('[data-testid="trash-list"] [data-testid^="trash-item-"]').first().click();
+      await page.locator('[data-testid="trash-put-back"]').click();
+      await page.waitForTimeout(300);
+      expect(await textarea.inputValue()).toBe('【範例】' + '霧'.repeat(120));
+      expect(await progress.getAttribute('aria-valuenow')).toBe('0');
+
+      // 2. 新打 15 字 → 今日字數為 15
+      await textarea.click();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.type('海'.repeat(15));
+      await page.waitForTimeout(1700);
+      expect(await progress.getAttribute('aria-valuenow')).toBe('15');
+
+      // 3. 自動收進 >= 100 字後立刻系統復原撤回 → 今日字數維持 15（不扣也不暴增）
+      await page.keyboard.press('Control+a');
+      await page.keyboard.press('Backspace');
+      await page.locator('[data-testid="trash-corner-notice"]').waitFor({ state: 'visible' });
+      await page.waitForTimeout(1700);
+      expect(await progress.getAttribute('aria-valuenow')).toBe('15');
+
+      await page.keyboard.press('Control+z');
+      await page.waitForTimeout(1700);
+      expect(await textarea.inputValue()).toBe('【範例】' + '霧'.repeat(120) + '海'.repeat(15));
+      expect(await progress.getAttribute('aria-valuenow')).toBe('15');
+
+      // 4. 手動「移到刪稿暫存區」（15 字）不扣 → 丟掉後 10 秒復原不動 → 放回不加
+      await page.keyboard.press('Control+End');
+      await page.keyboard.down('Shift');
+      for (let i = 0; i < 15; i += 1) await page.keyboard.press('ArrowLeft');
+      await page.keyboard.up('Shift');
+      await page.locator('[data-testid="format-more-topbar"]').click();
+      await page.locator('[data-testid="format-menu-trash-move-selection"]').click();
+      await page.waitForTimeout(300);
+      expect(await progress.getAttribute('aria-valuenow')).toBe('15');
+
+      await page.locator('[data-testid="trash-corner-open"]').click();
+      await page.locator('[data-testid="trash-list"] [data-testid^="trash-item-"]').first().click();
+      await page.locator('[data-testid="trash-discard"]').click();
+      await page.locator('[data-testid="trash-discard-confirm"]').click();
+      await page.locator('[data-testid="trash-undo-btn"]').click();
+      await page.locator('[data-testid="trash-list"] [data-testid^="trash-item-"]').first().click();
+      expect(await progress.getAttribute('aria-valuenow')).toBe('15');
+
+      await page.locator('[data-testid="trash-put-back"]').click();
+      await page.waitForTimeout(300);
+      expect(await progress.getAttribute('aria-valuenow')).toBe('15');
+
+      // 5. 不到 100 字的小刪除（刪掉 10 字）仍照既有算法扣成 5
+      await textarea.click();
+      await page.keyboard.press('Control+End');
+      await page.keyboard.down('Shift');
+      for (let i = 0; i < 10; i += 1) await page.keyboard.press('ArrowLeft');
+      await page.keyboard.up('Shift');
+      await page.keyboard.press('Backspace');
+      await page.waitForTimeout(1700);
+      expect(await progress.getAttribute('aria-valuenow')).toBe('5');
+    } finally {
+      await context.close();
+    }
+  }, 90000);
+
+  it('返工 1 問題 2：選取字數在手機與電腦正確顯示、與 countWords 一致、不重疊角落提示與頂部列，失焦／開清單／專注隱藏', async () => {
+    // 手機直向（含模擬 --force-safe-top 瀏海高度）
+    const mobileCtx = await browser.newContext({
+      viewport: { width: 390, height: 844 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    await seedBrowserStorage(mobileCtx);
+    const mobilePage = await mobileCtx.newPage();
+    try {
+      await mobilePage.goto(`${baseUrl}/p/${BOOK_ID}/write/ch-select`, { waitUntil: 'domcontentloaded' });
+      const textarea = mobilePage.locator('[data-testid="writing-input"]');
+      const selNotice = mobilePage.locator('[data-testid="trash-selection-notice"]');
+      await textarea.waitFor({ state: 'visible' });
+
+      // 注入模擬瀏海安全區 --force-safe-top: 44px，驗證不被頂部列或瀏海擋住
+      await mobilePage.evaluate(() => {
+        document.documentElement.style.setProperty('--force-safe-top', '44px');
+      });
+
+      // 未選取時不顯示
+      expect(await selNotice.count()).toBe(0);
+
+      // 選取含空白與換行的前 15 個字元（實際有效字數為 10 字）→ 顯示「已選 10 字」，不含門檻句
+      await textarea.tap();
+      await mobilePage.keyboard.press('Control+Home');
+      await mobilePage.keyboard.down('Shift');
+      for (let i = 0; i < 15; i += 1) await mobilePage.keyboard.press('ArrowRight');
+      await mobilePage.keyboard.up('Shift');
+
+      await selNotice.waitFor({ state: 'visible' });
+      expect(await selNotice.textContent()).toBe('已選 10 字');
+      expect(await selNotice.textContent()).not.toContain('不會收進暫存區');
+
+      const topbarBox = await mobilePage.locator('.editor .topbar').boundingBox();
+      const selBox = await selNotice.boundingBox();
+      expect(topbarBox).not.toBeNull();
+      expect(selBox).not.toBeNull();
+      expect(selBox.y).toBeGreaterThanOrEqual(topbarBox.y + topbarBox.height);
+
+      // 選取長度為 0 時不顯示
+      await mobilePage.keyboard.press('ArrowRight');
+      await selNotice.waitFor({ state: 'hidden' });
+
+      // 全選 110 字（>= 100 字）→ 顯示「已選 110 字，刪掉會收進暫存區」
+      await mobilePage.keyboard.press('Control+a');
+      await selNotice.waitFor({ state: 'visible' });
+      expect(await selNotice.textContent()).toBe('已選 110 字，刪掉會收進暫存區');
+
+      // 刪除後觸發「已放到刪稿暫存區」角落提示，接著選取 10 字：兩者同時可見且不重疊
+      await mobilePage.keyboard.press('Backspace');
+      const cornerNotice = mobilePage.locator('[data-testid="trash-corner-notice"]');
+      await cornerNotice.waitFor({ state: 'visible' });
+
+      await mobilePage.keyboard.type('甲乙丙丁戊己庚辛壬癸');
+      await mobilePage.keyboard.down('Shift');
+      for (let i = 0; i < 10; i += 1) await mobilePage.keyboard.press('ArrowLeft');
+      await mobilePage.keyboard.up('Shift');
+      await selNotice.waitFor({ state: 'visible' });
+      const cornerBox = await cornerNotice.boundingBox();
+      const stackedSelBox = await selNotice.boundingBox();
+      expect(cornerBox).not.toBeNull();
+      expect(stackedSelBox).not.toBeNull();
+      const overlap =
+        cornerBox.x < stackedSelBox.x + stackedSelBox.width &&
+        cornerBox.x + cornerBox.width > stackedSelBox.x &&
+        cornerBox.y < stackedSelBox.y + stackedSelBox.height &&
+        cornerBox.y + cornerBox.height > stackedSelBox.y;
+      expect(overlap).toBe(false);
+
+      // 打開刪稿暫存區清單時隱藏
+      await mobilePage.locator('[data-testid="format-more-topbar"]').tap();
+      await mobilePage.locator('[data-testid="format-menu-trash-open"]').tap();
+      await mobilePage.locator('[data-testid="trash-sheet"]').waitFor({ state: 'visible' });
+      expect(await selNotice.count()).toBe(0);
+      await mobilePage.locator('[data-testid="trash-close"]').tap();
+
+      // 專注模式時不顯示
+      await textarea.tap();
+      await mobilePage.keyboard.press('Control+a');
+      await selNotice.waitFor({ state: 'visible' });
+      await mobilePage.locator('[data-testid="enter-focus-mode"]').tap();
+      expect(await selNotice.count()).toBe(0);
+    } finally {
+      await mobileCtx.close();
+    }
+
+    // 電腦寬螢幕：選取顯示且焦點離開正文後隱藏
+    const desktopCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await seedBrowserStorage(desktopCtx);
+    const desktopPage = await desktopCtx.newPage();
+    try {
+      await desktopPage.goto(`${baseUrl}/p/${BOOK_ID}/write/ch-select`, { waitUntil: 'domcontentloaded' });
+      const textarea = desktopPage.locator('[data-testid="writing-input"]');
+      const selNotice = desktopPage.locator('[data-testid="trash-selection-notice"]');
+      await textarea.waitFor({ state: 'visible' });
+
+      await textarea.click();
+      await desktopPage.keyboard.press('Control+a');
+      await selNotice.waitFor({ state: 'visible' });
+      expect(await selNotice.textContent()).toBe('已選 110 字，刪掉會收進暫存區');
+
+      await desktopPage.locator('[data-testid="toggle-cards-topbar"]').focus();
+      await selNotice.waitFor({ state: 'hidden' });
+    } finally {
+      await desktopCtx.close();
+    }
+  }, 60000);
+
+  it('返工 1 修正輪 2 必修 3：真實非範例書稿於手機橫拿（頁首顯示與隱藏）及寬版下，.trash-corner-stack 位置正確且寬版 top 為 auto', async () => {
+    // 1. 手機橫拿：未打字（頁首可見）與打字中（html.landscape-writing 頁首收起）
+    const landscapeCtx = await browser.newContext({
+      viewport: { width: 667, height: 375 },
+      hasTouch: true,
+      isMobile: true,
+    });
+    await seedBrowserStorage(landscapeCtx);
+    const landscapePage = await landscapeCtx.newPage();
+    try {
+      await landscapePage.goto(`${baseUrl}/p/${BOOK_ID}/write/ch-select`, { waitUntil: 'domcontentloaded' });
+      const textarea = landscapePage.locator('[data-testid="writing-input"]');
+      const topbar = landscapePage.locator('.editor .topbar.has-save-reminder');
+      const stack = landscapePage.locator('.trash-corner-stack');
+      const selNotice = landscapePage.locator('[data-testid="trash-selection-notice"]');
+      await textarea.waitFor({ state: 'visible' });
+
+      // 確認測試對象確為含 .has-save-reminder 的真實非範例書稿
+      expect(await landscapePage.evaluate(() => document.documentElement.getAttribute('data-layout'))).toBe(
+        'phone-landscape',
+      );
+      expect(await topbar.count()).toBe(1);
+      expect(await topbar.isVisible()).toBe(true);
+
+      // 選取文字讓 .trash-corner-stack 顯示（頁首可見狀態）
+      await textarea.tap();
+      await landscapePage.keyboard.press('Control+Home');
+      await landscapePage.keyboard.down('Shift');
+      for (let i = 0; i < 15; i += 1) await landscapePage.keyboard.press('ArrowRight');
+      await landscapePage.keyboard.up('Shift');
+      await selNotice.waitFor({ state: 'visible' });
+
+      const topbarBox = await topbar.boundingBox();
+      const stackVisibleTopbarBox = await stack.boundingBox();
+      expect(topbarBox).not.toBeNull();
+      expect(stackVisibleTopbarBox).not.toBeNull();
+      // 頁首可見時，提示應放在頁首下方（約 60px），不可壓到頂部列，也不可被直拿 92px 規則蓋過
+      expect(stackVisibleTopbarBox.y).toBeGreaterThanOrEqual(topbarBox.y + topbarBox.height);
+      expect(stackVisibleTopbarBox.y).toBeLessThan(80);
+
+      // 模擬橫拿打字鍵盤開啟（視窗可用高度縮至 220px），由 App 本身進入 html.landscape-writing 並收起頁首
+      await landscapePage.setViewportSize({ width: 667, height: 220 });
+      await landscapePage.waitForFunction(
+        () =>
+          document.documentElement.classList.contains('landscape-writing') &&
+          document.documentElement.getAttribute('data-layout') === 'phone-landscape',
+      );
+      await topbar.waitFor({ state: 'hidden' });
+
+      const stackWritingBox = await stack.boundingBox();
+      const cardsBtnBox = await landscapePage.locator('[data-testid="toggle-cards-landscape"]').boundingBox();
+      const formatBtnBox = await landscapePage.locator('[data-testid="format-more-landscape"]').boundingBox();
+      expect(stackWritingBox).not.toBeNull();
+      expect(cardsBtnBox).not.toBeNull();
+      expect(formatBtnBox).not.toBeNull();
+      // 頁首收起時應放回上方角落（約 8px），不可掉進 220px 高螢幕的正文中央（>= 80px）
+      expect(stackWritingBox.y).toBeLessThan(24);
+      expect(stackWritingBox.y + stackWritingBox.height).toBeLessThan(110);
+      // 不可壓到右上「看卡片」或左上「⋯」浮動鈕
+      const overlaps = (a, b) =>
+        a.x < b.x + b.width && a.x + a.width > b.x && a.y < b.y + b.height && a.y + a.height > b.y;
+      expect(overlaps(stackWritingBox, cardsBtnBox)).toBe(false);
+      expect(overlaps(stackWritingBox, formatBtnBox)).toBe(false);
+    } finally {
+      await landscapeCtx.close();
+    }
+
+    // 2. 寬版（1280×900）：真實非範例書稿有 .has-save-reminder 時，top 仍維持 auto 且貼右下角不拉伸
+    const wideCtx = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    await seedBrowserStorage(wideCtx);
+    const widePage = await wideCtx.newPage();
+    try {
+      await widePage.goto(`${baseUrl}/p/${BOOK_ID}/write/ch-select`, { waitUntil: 'domcontentloaded' });
+      const textarea = widePage.locator('[data-testid="writing-input"]');
+      const topbar = widePage.locator('.editor .topbar.has-save-reminder');
+      const stack = widePage.locator('.trash-corner-stack');
+      const selNotice = widePage.locator('[data-testid="trash-selection-notice"]');
+      await textarea.waitFor({ state: 'visible' });
+
+      expect(await widePage.evaluate(() => document.documentElement.getAttribute('data-layout'))).toBe('wide');
+      expect(await topbar.count()).toBe(1);
+
+      await textarea.click();
+      await widePage.keyboard.press('Control+a');
+      await selNotice.waitFor({ state: 'visible' });
+
+      const wideInspection = await stack.evaluate((el) => {
+        const computed = getComputedStyle(el);
+        const matchingTopRules = [];
+        for (const sheet of Array.from(document.styleSheets)) {
+          let rules;
+          try {
+            rules = sheet.cssRules;
+          } catch {
+            continue;
+          }
+          for (const rule of Array.from(rules)) {
+            if (rule instanceof CSSStyleRule && rule.style.top && el.matches(rule.selectorText)) {
+              matchingTopRules.push({ selector: rule.selectorText, top: rule.style.top });
+            }
+          }
+        }
+        return {
+          computedTop: computed.top,
+          computedBottom: computed.bottom,
+          matchingTopRules,
+        };
+      });
+      const wideStackBox = await stack.boundingBox();
+      expect(wideStackBox).not.toBeNull();
+      // position: fixed + top: auto + bottom: 20px 在 CSSOM 會解析為貼底像素值（非 92px），且命中的最高規則為 top: auto
+      expect(wideInspection.matchingTopRules.some((r) => r.selector.includes('.has-save-reminder'))).toBe(false);
+      expect(wideInspection.matchingTopRules.at(-1)?.top).toBe('auto');
+      expect(Math.abs(parseFloat(wideInspection.computedTop) - wideStackBox.y)).toBeLessThan(1.5);
+      expect(wideStackBox.y).toBeGreaterThan(450);
+      expect(wideStackBox.height).toBeLessThan(120);
+    } finally {
+      await wideCtx.close();
     }
   }, 60000);
 });

@@ -4,9 +4,10 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { FormatLayer, type FormatTools } from '../components/FormatTools';
 import { TrashCornerNotice } from '../components/TrashCornerNotice';
+import { TrashSelectionNotice } from '../components/TrashSelectionNotice';
 import * as trashCopy from './trashCopy';
 
-const SIMPLIFIED_CHARS = /[删暂记说这为没现还进时请标样]/u;
+const SIMPLIFIED_CHARS = /[删暂记说这为没现还进时请标样选会]/u;
 const FORBIDDEN_PHRASE = '這台' + '裝置';
 
 describe('WO-138 第 5 段：刪稿暫存區暫定用字與選單／角落提示驗證', () => {
@@ -86,6 +87,12 @@ describe('WO-138 第 5 段：刪稿暫存區暫定用字與選單／角落提示
     expect(trashCopy.TRASH_DISCARDED_BAR).toBe('已丟掉這則刪稿');
     expect(trashCopy.TRASH_UNDO_BUTTON).toBe('復原');
     expect(trashCopy.TRASH_RESTORED_TOAST).toBe('已放回刪稿暫存區');
+    expect(trashCopy.TRASH_SELECTION_THRESHOLD_HINT).toBe('刪掉會收進暫存區');
+    expect(trashCopy.trashSelectionCountLabel(10)).toBe('已選 10 字');
+    expect(trashCopy.trashSelectionCountLabel(10)).not.toContain('不會收進暫存區');
+    expect(trashCopy.trashSelectionCountLabel(99)).toBe('已選 99 字');
+    expect(trashCopy.trashSelectionCountLabel(100)).toBe('已選 100 字，刪掉會收進暫存區');
+    expect(trashCopy.trashSelectionCountLabel(1200)).toBe('已選 1,200 字，刪掉會收進暫存區');
   });
 
   it('全部用字遵守臺灣繁體中文（無簡體字、無「您」、無「這台＋裝置」、無「彈窗」）', () => {
@@ -119,6 +126,15 @@ describe('WO-138 第 5 段：刪稿暫存區暫定用字與選單／角落提示
       .replace(/^\s*\/\/.*$/gm, '');
     expect(noticeSrc).not.toMatch(/[㐀-鿿　-〿＀-￯]/u);
     expect(noticeSrc).toContain("from '../copy/trashCopy'");
+
+    const selectionNoticeSrc = readFileSync(
+      new URL('../components/TrashSelectionNotice.tsx', import.meta.url),
+      'utf8',
+    )
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(selectionNoticeSrc).not.toMatch(/[㐀-鿿　-〿＀-￯]/u);
+    expect(selectionNoticeSrc).toContain("from '../copy/trashCopy'");
   });
 
   it('FormatLayer 支援 extraMenuItems（排在排版旁且支援筆數小字與選取送入），TrashCornerNotice 可點擊', () => {
@@ -193,5 +209,15 @@ describe('WO-138 第 5 段：刪稿暫存區暫定用字與選單／角落提示
       'utf8',
     );
     expect(trashCss).toMatch(/html\[data-focus-mode="true"\] \.trash-corner-notice/);
+
+    const selUnderHtml = renderToStaticMarkup(createElement(TrashSelectionNotice, { wordCount: 10 }));
+    expect(selUnderHtml).toContain('data-testid="trash-selection-notice"');
+    expect(selUnderHtml).toContain('data-threshold="false"');
+    expect(selUnderHtml).toContain('已選 10 字');
+    expect(selUnderHtml).not.toContain(trashCopy.TRASH_SELECTION_THRESHOLD_HINT);
+
+    const selOverHtml = renderToStaticMarkup(createElement(TrashSelectionNotice, { wordCount: 100 }));
+    expect(selOverHtml).toContain('data-threshold="true"');
+    expect(selOverHtml).toContain('已選 100 字，刪掉會收進暫存區');
   });
 });

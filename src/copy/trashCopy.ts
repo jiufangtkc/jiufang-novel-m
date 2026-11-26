@@ -1,4 +1,5 @@
 import { formatInteger } from '../domain/formatNumber';
+import { shouldAutoCaptureDeletion } from '../domain/trash';
 
 /**
  * WO-138 刪稿暫存區：全部畫面用字（暫定，待九方審）。
@@ -100,3 +101,14 @@ export const TRASH_DISCARD_CANCEL = '取消';
 export const TRASH_DISCARDED_BAR = '已丟掉這則刪稿';
 export const TRASH_UNDO_BUTTON = '復原';
 export const TRASH_RESTORED_TOAST = '已放回刪稿暫存區';
+
+/** 返工 1（暫定，待九方審）：正文選取字數角落提示。 */
+export const TRASH_SELECTION_THRESHOLD_HINT = '刪掉會收進暫存區';
+
+export function trashSelectionCountLabel(wordCount: number): string {
+  const base = `已選 ${formatInteger(wordCount)} 字`;
+  if (shouldAutoCaptureDeletion(wordCount)) {
+    return `${base}，${TRASH_SELECTION_THRESHOLD_HINT}`;
+  }
+  return base;
+}

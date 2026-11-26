@@ -4,7 +4,10 @@ import {
   shouldAutoCaptureDeletion,
   type SelectionSnapshot,
 } from '../domain/trash';
-import type { TextChangeSource } from '../domain/writingLog';
+import {
+  classifyTextDelta,
+  type TextChangeSource,
+} from '../domain/writingLog';
 
 /** WO-138：系統復原自動撤回時間窗（15 秒）。 */
 export const TRASH_UNDO_WINDOW_MS = 15_000;
@@ -15,6 +18,7 @@ export interface LastAutoTrash {
   beforeText: string;
   afterText: string;
   capturedAtMs: number;
+  deletionWordDelta: number;
 }
 
 export interface TrashCapturePayload {
@@ -26,6 +30,7 @@ export interface TrashCapturePayload {
   beforeText: string;
   afterText: string;
   capturedAtMs: number;
+  deletionWordDelta: number;
 }
 
 export type TrashEditOutcome =
@@ -112,6 +117,9 @@ export function createTrashCaptureTracker(): TrashCaptureTracker {
         return { kind: 'none' };
       }
 
+      const withoutDeleted = before.slice(0, range.start) + before.slice(range.end);
+      const deletionWordDelta = classifyTextDelta(before, withoutDeleted).wordDelta;
+
       return {
         kind: 'capture',
         payload: {
@@ -119,6 +127,7 @@ export function createTrashCaptureTracker(): TrashCaptureTracker {
           beforeText: before,
           afterText: after,
           capturedAtMs: nowMs,
+          deletionWordDelta,
         },
       };
     },
@@ -130,6 +139,7 @@ export function createTrashCaptureTracker(): TrashCaptureTracker {
         beforeText: payload.beforeText,
         afterText: payload.afterText,
         capturedAtMs: payload.capturedAtMs,
+        deletionWordDelta: payload.deletionWordDelta,
       };
     },
 

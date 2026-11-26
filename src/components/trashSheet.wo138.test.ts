@@ -203,12 +203,14 @@ describe('WO-138 第 6 段：TrashSheet 畫面、上限提示、版面與專注�
     expect(focusHtml).not.toContain('data-testid="format-more-topbar"');
     expect(focusHtml).not.toContain('data-testid="format-more-landscape"');
     expect(focusHtml).not.toContain('data-testid="trash-corner-notice"');
+    expect(focusHtml).not.toContain('data-testid="trash-selection-notice"');
     expect(focusHtml).not.toContain('data-testid="trash-sheet"');
   });
 
-  it('trashSheet.css 遵守 44px 觸控熱區、CSS 色票變數與專注模式隱藏規則', () => {
+  it('trashSheet.css 遵守 44px 觸控熱區、CSS 色票變數、--safe-top 與專注模式隱藏規則', () => {
     const css = readFileSync(new URL('./trashSheet.css', import.meta.url), 'utf8');
     expect(css).toMatch(/min-height:\s*44px/);
+    expect(css).toContain('var(--safe-top');
     expect(css).toContain('var(--panel)');
     expect(css).toContain('var(--bg)');
     expect(css).toContain('var(--text)');
@@ -218,7 +220,15 @@ describe('WO-138 第 6 段：TrashSheet 畫面、上限提示、版面與專注�
     expect(css).toContain('var(--danger)');
     expect(css).toContain('color-mix(in srgb, var(--accent)');
     expect(css).toContain('.trash-sheet-status');
+    expect(css).toContain('.trash-corner-stack');
+    expect(css).toMatch(/html\[data-layout="phone-portrait"\] \.editor \.topbar\.has-save-reminder ~ \.trash-corner-stack/);
+    expect(css).not.toMatch(/^\.editor \.topbar\.has-save-reminder ~ \.trash-corner-stack/m);
+    expect(css).toMatch(/html\[data-layout="phone-landscape"\] \.trash-corner-stack\s*\{[\s\S]*?top:\s*calc\(var\(--safe-top,\s*0px\)\s*\+\s*60px\)/);
+    expect(css).toMatch(/html\.landscape-writing\[data-layout="phone-landscape"\] \.trash-corner-stack\s*\{[\s\S]*?top:\s*calc\(var\(--safe-top,\s*0px\)\s*\+\s*8px\)/);
+    expect(css).toMatch(/html\[data-layout="wide"\] \.trash-corner-stack,\s*html\[data-layout="medium"\] \.trash-corner-stack\s*\{[\s\S]*?top:\s*auto/);
+    expect(css).toMatch(/\.trash-selection-notice\s*\{[\s\S]*?pointer-events:\s*none/);
     expect(css).toMatch(/html\[data-focus-mode="true"\] \.trash-corner-notice[\s\S]*?display:\s*none !important/);
+    expect(css).toMatch(/html\[data-focus-mode="true"\] \.trash-selection-notice[\s\S]*?display:\s*none !important/);
     expect(css).toMatch(/html\[data-focus-mode="true"\] \.trash-sheet-backdrop[\s\S]*?display:\s*none !important/);
 
     const sheetSrc = readFileSync(new URL('./TrashSheet.tsx', import.meta.url), 'utf8')

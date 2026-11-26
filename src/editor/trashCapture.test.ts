@@ -80,6 +80,7 @@ describe('WO-138 第 4 段：編輯器自動收集與門檻', () => {
     if (resType.kind === 'capture') {
       expect(resType.payload.deletedText).toBe(deleted);
       expect(resType.payload.wordCount).toBe(104);
+      expect(resType.payload.deletionWordDelta).toBe(-104);
       expect(resType.payload.charOffset).toBe(delStart);
       expect(resType.payload.beforeAnchor).toBe('燈塔說「好」字。');
       expect(resType.payload.afterAnchor).toBe('「好」字留在港口。');
