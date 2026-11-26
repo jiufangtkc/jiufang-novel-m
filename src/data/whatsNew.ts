@@ -12,6 +12,13 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-139（暫定，待九方審）
+  {
+    version: '0.7.0',
+    items: [
+      '排版新增『統一標點』：一鍵把破折號、刪節號、引號和中文裡的半形標點，統一成臺灣出版常用的寫法',
+    ],
+  },
   // WO-138（暫定，待九方審）
   {
     version: '0.6.0',
