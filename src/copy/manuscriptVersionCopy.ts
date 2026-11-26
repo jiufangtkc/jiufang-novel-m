@@ -9,24 +9,24 @@ import { formatInteger } from '../domain/formatNumber';
 export const VERSION_MENU_OPEN = '版本';
 export const VERSION_SHEET_TITLE = '版本';
 export const VERSION_EMPTY_HINT = '這一章還沒有存過版本。';
-export const VERSION_SAVE_BUTTON = '存成版本';
-export const VERSION_NOTE_HINT = '可以寫一句備註，也可以空白。';
-export const VERSION_NOTE_PLACEHOLDER = '例如「大改前」';
-export const VERSION_SAVED_TOAST = '已存成版本';
-export const VERSION_DUPLICATE_HINT = '目前的內容和最新一版相同，沒有再存一份。';
+export const VERSION_SAVE_BUTTON = '儲存新版本';
+export const VERSION_NOTE_HINT = '請寫一句備註（可留白）。';
+export const VERSION_NOTE_PLACEHOLDER = '例如「改稿前」';
+export const VERSION_SAVED_TOAST = '版本已儲存';
+export const VERSION_DUPLICATE_HINT = '內容與最新版本相同。';
 export const VERSION_PREVIEW_BUTTON = '預覽';
-export const VERSION_PREVIEW_READONLY_HINT = '這一版只能看，按「用這一版」才會換上。';
+export const VERSION_PREVIEW_READONLY_HINT = '這一版只能看，點「用這一版」換上。';
 export const VERSION_RESTORE_BUTTON = '用這一版';
 export const VERSION_RESTORE_CONFIRM_BODY =
-  '要把這一章換成這份舊版嗎？現在的樣子會先自動存成一個版本，之後也可以復原。';
+  '要把這一章換成這份舊版嗎？現版本會先自動另存，可用來復原。';
 export const VERSION_AUTO_SAVE_NOTE = '回到舊版前自動保存';
-export const VERSION_RESTORED_NOTICE_TITLE = '已換成舊版，可按「復原」';
+export const VERSION_RESTORED_NOTICE_TITLE = '已換成舊版';
 export const VERSION_UNDO_BUTTON = '復原';
 export const VERSION_UNDONE_TOAST = '已復原到用舊版之前的樣子';
 export const VERSION_UNDO_WARNING =
   '按「復原」會回到用舊版之前，連之後在這章新打的字也會一起還原。';
 export const VERSION_EVICTED_HINT =
-  '這一章的版本已滿 20 份，已清掉最舊、沒有手寫備註的一版。';
+  '這一章的版本已滿 20 份，已自動清除最舊版本。';
 export const VERSION_FULL_LOCKED_HINT =
   '這一章的版本已滿 20 份，而且都有備註。請先丟掉不需要的，再存新的。';
 export const VERSION_DISCARD_CONFIRM_TITLE = '要丟掉這一版嗎？';
@@ -59,8 +59,8 @@ export const VERSION_DISCARD_UNDONE_HINT = '已放回版本清單';
 export const VERSION_RESTORE_CONFIRM_TITLE = '要換成這一版嗎？';
 export const VERSION_RESTORE_OVER_LIMIT_TOAST =
   '已換成舊版；這一章原本 20 份都有備註，已暫時多留一份自動保存，請抽空整理。';
-export const VERSION_AUTO_SAVE_FAIL_TOAST = '現在的樣子沒有存成版本，先不換。';
-export const VERSION_SAVE_COMPOSING_TOAST = '先把正在輸入的字打完，再存成版本。';
+export const VERSION_AUTO_SAVE_FAIL_TOAST = '現版本沒有另存成功，先不換。';
+export const VERSION_SAVE_COMPOSING_TOAST = '先把正在輸入的字打完，再儲存新版本。';
 export const VERSION_RESTORE_COMPOSING_TOAST = '先把正在輸入的字打完，再換成舊版。';
 export const VERSION_UNDO_COMPOSING_TOAST = '先把正在輸入的字打完，再復原。';
 export const VERSION_NOTICE_CLOSE_ARIA = '關閉版本提示';

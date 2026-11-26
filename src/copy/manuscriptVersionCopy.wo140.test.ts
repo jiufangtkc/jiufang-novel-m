@@ -28,30 +28,28 @@ describe('WO-140 第 5 段：稿子版本暫定用字、選單與元件守衛驗
     expect(versionCopy.VERSION_MENU_OPEN).toBe('版本');
     expect(versionCopy.VERSION_SHEET_TITLE).toBe('版本');
     expect(versionCopy.VERSION_EMPTY_HINT).toBe('這一章還沒有存過版本。');
-    expect(versionCopy.VERSION_SAVE_BUTTON).toBe('存成版本');
-    expect(versionCopy.VERSION_NOTE_HINT).toBe('可以寫一句備註，也可以空白。');
-    expect(versionCopy.VERSION_NOTE_PLACEHOLDER).toBe('例如「大改前」');
-    expect(versionCopy.VERSION_SAVED_TOAST).toBe('已存成版本');
-    expect(versionCopy.VERSION_DUPLICATE_HINT).toBe(
-      '目前的內容和最新一版相同，沒有再存一份。',
-    );
+    expect(versionCopy.VERSION_SAVE_BUTTON).toBe('儲存新版本');
+    expect(versionCopy.VERSION_NOTE_HINT).toBe('請寫一句備註（可留白）。');
+    expect(versionCopy.VERSION_NOTE_PLACEHOLDER).toBe('例如「改稿前」');
+    expect(versionCopy.VERSION_SAVED_TOAST).toBe('版本已儲存');
+    expect(versionCopy.VERSION_DUPLICATE_HINT).toBe('內容與最新版本相同。');
     expect(versionCopy.VERSION_PREVIEW_BUTTON).toBe('預覽');
     expect(versionCopy.VERSION_PREVIEW_READONLY_HINT).toBe(
-      '這一版只能看，按「用這一版」才會換上。',
+      '這一版只能看，點「用這一版」換上。',
     );
     expect(versionCopy.VERSION_RESTORE_BUTTON).toBe('用這一版');
     expect(versionCopy.VERSION_RESTORE_CONFIRM_BODY).toBe(
-      '要把這一章換成這份舊版嗎？現在的樣子會先自動存成一個版本，之後也可以復原。',
+      '要把這一章換成這份舊版嗎？現版本會先自動另存，可用來復原。',
     );
     expect(versionCopy.VERSION_AUTO_SAVE_NOTE).toBe('回到舊版前自動保存');
-    expect(versionCopy.VERSION_RESTORED_NOTICE_TITLE).toBe('已換成舊版，可按「復原」');
+    expect(versionCopy.VERSION_RESTORED_NOTICE_TITLE).toBe('已換成舊版');
     expect(versionCopy.VERSION_UNDO_BUTTON).toBe('復原');
     expect(versionCopy.VERSION_UNDONE_TOAST).toBe('已復原到用舊版之前的樣子');
     expect(versionCopy.VERSION_UNDO_WARNING).toBe(
       '按「復原」會回到用舊版之前，連之後在這章新打的字也會一起還原。',
     );
     expect(versionCopy.VERSION_EVICTED_HINT).toBe(
-      '這一章的版本已滿 20 份，已清掉最舊、沒有手寫備註的一版。',
+      '這一章的版本已滿 20 份，已自動清除最舊版本。',
     );
     expect(versionCopy.VERSION_FULL_LOCKED_HINT).toBe(
       '這一章的版本已滿 20 份，而且都有備註。請先丟掉不需要的，再存新的。',
@@ -81,10 +79,10 @@ describe('WO-140 第 5 段：稿子版本暫定用字、選單與元件守衛驗
       '已換成舊版；這一章原本 20 份都有備註，已暫時多留一份自動保存，請抽空整理。',
     );
     expect(versionCopy.VERSION_AUTO_SAVE_FAIL_TOAST).toBe(
-      '現在的樣子沒有存成版本，先不換。',
+      '現版本沒有另存成功，先不換。',
     );
     expect(versionCopy.VERSION_SAVE_COMPOSING_TOAST).toBe(
-      '先把正在輸入的字打完，再存成版本。',
+      '先把正在輸入的字打完，再儲存新版本。',
     );
     expect(versionCopy.VERSION_RESTORE_COMPOSING_TOAST).toBe(
       '先把正在輸入的字打完，再換成舊版。',
