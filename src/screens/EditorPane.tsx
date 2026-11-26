@@ -13,6 +13,15 @@ import { TrashCornerNotice } from '../components/TrashCornerNotice';
 import { TrashSelectionNotice } from '../components/TrashSelectionNotice';
 import { TrashSheet } from '../components/TrashSheet';
 import '../components/trashSheet.css';
+import {
+  ManuscriptVersionSheet,
+  type DiscardVersionActionResult,
+  type SaveVersionActionResult,
+  type UndoDiscardVersionActionResult,
+  type UpdateVersionNoteActionResult,
+} from '../components/ManuscriptVersionSheet';
+import { VersionRestoreNotice } from '../components/VersionRestoreNotice';
+import '../components/manuscriptVersionSheet.css';
 import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
 import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
 import { SaveHeaderStatus } from '../components/SaveHeaderStatus';
@@ -66,6 +75,22 @@ import {
   type TrashPutBackPlan,
 } from '../domain/trash';
 import { countWords } from '../domain/wordCount';
+import { versionsForChapter, type ManuscriptVersion } from '../domain/manuscriptVersions';
+import {
+  VERSION_EVICTED_HINT,
+  VERSION_MENU_OPEN,
+  VERSION_RESTORE_OVER_LIMIT_TOAST,
+  VERSION_UNDO_COMPOSING_TOAST,
+  VERSION_UNDO_INVALID_TOAST,
+  VERSION_UNDONE_TOAST,
+  versionMenuBadge,
+} from '../copy/manuscriptVersionCopy';
+import {
+  executeVersionRestore,
+  executeVersionRestoreUndo,
+  type VersionRestoreFlowDeps,
+  type VersionRestoreOutcome,
+} from '../editor/versionRestoreFlow';
 import type { TrashCapturePayload } from '../editor/trashCapture';
 import {
   TRASH_CORNER_ADDED,
@@ -114,7 +139,16 @@ import {
   useLayout,
 } from '../layout';
 import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthReminder';
-import { getProjectTrash, getProjectTrashRead, isProjectTrashReadOnly, useProject, useSample } from '../state/sampleStore';
+import {
+  getProjectChapterVersionRead,
+  getProjectChapterVersions,
+  getProjectTrash,
+  getProjectTrashRead,
+  isProjectChapterVersionsReadOnly,
+  isProjectTrashReadOnly,
+  useProject,
+  useSample,
+} from '../state/sampleStore';
 import { caretToRestore, nearIdsOf, readWritePlace, saveWritePlace, scrollTopToRestore } from '../state/navMemory';
 import { editorSaveStatus, unifiedFocusSaveLabel } from './editorSaveStatus';
 import {
@@ -125,6 +159,18 @@ import {
   useHalfWidthReminder,
 } from './HalfWidthReminder';
 import './focusMode.css';
+
+export function resolveVersionRestoreToast(outcome: VersionRestoreOutcome): string | null {
+  if (outcome.status !== 'restored') return null;
+  if (outcome.overLimit) return VERSION_RESTORE_OVER_LIMIT_TOAST;
+  if (
+    outcome.autoSave.evictedCount > 0 ||
+    outcome.autoSave.noticeCode === 'auto-saved-evicted-oldest'
+  ) {
+    return VERSION_EVICTED_HINT;
+  }
+  return null;
+}
 
 export function EditorPane({
   projectId,
@@ -322,6 +368,23 @@ export function EditorPane({
   const trashItems = getProjectTrash(state, projectId);
   const trashReadOnly = isProjectTrashReadOnly(state, projectId);
   const [trashOpen, setTrashOpen] = useState(false);
+
+  // WO-140：稿子版本狀態與還原／versionRestoreUndo 接線
+  const versionRead = getProjectChapterVersionRead(state, projectId);
+  const currentChapterVersions = versionsForChapter(
+    getProjectChapterVersions(state, projectId),
+    chapter.id,
+  );
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const versionSheetOpenedForRef = useRef({ projectId, chapterId: chapter.id });
+  const stateRef = useRef(state);
+  stateRef.current = state;
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+  const projectIdRef = useRef(projectId);
+  projectIdRef.current = projectId;
+  const chapterIdRef = useRef(chapter.id);
+  chapterIdRef.current = chapter.id;
   const [trashNotice, setTrashNotice] = useState<{
     itemId: string | null;
     message: string;
@@ -384,9 +447,9 @@ export function EditorPane({
 
   useEffect(() => {
     syncSelectionRef.current();
-  }, [chapter.content, trashOpen, focusMode]);
+  }, [chapter.content, trashOpen, versionsOpen, focusMode]);
 
-  const showSelectionNotice = !focusMode && !trashOpen && selectionWordCount !== null;
+  const showSelectionNotice = !focusMode && !trashOpen && !versionsOpen && selectionWordCount !== null;
 
   useEffect(() => {
     if (!trashNotice) return;
@@ -399,6 +462,7 @@ export function EditorPane({
   useEffect(() => {
     if (focusMode) {
       setTrashOpen(false);
+      setVersionsOpen(false);
     }
   }, [focusMode]);
 
@@ -582,7 +646,122 @@ export function EditorPane({
     return true;
   };
 
+  const handleSaveChapterVersion = async (note: string): Promise<SaveVersionActionResult> => {
+    if (isComposingRef.current) return { kind: 'composing' };
+    const liveContent = ref.current?.value ?? chapter.content ?? '';
+    const result = await actionsRef.current.saveChapterVersion(projectId, {
+      chapter_id: chapter.id,
+      chapter_title_snapshot: chapter.title ?? '',
+      content: liveContent,
+      note,
+    });
+    if (result.kind === 'saved') {
+      return {
+        kind: 'saved',
+        noticeCode: result.noticeCode,
+        persisted: result.persisted,
+      };
+    }
+    if (result.kind === 'duplicate') {
+      return { kind: 'duplicate', persisted: result.persisted };
+    }
+    if (result.kind === 'blocked-full') return { kind: 'blocked-full' };
+    return { kind: 'read-only' };
+  };
+
+  const handleUpdateChapterVersionNote = async (
+    versionId: string,
+    note: string,
+  ): Promise<UpdateVersionNoteActionResult> => {
+    const result = await actionsRef.current.updateChapterVersionNote(projectId, versionId, note);
+    if (result.kind === 'updated') return { kind: 'updated' };
+    if (result.kind === 'read-only') return { kind: 'read-only' };
+    return { kind: 'not-found' };
+  };
+
+  const handleDiscardChapterVersion = async (
+    version: ManuscriptVersion,
+  ): Promise<DiscardVersionActionResult> => {
+    const result = await actionsRef.current.discardChapterVersion(projectId, version.version_id);
+    if (result.kind === 'discarded') return { kind: 'discarded' };
+    if (result.kind === 'read-only') return { kind: 'read-only' };
+    return { kind: 'not-found' };
+  };
+
+  const handleUndoDiscardChapterVersion = async (
+    version: ManuscriptVersion,
+  ): Promise<UndoDiscardVersionActionResult> => {
+    const result = await actionsRef.current.restoreDiscardedChapterVersion(projectId, version);
+    if (result.kind === 'restored') return { kind: 'restored' };
+    if (result.kind === 'already-exists') return { kind: 'already-exists' };
+    if (result.kind === 'blocked-full') return { kind: 'blocked-full' };
+    return { kind: 'read-only' };
+  };
+
+  const versionRestoreDeps = (): VersionRestoreFlowDeps => ({
+    getNodes: () =>
+      stateRef.current.projects.find((item) => item.id === projectIdRef.current)?.nodes ?? null,
+    readLive: () => ref.current?.value ?? null,
+    isComposing: () => Boolean(isComposingRef.current),
+    isReadOnly: () => isProjectChapterVersionsReadOnly(stateRef.current, projectIdRef.current),
+    getCurrentProjectId: () => projectIdRef.current,
+    getCurrentChapterId: () => chapterIdRef.current,
+    saveAutoBeforeRestore: (input) =>
+      actionsRef.current.saveAutoChapterVersionBeforeRestore(projectIdRef.current, input),
+    replaceText,
+    setRestoreUndo: (snapshot) => actionsRef.current.setVersionRestoreUndo(snapshot),
+    clearRestoreUndo: () => actionsRef.current.clearVersionRestoreUndo(),
+    onAfterApplyOrUndo: () => halfWidth.rescan(),
+  });
+
+  const handleRestoreChapterVersion = async (
+    targetVersion: ManuscriptVersion,
+  ): Promise<VersionRestoreOutcome> => {
+    const outcome = await executeVersionRestore(versionRestoreDeps(), {
+      projectId,
+      currentId: chapter.id,
+      openedProjectId: versionSheetOpenedForRef.current.projectId,
+      openedChapterId: versionSheetOpenedForRef.current.chapterId,
+      targetVersion,
+    });
+    if (outcome.status === 'restored') {
+      setVersionsOpen(false);
+      const toastMessage = resolveVersionRestoreToast(outcome);
+      if (toastMessage) {
+        actionsRef.current.toast(toastMessage);
+      }
+    }
+    return outcome;
+  };
+
+  const handleVersionRestoreUndo = () => {
+    const outcome = executeVersionRestoreUndo(versionRestoreDeps(), {
+      projectId,
+      currentId: chapter.id,
+      snapshot: stateRef.current.versionRestoreUndo,
+    });
+    if (outcome.status === 'restored') {
+      actionsRef.current.toast(VERSION_UNDONE_TOAST);
+    } else if (outcome.status === 'composing') {
+      actionsRef.current.toast(VERSION_UNDO_COMPOSING_TOAST);
+    } else if (outcome.status === 'invalid') {
+      actionsRef.current.toast(VERSION_UNDO_INVALID_TOAST);
+    }
+  };
+
   const extraMenuItems: FormatExtraMenuItem[] = [
+    {
+      id: 'versions-open',
+      label: VERSION_MENU_OPEN,
+      badge:
+        currentChapterVersions.length > 0
+          ? versionMenuBadge(currentChapterVersions.length)
+          : undefined,
+      onSelect: () => {
+        versionSheetOpenedForRef.current = { projectId, chapterId: chapter.id };
+        setVersionsOpen(true);
+      },
+    },
     {
       id: 'trash-open',
       label: TRASH_MENU_OPEN,
@@ -616,7 +795,7 @@ export function EditorPane({
           snap.end > snap.start &&
           countWords(snap.valueSnapshot.slice(snap.start, snap.end)) > 0,
       );
-      return 2 + (hasSel ? 1 : 0);
+      return 3 + (hasSel ? 1 : 0);
     },
   });
   onUserEditRef.current = () => {
@@ -1100,6 +1279,7 @@ export function EditorPane({
         .join(' ')}
       data-testid="editor"
       data-trash-open={trashOpen ? 'true' : undefined}
+      data-versions-open={versionsOpen ? 'true' : undefined}
       data-yield={isYieldLeft ? 'left' : isYieldRight ? 'right' : 'none'}
       data-yielding={isYieldLeft ? 'left' : isYieldRight ? 'right' : undefined}
     >
@@ -1282,6 +1462,15 @@ export function EditorPane({
       ) : null}
       <FormatLayer tools={formatTools} extraMenuItems={extraMenuItems} />
       {!focusMode ? <FormatNotice tools={formatTools} /> : null}
+      {!focusMode ? (
+        <VersionRestoreNotice
+          snapshot={state.versionRestoreUndo}
+          projectId={projectId}
+          chapterId={chapter.id}
+          onUndo={handleVersionRestoreUndo}
+          onDismiss={() => actions.clearVersionRestoreUndo()}
+        />
+      ) : null}
       {!focusMode && (trashNotice || showSelectionNotice) ? (
         <div className="trash-corner-stack">
           {trashNotice ? (
@@ -1311,6 +1500,22 @@ export function EditorPane({
         onPutBack={handlePutBackFromTrash}
         onDiscard={(item) => actions.removeTrashItem(projectId, item.itemId, { immediate: true })}
         onUndoDiscard={(item) => actions.restoreDeletedTrashItem(projectId, item, { immediate: true })}
+      />
+      <ManuscriptVersionSheet
+        open={versionsOpen && !focusMode}
+        projectId={projectId}
+        chapterId={chapter.id}
+        chapterTitle={chapter.title}
+        versions={currentChapterVersions}
+        versionRead={versionRead}
+        layoutMode={layoutMode}
+        isComposing={() => isComposingRef.current}
+        onClose={() => setVersionsOpen(false)}
+        onSaveVersion={handleSaveChapterVersion}
+        onUpdateNote={handleUpdateChapterVersionNote}
+        onDiscard={handleDiscardChapterVersion}
+        onUndoDiscard={handleUndoDiscardChapterVersion}
+        onRestoreVersion={handleRestoreChapterVersion}
       />
       <textarea
         ref={ref}

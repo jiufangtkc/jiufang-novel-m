@@ -9,6 +9,7 @@ import type { FileCard, SqlValue } from '../db/projectFile';
 import type { NodeType, ProgressCode } from '../domain/labels';
 import { emptyWritingLog, type WritingLogRow } from '../domain/writingLog';
 import type { TrashItem } from '../domain/trash';
+import type { ManuscriptVersion } from '../domain/manuscriptVersions';
 import {
   cloneDemoCards,
   DEMO_CATEGORIES_META_RAW,
@@ -69,6 +70,8 @@ export interface DemoProject {
   bookMetaPersisted?: boolean;
   /** WO-138：刪稿暫存區項目（未升格成檔案前隨本機儲存；升格後寫進 .db）。 */
   trashItems?: TrashItem[];
+  /** WO-140：稿子版本清單（未升格成檔案前隨本機儲存；升格後寫進 .db）。 */
+  manuscriptVersions?: ManuscriptVersion[];
 }
 
 export function demoParagraph(label: string, index: number): string {
