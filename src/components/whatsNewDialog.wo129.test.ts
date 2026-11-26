@@ -144,10 +144,13 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
     expect(html).toContain(
-      '<li>替每份稿子建立固定識別紀錄，方便日後重複開檔或跨裝置時認出同一部稿子（打開舊稿不會主動改寫原檔，等你下次儲存時才寫入）</li>',
+      '<li>從刪稿暫存區放回去的字、以及收進暫存區的刪除，都不會算進今天的進度；只有新打的字才算</li>',
     );
     expect(html).toContain(
-      '<li>統一稿子附加資料的相容規則：電腦版可照常開啟新存的稿子，遇到新版新增的附加資料也會原樣保留，不影響正文、目錄與卡片</li>',
+      '<li>新增刪稿暫存區：改稿時一次刪掉較長的段落會先留下來，可註記當時為什麼刪，也能放回原來的章節</li>',
+    );
+    expect(html).toContain(
+      '<li>這些刪稿會跟著稿子檔一起保存；打錯字的小刪除不會進去，避免存檔無謂變大</li>',
     );
 
     const confirmMatch = html.match(

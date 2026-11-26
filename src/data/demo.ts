@@ -8,6 +8,7 @@ import {
 import type { FileCard, SqlValue } from '../db/projectFile';
 import type { NodeType, ProgressCode } from '../domain/labels';
 import { emptyWritingLog, type WritingLogRow } from '../domain/writingLog';
+import type { TrashItem } from '../domain/trash';
 import {
   cloneDemoCards,
   DEMO_CATEGORIES_META_RAW,
@@ -66,6 +67,8 @@ export interface DemoProject {
   originBookUuid?: string | null;
   /** WO-137：是否已寫入 .db 的 jiufangm_book_meta（或既有檔原本就帶有）。 */
   bookMetaPersisted?: boolean;
+  /** WO-138：刪稿暫存區項目（未升格成檔案前隨本機儲存；升格後寫進 .db）。 */
+  trashItems?: TrashItem[];
 }
 
 export function demoParagraph(label: string, index: number): string {

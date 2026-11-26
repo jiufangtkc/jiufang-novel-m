@@ -12,6 +12,8 @@ import { DatabaseOpenError } from './openDbError';
 import { columnNames, tableNames, type Sql, type SqlValue } from './sql';
 import { readTimelineData, writeTimelineData, type TimelineRead } from './timelineMeta';
 import { readTransferData, writeTransferEvents, type TransferEvent, type TransferRead } from './transferMeta';
+import { readTrashData, writeTrashData, type TrashRead } from './trashMeta';
+import type { TrashItem } from '../domain/trash';
 
 const PROGRESS = new Set<string>(['Draft', '1st Edit', '2nd Edit', 'Final', 'Discarded']);
 
@@ -137,6 +139,8 @@ export interface LoadedFile {
   timeline: TimelineRead;
   /** WO-137：稿子內附加表的固定身分證（只讀，不建表）。 */
   bookMeta: BookMetaRead;
+  /** WO-138：稿子內附加表的刪稿暫存區（只讀，不建表）。 */
+  trash: TrashRead;
 }
 
 type ChapterNodeWithRaw = ChapterNode & {
@@ -492,6 +496,7 @@ export function readFileProject(sql: Sql): LoadedFile {
     transfer: readTransferData(sql),
     timeline,
     bookMeta: readBookMeta(sql),
+    trash: readTrashData(sql),
   };
 }
 
@@ -1021,6 +1026,8 @@ export function writeFileProject(
   exportEvents?: Readonly<Record<string, TransferEvent>>,
   /** WO-137：稿件固定身分證；不給就維持 P0-4 零寫入，完全不碰 jiufangm_book_meta。 */
   bookMeta?: BookMetaWritable,
+  /** WO-138：刪稿暫存區；未傳入或 absent 且為空陣列時零寫入，完全不碰 jiufangm_trash_*。 */
+  trashItems?: readonly TrashItem[],
 ): void {
   const fkRow = sql.select('PRAGMA foreign_keys')[0];
   const prevForeignKeys = fkRow && Number(fkRow.foreign_keys) ? 1 : 0;
@@ -1040,6 +1047,8 @@ export function writeFileProject(
     if (importEvents || exportEvents) writeTransferEvents(sql, importEvents ?? {}, exportEvents ?? {});
     // WO-137：未傳 bookMeta 時維持 P0-4 零寫入；傳入時於同一筆交易寫入並讀回核對。
     if (bookMeta) writeBookMeta(sql, bookMeta);
+    // WO-138：未傳 trashItems 時維持 P0-4 零寫入；傳入時於同一筆交易寫入並讀回核對。
+    if (trashItems !== undefined) writeTrashData(sql, trashItems);
     sql.exec('COMMIT');
   } catch (error) {
     try {
