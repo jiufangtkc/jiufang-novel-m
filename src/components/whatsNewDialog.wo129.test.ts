@@ -144,13 +144,7 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
     expect(html).toContain(
-      '<li>從刪稿暫存區放回去的字、以及收進暫存區的刪除，都不會算進今天的進度；只有新打的字才算</li>',
-    );
-    expect(html).toContain(
-      '<li>新增刪稿暫存區：改稿時一次刪掉較長的段落會先留下來，可註記當時為什麼刪，也能放回原來的章節</li>',
-    );
-    expect(html).toContain(
-      '<li>這些刪稿會跟著稿子檔一起保存；打錯字的小刪除不會進去，避免存檔無謂變大</li>',
+      '<li>排版新增『統一標點』：一鍵把破折號、刪節號、引號和中文裡的半形標點，統一成臺灣出版常用的寫法</li>',
     );
 
     const confirmMatch = html.match(

@@ -365,9 +365,9 @@ export type Action =
     }
   | { type: 'note-large'; delta: TextDelta }
   /** WO-122：排版。changes 是要由 store 寫入的章幕（目前開著的章幕已由寫作框同步寫入，不必再列）；snapshot 是整次排版前的快照。 */
-  | { type: 'format-apply'; projectId: string; changes: FormatChange[]; snapshot: FormatSnapshot }
+  | { type: 'format-apply'; projectId: string; changes: FormatChange[]; snapshot: FormatSnapshot; countForToday?: boolean }
   /** WO-122：復原。entries 是要由 store 還原的章幕；成功後清空快照。 */
-  | { type: 'format-undo'; projectId: string; entries: FormatSnapshotEntry[] }
+  | { type: 'format-undo'; projectId: string; entries: FormatSnapshotEntry[]; countForToday?: boolean }
   | { type: 'format-clear' }
   | { type: 'add-duration'; seconds: number }
   | { type: 'set-goal'; goal: number }
@@ -1511,7 +1511,12 @@ export function reduce(state: SampleState, action: Action): SampleState {
  * 每一章幕走既有 commit-text，所以字數、稿子自己的紀錄同步與自動暫存路徑都和一般輸入送出相同。
  * 這裡不碰 note-large，排版與復原都不會增加大量貼上／刪除次數。
  */
-function commitMany(state: SampleState, projectId: string, items: readonly { nodeId: string; text: string }[]): SampleState | null {
+function commitMany(
+  state: SampleState,
+  projectId: string,
+  items: readonly { nodeId: string; text: string }[],
+  options?: { countForToday?: boolean },
+): SampleState | null {
   const project = state.projects.find((item) => item.id === projectId);
   if (!project) return null;
   for (const item of items) {
@@ -1520,7 +1525,13 @@ function commitMany(state: SampleState, projectId: string, items: readonly { nod
   }
   let next = state;
   for (const item of items) {
-    next = reduceBase(next, { type: 'commit-text', projectId, nodeId: item.nodeId, text: item.text });
+    next = reduceBase(next, {
+      type: 'commit-text',
+      projectId,
+      nodeId: item.nodeId,
+      text: item.text,
+      ...(options?.countForToday !== undefined ? { countForToday: options.countForToday } : {}),
+    });
   }
   return next;
 }
@@ -1529,19 +1540,25 @@ function reduceBase(state: SampleState, action: Action): SampleState {
   const now = new Date();
   switch (action.type) {
     case 'format-apply': {
+      const countForToday =
+        action.countForToday ?? (action.snapshot.kind === 'unify-punctuation' ? false : undefined);
       const done = commitMany(
         state,
         action.projectId,
         action.changes.map((change) => ({ nodeId: change.nodeId, text: change.after })),
+        countForToday !== undefined ? { countForToday } : undefined,
       );
       if (!done) return state;
       return { ...done, formatUndo: action.snapshot };
     }
     case 'format-undo': {
+      const countForToday =
+        action.countForToday ?? (state.formatUndo?.kind === 'unify-punctuation' ? false : undefined);
       const done = commitMany(
         state,
         action.projectId,
         action.entries.map((entry) => ({ nodeId: entry.nodeId, text: entry.before })),
+        countForToday !== undefined ? { countForToday } : undefined,
       );
       if (!done) return state;
       return { ...done, formatUndo: null };
@@ -2287,9 +2304,18 @@ interface SampleActions {
   ) => void;
   noteLarge: (delta: TextDelta) => void;
   /** WO-122：排版整批寫入（其他章幕）與快照；走 format-apply，不經 noteLarge。 */
-  applyFormat: (projectId: string, changes: FormatChange[], snapshot: FormatSnapshot) => void;
+  applyFormat: (
+    projectId: string,
+    changes: FormatChange[],
+    snapshot: FormatSnapshot,
+    options?: { countForToday?: boolean },
+  ) => void;
   /** WO-122：復原整批（其他章幕），成功後清空快照。 */
-  undoFormat: (projectId: string, entries: FormatSnapshotEntry[]) => void;
+  undoFormat: (
+    projectId: string,
+    entries: FormatSnapshotEntry[],
+    options?: { countForToday?: boolean },
+  ) => void;
   /** WO-122：清掉排版復原快照（關閉提示、失效、離開稿子）。 */
   clearFormatUndo: () => void;
   addDuration: (seconds: number) => void;
@@ -4587,9 +4613,21 @@ export function SampleProvider({
           ...(options?.excludedWordDelta !== undefined ? { excludedWordDelta: options.excludedWordDelta } : {}),
         }),
       noteLarge: (delta) => dispatch({ type: 'note-large', delta }),
-      applyFormat: (projectId, changes, snapshot) =>
-        dispatch({ type: 'format-apply', projectId, changes, snapshot }),
-      undoFormat: (projectId, entries) => dispatch({ type: 'format-undo', projectId, entries }),
+      applyFormat: (projectId, changes, snapshot, options) =>
+        dispatch({
+          type: 'format-apply',
+          projectId,
+          changes,
+          snapshot,
+          ...(options?.countForToday !== undefined ? { countForToday: options.countForToday } : {}),
+        }),
+      undoFormat: (projectId, entries, options) =>
+        dispatch({
+          type: 'format-undo',
+          projectId,
+          entries,
+          ...(options?.countForToday !== undefined ? { countForToday: options.countForToday } : {}),
+        }),
       clearFormatUndo: () => dispatch({ type: 'format-clear' }),
       addDuration: (seconds) => dispatch({ type: 'add-duration', seconds }),
       setGoal: (goal) => dispatch({ type: 'set-goal', goal }),

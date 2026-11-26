@@ -608,6 +608,7 @@ export function EditorPane({
     isComposingRef,
     replaceText,
     focusMode,
+    onAfterApplyOrUndo: () => halfWidth.rescan(),
     getMenuItemCount: () => {
       const snap = menuSelectionRef.current;
       const hasSel = Boolean(

@@ -6,10 +6,19 @@ import {
   type PointerEvent as ReactPointerEvent,
   type RefObject,
 } from 'react';
-import { executeFormat, executeUndo, type FormatFlowDeps } from '../editor/formatFlow';
+import { executeFormat, executeUndo, previewFormat, type FormatFlowDeps } from '../editor/formatFlow';
 import type { FormatScope } from '../editor/formatScope';
 import type { FormatKind } from '../editor/formatText';
 import { useSample } from '../state/sampleStore';
+import {
+  PUNCT_CONFIRM_START,
+  PUNCT_CONFIRM_TITLE,
+  PUNCT_KIND_LABEL,
+  PUNCT_UNDONE_TOAST,
+  punctAlreadyUnifiedToast,
+  punctConfirmSentence,
+  punctDoneTitle,
+} from '../copy/punctCopy';
 import {
   FORMAT_BACK,
   FORMAT_CANCEL,
@@ -56,8 +65,9 @@ const KIND_LABEL: Record<FormatKind, string> = {
   indent: FORMAT_KIND_INDENT,
   'strip-blank': FORMAT_KIND_STRIP_BLANK,
   'space-paragraphs': FORMAT_KIND_SPACE_PARAGRAPHS,
+  'unify-punctuation': PUNCT_KIND_LABEL,
 };
-const KIND_ORDER: FormatKind[] = ['indent', 'strip-blank', 'space-paragraphs'];
+const KIND_ORDER: FormatKind[] = ['indent', 'strip-blank', 'space-paragraphs', 'unify-punctuation'];
 const SCOPE_LABEL: Record<FormatScope, string> = {
   chapter: FORMAT_SCOPE_CHAPTER,
   book: FORMAT_SCOPE_BOOK,
@@ -74,6 +84,7 @@ interface FlowState {
   kind: FormatKind | null;
   scope: FormatScope | null;
   menuPos: { left: number; top: number };
+  estimatedCount?: number;
 }
 
 /** 選單放在入口旁邊；入口在畫面邊緣時往內收，不超出畫面。 */
@@ -98,11 +109,21 @@ export function useFormatTools(options: {
   chapterId: string;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   isComposingRef: RefObject<boolean>;
-  replaceText: (next: string, caret: number) => boolean;
+  replaceText: (next: string, caret: number, options?: { countForToday?: boolean }) => boolean;
   focusMode: boolean;
   getMenuItemCount?: () => number;
+  onAfterApplyOrUndo?: () => void;
 }) {
-  const { projectId, chapterId, textareaRef, isComposingRef, replaceText, focusMode, getMenuItemCount } = options;
+  const {
+    projectId,
+    chapterId,
+    textareaRef,
+    isComposingRef,
+    replaceText,
+    focusMode,
+    getMenuItemCount,
+    onAfterApplyOrUndo,
+  } = options;
   const { state, actions } = useSample();
   const stateRef = useRef(state);
   stateRef.current = state;
@@ -112,6 +133,8 @@ export function useFormatTools(options: {
   replaceRef.current = replaceText;
   const getMenuItemCountRef = useRef(getMenuItemCount);
   getMenuItemCountRef.current = getMenuItemCount;
+  const onAfterApplyOrUndoRef = useRef(onAfterApplyOrUndo);
+  onAfterApplyOrUndoRef.current = onAfterApplyOrUndo;
   const [flow, setFlow] = useState<FlowState | null>(null);
   const originRef = useRef<HTMLElement | null>(null);
   const openedFor = useRef({ projectId, chapterId });
@@ -152,31 +175,35 @@ export function useFormatTools(options: {
     getNodes: () => stateRef.current.projects.find((item) => item.id === projectId)?.nodes ?? null,
     readLive: () => textareaRef.current?.value ?? null,
     isComposing: () => Boolean(isComposingRef.current),
-    syncCurrent: (next) => {
+    syncCurrent: (next, syncOptions) => {
       const el = textareaRef.current;
       const caret = Math.min(el?.selectionStart ?? next.length, next.length);
-      return replaceRef.current(next, caret);
+      return replaceRef.current(next, caret, syncOptions);
     },
     applyOthers: (changes, snapshot) => actionsRef.current.applyFormat(projectId, changes, snapshot),
-    undoOthers: (entries) => actionsRef.current.undoFormat(projectId, entries),
+    undoOthers: (entries, undoOptions) => actionsRef.current.undoFormat(projectId, entries, undoOptions),
     clearSnapshot: () => actionsRef.current.clearFormatUndo(),
   });
 
   const confirm = () => {
     if (!flow || !flow.kind || !flow.scope) return;
+    const activeKind = flow.kind;
+    const activeScope = flow.scope;
     const outcome = executeFormat(deps(), {
       projectId,
       currentId: chapterId,
       openedProjectId: openedFor.current.projectId,
       openedChapterId: openedFor.current.chapterId,
-      kind: flow.kind,
-      scope: flow.scope,
+      kind: activeKind,
+      scope: activeScope,
     });
     setFlow(null);
     restoreFocus();
     switch (outcome.status) {
       case 'unchanged':
-        actionsRef.current.toast(FORMAT_UNCHANGED_TOAST);
+        actionsRef.current.toast(
+          activeKind === 'unify-punctuation' ? punctAlreadyUnifiedToast(activeScope) : FORMAT_UNCHANGED_TOAST,
+        );
         break;
       case 'composing':
         actionsRef.current.toast(FORMAT_COMPOSING_TOAST);
@@ -188,22 +215,31 @@ export function useFormatTools(options: {
         actionsRef.current.toast(FORMAT_STALE_TOAST);
         break;
       case 'applied':
+        onAfterApplyOrUndoRef.current?.();
         break;
     }
   };
 
   const undo = () => {
+    const snapshot = stateRef.current.formatUndo;
+    const isUnifyPunctuation = snapshot?.kind === 'unify-punctuation';
     const outcome = executeUndo(deps(), {
       projectId,
       currentId: chapterId,
-      snapshot: stateRef.current.formatUndo,
+      snapshot,
     });
-    if (outcome.status === 'restored') actionsRef.current.toast(FORMAT_UNDONE_TOAST);
-    else if (outcome.status === 'invalid') actionsRef.current.toast(FORMAT_UNDO_GONE_TOAST);
-    else if (outcome.status === 'composing') actionsRef.current.toast(FORMAT_COMPOSING_TOAST);
+    if (outcome.status === 'restored') {
+      actionsRef.current.toast(isUnifyPunctuation ? PUNCT_UNDONE_TOAST : FORMAT_UNDONE_TOAST);
+      onAfterApplyOrUndoRef.current?.();
+    } else if (outcome.status === 'invalid') {
+      actionsRef.current.toast(FORMAT_UNDO_GONE_TOAST);
+    } else if (outcome.status === 'composing') {
+      actionsRef.current.toast(FORMAT_COMPOSING_TOAST);
+    }
   };
 
   const hasSnapshot = Boolean(state.formatUndo && state.formatUndo.projectId === projectId);
+  const snapshot = hasSnapshot ? (state.formatUndo ?? null) : null;
 
   return {
     flow,
@@ -215,14 +251,53 @@ export function useFormatTools(options: {
     undo,
     dismissNotice: () => actionsRef.current.clearFormatUndo(),
     hasSnapshot,
+    snapshot,
     pick: {
       menu: () => setFlow((f) => (f ? { ...f, step: 'kind' } : f)),
-      kind: (kind: FormatKind) => setFlow((f) => (f ? { ...f, kind, step: 'scope' } : f)),
-      scope: (scope: FormatScope) => setFlow((f) => (f ? { ...f, scope, step: 'confirm' } : f)),
+      kind: (kind: FormatKind) => setFlow((f) => (f ? { ...f, kind, step: 'scope', estimatedCount: undefined } : f)),
+      scope: (scope: FormatScope) => {
+        if (!flow || !flow.kind) return;
+        if (flow.kind !== 'unify-punctuation') {
+          setFlow((f) => (f ? { ...f, scope, step: 'confirm', estimatedCount: undefined } : f));
+          return;
+        }
+        const preview = previewFormat(deps(), {
+          projectId,
+          currentId: chapterId,
+          openedProjectId: openedFor.current.projectId,
+          openedChapterId: openedFor.current.chapterId,
+          kind: flow.kind,
+          scope,
+        });
+        if (preview.status !== 'ok') {
+          setFlow(null);
+          restoreFocus();
+          if (preview.status === 'composing') actionsRef.current.toast(FORMAT_COMPOSING_TOAST);
+          else if (preview.status === 'no-target') actionsRef.current.toast(FORMAT_NO_TARGET_TOAST);
+          else actionsRef.current.toast(FORMAT_STALE_TOAST);
+          return;
+        }
+        if (preview.totalReplacements === 0) {
+          setFlow(null);
+          restoreFocus();
+          actionsRef.current.toast(punctAlreadyUnifiedToast(scope));
+          return;
+        }
+        setFlow((f) =>
+          f
+            ? {
+                ...f,
+                scope,
+                step: 'confirm',
+                estimatedCount: preview.totalReplacements,
+              }
+            : f,
+        );
+      },
       back: () =>
         setFlow((f) => {
           if (!f) return f;
-          if (f.step === 'confirm') return { ...f, step: 'scope' };
+          if (f.step === 'confirm') return { ...f, step: 'scope', estimatedCount: undefined };
           if (f.step === 'scope') return { ...f, step: 'kind' };
           return f;
         }),
@@ -427,8 +502,14 @@ export function FormatLayer({
         ) : null}
         {flow.step === 'confirm' ? (
           <>
-            <h2 id="format-dialog-title">{FORMAT_CONFIRM_TITLE}</h2>
-            <p data-testid="format-confirm-sentence">{formatConfirmSentence(scopeLabel, kindLabel)}</p>
+            <h2 id="format-dialog-title">
+              {flow.kind === 'unify-punctuation' ? PUNCT_CONFIRM_TITLE : FORMAT_CONFIRM_TITLE}
+            </h2>
+            <p data-testid="format-confirm-sentence">
+              {flow.kind === 'unify-punctuation' && flow.scope
+                ? punctConfirmSentence(flow.scope, flow.estimatedCount ?? 0)
+                : formatConfirmSentence(scopeLabel, kindLabel)}
+            </p>
             {flow.scope === 'book' ? <p>{FORMAT_CONFIRM_BOOK_NOTE}</p> : null}
             <p>{FORMAT_UNDO_WARNING}</p>
             <div className="dialog-actions">
@@ -439,7 +520,7 @@ export function FormatLayer({
                 {FORMAT_CANCEL}
               </button>
               <button type="button" className="button primary" data-testid="format-start" onClick={tools.confirm}>
-                {FORMAT_START}
+                {flow.kind === 'unify-punctuation' ? PUNCT_CONFIRM_START : FORMAT_START}
               </button>
             </div>
           </>
@@ -452,10 +533,15 @@ export function FormatLayer({
 /** 完成提示：持續顯示到關閉、復原、下一次有效排版或離開稿子；復原是真正的按鈕。 */
 export function FormatNotice({ tools }: { tools: FormatTools }) {
   if (!tools.hasSnapshot) return null;
+  const snapshot = tools.snapshot;
+  const title =
+    snapshot?.kind === 'unify-punctuation' && typeof snapshot.replacementCount === 'number'
+      ? punctDoneTitle(snapshot.replacementCount)
+      : FORMAT_DONE;
   return (
     <div className="format-notice" role="status" aria-live="polite" data-testid="format-notice">
       <div className="format-notice-row">
-        <strong>{FORMAT_DONE}</strong>
+        <strong>{title}</strong>
         <button type="button" className="format-notice-undo" data-testid="format-undo" onClick={tools.undo}>
           {FORMAT_UNDO_BUTTON}
         </button>
