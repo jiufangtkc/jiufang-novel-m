@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   VERSION_AUTO_SAVE_FAIL_TOAST,
   VERSION_BACK_LABEL,
   VERSION_CANCEL_LABEL,
   VERSION_CLOSE_ARIA,
   VERSION_CLOSE_LABEL,
+  VERSION_COMPARE_BUTTON,
+  VERSION_COMPARE_TITLE,
   VERSION_CORRUPT_HINT,
   VERSION_DISCARDED_BAR,
   VERSION_DISCARD_BUTTON,
@@ -39,6 +41,7 @@ import {
   VERSION_SAVE_STASH_FAIL_HINT,
   VERSION_SHEET_TITLE,
   VERSION_UNDO_BUTTON,
+  versionCompareButtonAria,
   versionUsageSummary,
   versionWordsLabel,
 } from '../copy/manuscriptVersionCopy';
@@ -51,12 +54,14 @@ import {
   type ManuscriptVersion,
 } from '../domain/manuscriptVersions';
 import { formatClockTime } from '../domain/saveClock';
+import { compareChapterVersions } from '../domain/versionCompare';
 import type { LayoutMode } from '../layout';
+import { VersionCompareView, resolveOpenCompareAttempt } from './VersionCompareView';
 
 const UNDO_BAR_DURATION_MS = 10_000;
 const SHEET_STATUS_DURATION_MS = 3_500;
 
-type SheetView = 'list' | 'preview';
+type SheetView = 'list' | 'preview' | 'compare';
 
 export type SaveVersionActionResult =
   | { kind: 'saved'; noticeCode: 'saved' | 'saved-evicted-oldest'; persisted?: boolean }
@@ -90,6 +95,7 @@ export interface ManuscriptVersionSheetProps {
   versionRead: ChapterVersionRead;
   layoutMode: LayoutMode;
   isComposing: () => boolean;
+  getCurrentContent?: () => string;
   onClose: () => void;
   onSaveVersion: (note: string) => Promise<SaveVersionActionResult>;
   onUpdateNote: (versionId: string, note: string) => Promise<UpdateVersionNoteActionResult>;
@@ -166,6 +172,7 @@ export function ManuscriptVersionSheet({
   versionRead,
   layoutMode,
   isComposing,
+  getCurrentContent,
   onClose,
   onSaveVersion,
   onUpdateNote,
@@ -175,6 +182,8 @@ export function ManuscriptVersionSheet({
 }: ManuscriptVersionSheetProps) {
   const [view, setView] = useState<SheetView>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [compareTargetText, setCompareTargetText] = useState('');
+  const [expandedBlockIds, setExpandedBlockIds] = useState<ReadonlySet<string>>(() => new Set());
   const [saveNoteDraft, setSaveNoteDraft] = useState('');
   const [editNoteDraft, setEditNoteDraft] = useState('');
   const [confirmDiscardId, setConfirmDiscardId] = useState<string | null>(null);
@@ -189,6 +198,8 @@ export function ManuscriptVersionSheet({
     if (!open) {
       setView('list');
       setSelectedId(null);
+      setCompareTargetText('');
+      setExpandedBlockIds(new Set());
       setSaveNoteDraft('');
       setEditNoteDraft('');
       setConfirmDiscardId(null);
@@ -238,8 +249,6 @@ export function ManuscriptVersionSheet({
     return () => document.removeEventListener('keydown', onKey);
   }, [open, layoutMode, confirmDiscardId, confirmRestoreId, onClose]);
 
-  if (!open) return null;
-
   const isReadOnly =
     versionRead.kind === 'newer-revision' || versionRead.kind === 'corrupt';
   const sortedVersions = sortManuscriptVersions(versions);
@@ -247,6 +256,13 @@ export function ManuscriptVersionSheet({
     ? sortedVersions.find((item) => item.version_id === selectedId) ?? null
     : null;
   const activeView: SheetView = selectedVersion ? view : 'list';
+  const compareResult = useMemo(() => {
+    if (!open || activeView !== 'compare' || !selectedVersion) return null;
+    return compareChapterVersions(selectedVersion.content, compareTargetText);
+  }, [open, activeView, selectedVersion, compareTargetText]);
+
+  if (!open) return null;
+
   const confirmDiscardVersion = confirmDiscardId
     ? sortedVersions.find((item) => item.version_id === confirmDiscardId) ?? null
     : null;
@@ -261,8 +277,30 @@ export function ManuscriptVersionSheet({
     setView('preview');
   };
 
+  const openCompare = (version: ManuscriptVersion) => {
+    const attempt = resolveOpenCompareAttempt(isComposing);
+    if (!attempt.allowed) {
+      showSheetStatus(attempt.message);
+      return;
+    }
+    setSelectedId(version.version_id);
+    setCompareTargetText(getCurrentContent ? getCurrentContent() : '');
+    setExpandedBlockIds(new Set());
+    setView('compare');
+  };
+
+  const handleExpandCompareBlock = (blockId: string) => {
+    setExpandedBlockIds((prev) => {
+      if (prev.has(blockId)) return prev;
+      const next = new Set(prev);
+      next.add(blockId);
+      return next;
+    });
+  };
+
   const handleBack = () => {
     setSelectedId(null);
+    setExpandedBlockIds(new Set());
     setView('list');
   };
 
@@ -361,11 +399,13 @@ export function ManuscriptVersionSheet({
   };
 
   const headerTitle =
-    activeView === 'preview' && selectedVersion
-      ? selectedVersion.chapter_title_snapshot.trim() ||
-        chapterTitle.trim() ||
-        VERSION_SHEET_TITLE
-      : VERSION_SHEET_TITLE;
+    activeView === 'compare'
+      ? VERSION_COMPARE_TITLE
+      : activeView === 'preview' && selectedVersion
+        ? selectedVersion.chapter_title_snapshot.trim() ||
+          chapterTitle.trim() ||
+          VERSION_SHEET_TITLE
+        : VERSION_SHEET_TITLE;
 
   return (
     <div
@@ -375,7 +415,7 @@ export function ManuscriptVersionSheet({
       onClick={onClose}
     >
       <div
-        className="sheet version-sheet"
+        className={activeView === 'compare' ? 'sheet version-sheet is-compare' : 'sheet version-sheet'}
         role="dialog"
         aria-modal="true"
         aria-labelledby="version-sheet-title"
@@ -384,7 +424,7 @@ export function ManuscriptVersionSheet({
         onClick={(event) => event.stopPropagation()}
       >
         <header className="version-sheet-header">
-          {activeView === 'preview' ? (
+          {activeView === 'preview' || activeView === 'compare' ? (
             <button
               type="button"
               className="version-header-btn"
@@ -530,6 +570,16 @@ export function ManuscriptVersionSheet({
                             {VERSION_PREVIEW_BUTTON}
                           </span>
                         </button>
+                        <button
+                          type="button"
+                          className="version-item-compare-btn"
+                          data-testid={`version-compare-btn-${version.version_id}`}
+                          aria-label={versionCompareButtonAria(formatVersionTime(version.saved_at_ms))}
+                          disabled={busy}
+                          onClick={() => openCompare(version)}
+                        >
+                          {VERSION_COMPARE_BUTTON}
+                        </button>
                       </li>
                     );
                   })}
@@ -605,6 +655,16 @@ export function ManuscriptVersionSheet({
                 </button>
               </div>
             </div>
+          ) : null}
+
+          {activeView === 'compare' && selectedVersion && !isReadOnly && compareResult ? (
+            <VersionCompareView
+              version={selectedVersion}
+              versionTimeLabel={formatVersionTime(selectedVersion.saved_at_ms)}
+              diff={compareResult}
+              expandedBlockIds={expandedBlockIds}
+              onExpandBlock={handleExpandCompareBlock}
+            />
           ) : null}
         </div>
       </div>

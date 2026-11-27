@@ -144,10 +144,10 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
     expect(html).toContain(
-      '<li>新增稿子版本：可以把這一章目前的樣子存下來，之後查看或回到舊版；版本會跟著稿子檔一起保存</li>',
+      '<li>版本清單新增「比較」：可逐字對照任一份舊版與現在這一章的差異，並自動統計增減字數與改動段數</li>',
     );
     expect(html).toContain(
-      '<li>回到舊版之前，會先自動把現在的樣子存一份，回去後也可以復原</li>',
+      '<li>連續未改動的段落會先收起來，只留前後各一段方便對照，點一下即可展開原文</li>',
     );
 
     const confirmMatch = html.match(

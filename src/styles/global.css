@@ -65,6 +65,11 @@
   --code-text: #C5BEE0;
   --search-current: #E5C07B;
   --accent-soft: color-mix(in srgb, var(--accent) 18%, transparent);
+  /* WO-141：新舊版比較語意色（沿用既有主題變數，三套主題皆可清楚辨識） */
+  --compare-del-text: var(--muted);
+  --compare-del-line: color-mix(in srgb, var(--muted) 80%, transparent);
+  --compare-add-text: var(--accent);
+  --compare-add-bg: color-mix(in srgb, var(--accent) 18%, transparent);
 
   /* C 案：寫作頁「不能寫」的地方（頁首、目錄側欄、頁尾、導覽、正文欄外）都用這一個底色，
    * 只有正文欄用 --editor。森林綠、青瓷是 --bg；經典深藍見下方。 */

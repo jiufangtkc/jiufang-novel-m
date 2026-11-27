@@ -1510,6 +1510,7 @@ export function EditorPane({
         versionRead={versionRead}
         layoutMode={layoutMode}
         isComposing={() => isComposingRef.current}
+        getCurrentContent={() => ref.current?.value ?? chapter.content ?? ''}
         onClose={() => setVersionsOpen(false)}
         onSaveVersion={handleSaveChapterVersion}
         onUpdateNote={handleUpdateChapterVersionNote}

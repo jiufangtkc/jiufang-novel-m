@@ -80,3 +80,39 @@ export const VERSION_SAVE_STASH_FAIL_HINT =
   '這一版還沒存進本機暫存，請再試一次。';
 export const VERSION_RESTORE_BLOCKED_FULL_HINT =
   '這一章的版本已超過 20 份，而且都有備註，沒辦法再自動保存，先不換。請先整理並丟掉不需要的舊版。';
+
+// ---- WO-141 新舊版比較（暫定，待九方審） ----
+export const VERSION_COMPARE_BUTTON = '比較';
+export const VERSION_COMPARE_TITLE = '新舊版比較';
+export const VERSION_COMPARE_COMPOSING_TOAST = '先把正在輸入的字打完，再比較。';
+export const VERSION_COMPARE_READONLY_HINT =
+  '這一頁只能看，不會改到稿子；想換回舊版請返回點「預覽」再按「用這一版」。';
+export const VERSION_COMPARE_CURRENT_LABEL = '現在這一章';
+export const VERSION_COMPARE_CONTENT_ARIA = '新舊版比較內容';
+export const VERSION_COMPARE_LEGEND_REMOVED = '刪掉的字';
+export const VERSION_COMPARE_LEGEND_ADDED = '新加的字';
+export const VERSION_COMPARE_NO_DIFF_HINT = '這一版和現在這一章的內容完全相同，沒有差異。';
+
+export function versionCompareSummary(
+  addedWords: number,
+  removedWords = 0,
+  changedParagraphs = 0,
+): string {
+  return `比這一版多了 ${formatInteger(addedWords)} 字、少了 ${formatInteger(removedWords)} 字，改了 ${formatInteger(changedParagraphs)} 段`;
+}
+
+export function versionCompareCollapsedLabel(count: number): string {
+  return `中間 ${formatInteger(count)} 段沒改，點一下展開`;
+}
+
+export function versionCompareButtonAria(timeLabel: string | number): string {
+  return `比較 ${String(timeLabel)} 的版本與現在這一章`;
+}
+
+export function versionCompareMetaLabel(timeLabel: string | number, note = ''): string {
+  const trimmed = String(note).trim();
+  if (trimmed !== '') {
+    return `舊版（${String(timeLabel)}・${trimmed}）對照${VERSION_COMPARE_CURRENT_LABEL}`;
+  }
+  return `舊版（${String(timeLabel)}）對照${VERSION_COMPARE_CURRENT_LABEL}`;
+}

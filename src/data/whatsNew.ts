@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-141（暫定，待九方審）
+  {
+    version: '0.9.0',
+    items: [
+      '版本清單新增「比較」：可逐字對照任一份舊版與現在這一章的差異，並自動統計增減字數與改動段數',
+      '連續未改動的段落會先收起來，只留前後各一段方便對照，點一下即可展開原文',
+    ],
+  },
   // WO-140（暫定，待九方審）
   {
     version: '0.8.0',
