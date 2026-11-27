@@ -738,9 +738,9 @@ describe('WO-111 收尾', () => {
     const hook = readFileSync('src/screens/useOpenManuscriptFile.tsx', 'utf8');
     expect(hook).toContain('dispatchOpen({');
     expect(hook).toContain('canPick: canPickLocalFiles(),');
-    expect(hook).toContain('.openWithPicker()');
+    expect(hook).toContain('.openWithPicker({ askDuplicate })');
     expect(hook).toContain('inputRef.current?.click()');
-    expect(hook).toContain('.importFile(file)');
+    expect(hook).toContain('.importFile(file, null, { askDuplicate })');
     expect(hook).toContain('accept=".db,application/octet-stream,application/x-sqlite3"');
   });
 

@@ -131,6 +131,7 @@ import { startedMsFromProjectId } from '../domain/staleSaveReminder';
 import { type FileCard, type FileLog, type FileProjectInfo } from '../db/projectFile';
 import {
   importBook,
+  readBookBytes,
   loadStoredBooks,
   saveBookBytes,
   shareDatabase,
@@ -140,6 +141,16 @@ import {
 } from '../db/library';
 import { isBookRemoved, removedBookIds } from '../db/removedBooks';
 import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
+import { REPLACE_OLD_REMOVE_FAILED } from '../copy/duplicateOpenCopy';
+import {
+  findExistingForOpen,
+  hasUnsavedChanges,
+  manuscriptDigest,
+  type DeviceOnlyProbe,
+  type DuplicateChoice,
+  type DuplicateOpenInfo,
+} from '../domain/duplicateOpen';
+import { createDeviceOnlyProbe } from './deviceOnlyContent';
 import type { FormatChange, FormatSnapshot, FormatSnapshotEntry } from '../editor/formatScope';
 import type { VersionRestoreUndoSnapshot } from '../editor/versionRestoreFlow';
 import {
@@ -756,7 +767,10 @@ export async function exportTimeOfBytes(store: KeyValueStore, bytes: Uint8Array)
  * = 檔內附加表的事件 ∪ 本機紀錄裡可靠對應到這份稿子的事件，以事件代號去重。
  * 檔內附加資料損壞時不把它當 0，也不採用；只剩本機可靠對應（外部存檔會被擋下）。
  */
-export function projectImportEventsOf(state: SampleState, projectId: string | null | undefined): ProjectImportEvents {
+export function projectImportEventsOf(
+  state: Pick<SampleState, 'projects' | 'fileExtras' | 'importEvents'>,
+  projectId: string | null | undefined,
+): ProjectImportEvents {
   if (!projectId) return {};
   const project = state.projects.find((item) => item.id === projectId);
   const key = project?.dbKey ?? projectId;
@@ -769,7 +783,10 @@ export function projectImportEventsOf(state: SampleState, projectId: string | nu
  * = 檔內附加表的 export 事件 ∪ 本機可靠對應的匯出事件，以事件代號去重；規則與匯入完全相同。
  * 檔內 export_count 欄不加進來（NULL＝沒有歷史基數；非 NULL 無法證明是否已含這些事件，見交接）。
  */
-export function projectExportEventsOf(state: SampleState, projectId: string | null | undefined): ProjectImportEvents {
+export function projectExportEventsOf(
+  state: Pick<SampleState, 'projects' | 'fileExtras' | 'exportEvents'>,
+  projectId: string | null | undefined,
+): ProjectImportEvents {
   if (!projectId) return {};
   const project = state.projects.find((item) => item.id === projectId);
   const key = project?.dbKey ?? projectId;
@@ -2538,6 +2555,11 @@ function reduceBase(state: SampleState, action: Action): SampleState {
   }
 }
 
+/** WO-143：開檔時遇到同一本的詢問；沒帶就維持舊行為。 */
+export interface OpenDuplicateOptions {
+  askDuplicate?: (info: DuplicateOpenInfo) => Promise<DuplicateChoice>;
+}
+
 export interface SampleActions {
   dismissRecent: (id: string) => void;
   /** WO-116：從這個裝置刪掉這份稿子的暫存與寫作資料。回傳 true 才是真的刪完；失敗回 false 並跳提示，稿子照舊。 */
@@ -2689,7 +2711,12 @@ export interface SampleActions {
     schedule: GoalSchedule;
     extras: FileExtras;
   }) => void;
-  importFile: (file: File, diskFile?: DiskFile | null) => Promise<{ id: string; chapterId: string | null }>;
+  /** WO-143：回 null＝使用者在「已經有了」的視窗按了取消（什麼都沒改）。 */
+  importFile: (
+    file: File,
+    diskFile?: DiskFile | null,
+    options?: OpenDuplicateOptions,
+  ) => Promise<{ id: string; chapterId: string | null } | null>;
   /** WO-99：匯入 TXT 開成新稿子。 */
   importTextFile: (file: File) => Promise<TextImportOutcome>;
   /** WO-126：選到檔後只讀取與解碼（統一換行），不建稿。 */
@@ -2703,7 +2730,7 @@ export interface SampleActions {
     request: FullTextExportRequest,
     options?: { prepared?: PreparedExport; isCancelled?: () => boolean },
   ) => Promise<FullTextExportOutcome>;
-  openWithPicker: () => Promise<{ id: string; chapterId: string | null } | null>;
+  openWithPicker: (options?: OpenDuplicateOptions) => Promise<{ id: string; chapterId: string | null } | null>;
   stashDraft: () => Promise<void>;
   renameBook: (projectId: string, rawTitle: string) => {
     ok: boolean;
@@ -3906,7 +3933,19 @@ export async function runResumeAutoSave(input: {
  * 讀入並寫好本機副本後，若寫入原檔位置把手（targets.save）失敗，不阻斷開檔，
  * 仍保留記憶體把手供當次寫回；重開分頁無把手時自然退回既有的「還沒存成檔案」與選存檔位置流程。
  */
-export async function openDatabaseManuscript(input: {
+export function openDatabaseManuscript(
+  input: OpenDatabaseManuscriptInput & { askDuplicate?: undefined },
+): Promise<{ id: string; chapterId: string | null }>;
+export function openDatabaseManuscript(
+  input: OpenDatabaseManuscriptInput,
+): Promise<{ id: string; chapterId: string | null } | null>;
+export function openDatabaseManuscript(
+  input: OpenDatabaseManuscriptInput,
+): Promise<{ id: string; chapterId: string | null } | null> {
+  return openDatabaseManuscriptImpl(input);
+}
+
+interface OpenDatabaseManuscriptInput {
   filename: string;
   bytes: Uint8Array;
   diskFile: DiskFile | null;
@@ -3916,7 +3955,177 @@ export async function openDatabaseManuscript(input: {
   onClearConflict?: (bookKey: string) => void;
   importBookFn?: typeof importBook;
   now?: Date;
-}): Promise<{ id: string; chapterId: string | null }> {
+  /** WO-143：取目前的稿子清單、最近清單與存檔紀錄；和 askDuplicate 一起傳才會先認「同一本」。 */
+  getState?: () => Pick<
+    SampleState,
+    'projects' | 'recentIds' | 'saveMeta' | 'importEvents' | 'exportEvents' | 'fileExtras'
+  >;
+  /** WO-143：已有同一本（或同名的一本）時問使用者；沒傳就維持舊行為（直接多開一份）。 */
+  askDuplicate?: (info: DuplicateOpenInfo) => Promise<DuplicateChoice>;
+  /** WO-143：取代成功後刪掉舊的那份（內部走既有的 removeFromDevice）。 */
+  removeOld?: (projectId: string) => Promise<boolean>;
+  /** WO-143 審查必修 3：探測只存在這個裝置的內容（卡片草稿、即時草稿）；沒傳就只看 dirtySinceFileSave 與有無對應檔案。 */
+  deviceOnly?: DeviceOnlyProbe;
+}
+
+async function openDatabaseManuscriptImpl(
+  input: OpenDatabaseManuscriptInput,
+): Promise<{ id: string; chapterId: string | null } | null> {
+  let replaceId: string | null = null;
+  if (input.askDuplicate && input.getState) {
+    // 先只讀：決定之前不寫 App 空間、本機儲存、targets、事件紀錄。
+    const opened = await readBookBytes(input.filename, input.bytes, 'pending-open', input.now);
+    const snapshot = input.getState();
+    const found = findExistingForOpen({
+      opened: {
+        title: opened.title,
+        filename: opened.filename,
+        bookUuid: opened.bookUuid,
+        bookMetaPersisted: opened.bookMetaPersisted,
+      },
+      projects: snapshot.projects,
+      recentIds: snapshot.recentIds,
+    });
+    if (found.kind !== 'none') {
+      const existing = found.kind === 'same-book' ? found.project : found.projects[0]!;
+      const choice = await input.askDuplicate({
+        kind: found.kind,
+        existingId: existing.id,
+        title: opened.title,
+        existingFilename: existing.filename ?? '',
+        openedFilename: opened.filename,
+        hasUnsavedChanges: hasUnsavedChanges(existing, snapshot.saveMeta, input.deviceOnly),
+        contentDiffers: manuscriptDigest(opened.tree) !== manuscriptDigest(existing.nodes),
+      });
+      if (choice === 'cancel') return null;
+      // 回答期間那份被刪掉了：沒有東西可以打開或取代，照一般開檔處理。
+      const stillThere = input.getState().projects.some((project) => project.id === existing.id);
+      if (choice === 'open-existing' && stillThere) {
+        input.dispatch({ type: 'focus-project', id: existing.id });
+        return {
+          id: existing.id,
+          chapterId: findNode(existing.nodes, existing.lastOpenedNodeId ?? '')
+            ? (existing.lastOpenedNodeId ?? null)
+            : null,
+        };
+      }
+      if (choice === 'replace') {
+        // 只有同一本才提供「取代」；同名但不是同一本回「取代」就當作取消，不動任何東西。
+        if (found.kind !== 'same-book') return null;
+        if (stillThere) replaceId = existing.id;
+      } else if (choice === 'keep-separate' && found.kind === 'same-book') {
+        // 同一本不提供「另外留下」，避免副本繼續堆上去。
+        return null;
+      }
+    }
+  }
+  const book = await openAndAttachBook(input);
+  if (replaceId && replaceId !== book.key && input.removeOld) {
+    // 審查必修 4：刪舊的之前，先把舊代號底下的匯入／匯出事件按事件代號合併到新代號，次數才不會因取代而減少。
+    carryOverTransferEvents({
+      store: input.store,
+      dispatch: input.dispatch,
+      getState: input.getState,
+      fromId: replaceId,
+      toId: book.key,
+    });
+    // 新的已經開好才刪舊的；刪不掉就兩份都留著、說清楚，不重試。
+    let removed = false;
+    try {
+      removed = await input.removeOld(replaceId);
+    } catch {
+      removed = false;
+    }
+    if (!removed) input.dispatch({ type: 'toast', message: REPLACE_OLD_REMOVE_FAILED });
+  }
+  return {
+    id: book.key,
+    chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '')
+      ? book.info.lastOpenedNodeId
+      : null,
+  };
+}
+
+/**
+ * 審查必修 4：取代時把舊稿代號底下的匯入、匯出事件承接到新稿代號。
+ * 沿用既有的 mergeEventRecords（以事件代號取聯集、去重）與既有紀錄格式，不另造格式；
+ * 先合併本機紀錄與記憶體紀錄（本機有寫過的、只在記憶體的都不漏），寫回本機並 dispatch，
+ * 之後既有的 withoutProject(舊代號) 就不會讓事件被丟掉（事件仍被新代號引用）。
+ * 本機寫不進去時仍 dispatch 記憶體版本，不丟錯、不阻斷取代。
+ */
+function carryOverTransferEvents(input: {
+  store: KeyValueStore | null;
+  dispatch: (action: Action) => void;
+  getState?: () => Pick<SampleState, 'projects' | 'fileExtras' | 'importEvents' | 'exportEvents'>;
+  fromId: string;
+  toId: string;
+}): void {
+  const current = input.getState?.();
+  // 複審必修：舊稿「完整」的事件集合 = 本機對應 ∪ 舊稿檔內附加表帶進來的事件（projectImport／ExportEventsOf）。
+  // 檔內事件在舊代號被刪掉後就拿不到了（例如較新的檔被較舊的備份取代），所以要在刪舊稿前一起併入新代號的本機紀錄。
+  const oldFileEvents = {
+    imports: current ? projectImportEventsOf(current, input.fromId) : {},
+    exports: current ? projectExportEventsOf(current, input.fromId) : {},
+  };
+  const carry = (record: TransferEventRecord, fullEvents: ProjectImportEvents): TransferEventRecord => {
+    const ids = [...new Set([...(record.byProject[input.fromId] ?? []), ...Object.keys(fullEvents)])];
+    if (ids.length === 0) return record;
+    return mergeEventRecords(record, {
+      events: { ...fullEvents, ...record.events },
+      byProject: { [input.toId]: ids },
+      byFile: {},
+    });
+  };
+  const merged = (read: (store: KeyValueStore | null) => TransferEventRecord, inMemory: TransferEventRecord | undefined) => {
+    let base = inMemory ?? read(null);
+    if (input.store) {
+      try {
+        base = mergeEventRecords(read(input.store), base);
+      } catch {
+        // 讀不到本機紀錄時，用記憶體裡的。
+      }
+    }
+    return base;
+  };
+
+  const imports = merged(readImportEvents, current?.importEvents);
+  const nextImports = carry(imports, oldFileEvents.imports);
+  if (nextImports !== imports || imports !== current?.importEvents) {
+    if (input.store) {
+      try {
+        writeImportEvents(input.store, nextImports);
+      } catch {
+        // 寫不進去：事件仍留在記憶體。
+      }
+    }
+    input.dispatch({ type: 'set-import-events', importEvents: nextImports });
+  }
+
+  const exportsNow = merged(readExportEvents, current?.exportEvents);
+  const nextExports = carry(exportsNow, oldFileEvents.exports);
+  if (nextExports !== exportsNow || exportsNow !== current?.exportEvents) {
+    if (input.store) {
+      try {
+        writeExportEvents(input.store, nextExports);
+      } catch {
+        // 寫不進去：事件仍留在記憶體。
+      }
+    }
+    input.dispatch({ type: 'set-export-events', exportEvents: nextExports });
+  }
+}
+
+async function openAndAttachBook(input: {
+  filename: string;
+  bytes: Uint8Array;
+  diskFile: DiskFile | null;
+  dispatch: (action: Action) => void;
+  env: Pick<SaveEnvironment, 'targets'>;
+  store: KeyValueStore | null;
+  onClearConflict?: (bookKey: string) => void;
+  importBookFn?: typeof importBook;
+  now?: Date;
+}): Promise<ImportedBook> {
   const rawFingerprint = await fingerprintBytes(input.bytes).catch(() => null);
   const exportedAt = input.store
     ? await exportTimeOfBytes(input.store, input.bytes).catch(() => null)
@@ -3952,12 +4161,7 @@ export async function openDatabaseManuscript(input: {
   input.dispatch(attachActionForBook(book, { updatedLabel: '剛剛' }));
   // WO-77：開回的正是這個裝置另存出去的那份檔，「上次另存」沿用當時時間。
   if (exportedAt != null) input.dispatch({ type: 'record-export', projectId: book.key, atMs: exportedAt });
-  return {
-    id: book.key,
-    chapterId: findNode(book.tree, book.info.lastOpenedNodeId ?? '')
-      ? book.info.lastOpenedNodeId
-      : null,
-  };
+  return book;
 }
 
 /**
@@ -5011,19 +5215,30 @@ export function SampleProvider({
         return false;
       }
     };
+    const removeFromDeviceAction = async (id: string): Promise<boolean> => {
+      const project = stateRef.current.projects.find((item) => item.id === id);
+      if (!project) return false;
+      const done = await removeProjectFromDevice({ project, store: deviceStore() });
+      if (!done) {
+        dispatch({ type: 'toast', message: '沒能刪掉這個裝置上的稿子，稿子還在，請再試一次。' });
+        return false;
+      }
+      dispatch({ type: 'remove-project', id });
+      return true;
+    };
+    // WO-143：開檔遇到同一本時，問使用者（由畫面提供）；取代後刪舊的走同一條既有的刪除流程。
+    const duplicateOpenHooks = (options?: OpenDuplicateOptions) =>
+      options?.askDuplicate
+        ? {
+            getState: () => stateRef.current,
+            askDuplicate: options.askDuplicate,
+            removeOld: removeFromDeviceAction,
+            deviceOnly: createDeviceOnlyProbe(deviceStore()),
+          }
+        : {};
     return {
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
-      removeFromDevice: async (id) => {
-        const project = stateRef.current.projects.find((item) => item.id === id);
-        if (!project) return false;
-        const done = await removeProjectFromDevice({ project, store: deviceStore() });
-        if (!done) {
-          dispatch({ type: 'toast', message: '沒能刪掉這個裝置上的稿子，稿子還在，請再試一次。' });
-          return false;
-        }
-        dispatch({ type: 'remove-project', id });
-        return true;
-      },
+      removeFromDevice: removeFromDeviceAction,
       addProject: (title, shape = 'novel') => {
         const startedMs = Date.now();
         const id = `p-${startedMs}`;
@@ -5189,7 +5404,7 @@ export function SampleProvider({
         dispatch({ type: 'chapter-version-clear-restore-undo' }),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
-      importFile: async (file: File, diskFile?: DiskFile | null) => {
+      importFile: async (file: File, diskFile?: DiskFile | null, options?: OpenDuplicateOptions) => {
         const bytes = new Uint8Array(await file.arrayBuffer());
         return openDatabaseManuscript({
           filename: file.name,
@@ -5198,13 +5413,14 @@ export function SampleProvider({
           dispatch,
           env: getSaveEnv(),
           store: deviceStore(),
+          ...duplicateOpenHooks(options),
           onClearConflict: (bookKey) => {
             autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [bookKey]: false };
             setAutoSaveConflictById((prev) => (prev[bookKey] ? { ...prev, [bookKey]: false } : prev));
           },
         });
       },
-      openWithPicker: async () => {
+      openWithPicker: async (options?: OpenDuplicateOptions) => {
         const picked = await pickExistingDatabase();
         if (!picked) return null;
         const copy = new Uint8Array(picked.bytes.byteLength);
@@ -5216,6 +5432,7 @@ export function SampleProvider({
           dispatch,
           env: getSaveEnv(),
           store: deviceStore(),
+          ...duplicateOpenHooks(options),
           onClearConflict: (bookKey) => {
             autoSaveConflictRef.current = { ...autoSaveConflictRef.current, [bookKey]: false };
             setAutoSaveConflictById((prev) => (prev[bookKey] ? { ...prev, [bookKey]: false } : prev));

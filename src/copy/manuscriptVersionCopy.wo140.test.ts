@@ -142,7 +142,7 @@ describe('WO-140 第 5 段：稿子版本暫定用字、選單與元件守衛驗
     expect(noticeSrc).toContain("from '../copy/manuscriptVersionCopy'");
   });
 
-  it('FormatLayer 選單依序呈現排版、版本（有份數才顯示小字）、刪稿暫存區與選取送入，且 EditorPane getMenuItemCount 為 3 + (hasSel ? 1 : 0)', () => {
+  it('FormatLayer 選單依序呈現排版、版本（有份數才顯示小字）、刪稿暫存區與選取送入，且 EditorPane getMenuItemCount 為 4 + (hasSel ? 1 : 0)', () => {
     const toolsStub = {
       flow: { step: 'menu', kind: null, scope: null, menuPos: { left: 100, top: 64 } },
       isOpen: true,
@@ -218,7 +218,8 @@ describe('WO-140 第 5 段：稿子版本暫定用字、選單與元件守衛驗
     expect(menuWithoutBadge).not.toContain('0 份');
 
     const editorPaneSrc = readFileSync(new URL('../screens/EditorPane.tsx', import.meta.url), 'utf8');
-    expect(editorPaneSrc).toContain('return 3 + (hasSel ? 1 : 0);');
+    // WO-142 新增「顯示／隱藏符號列」選單項，固定項由 3 變 4
+    expect(editorPaneSrc).toContain('return 4 + (hasSel ? 1 : 0);');
     expect(editorPaneSrc).toContain("id: 'versions-open'");
     expect(editorPaneSrc).toContain('halfWidth.rescan()');
   });

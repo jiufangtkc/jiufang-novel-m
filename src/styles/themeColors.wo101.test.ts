@@ -130,8 +130,8 @@ describe('WO-101：三套主題色票（最終色票表 v1 第 2 節）', () => 
   });
 
   it('沒有 data-theme 時（:root）就是森林綠；舊青瓷色票不再出現', () => {
-    // 全部 22 個介面樣式檔都納入檢查（不含字型；WO-110 新增 screens/welcomeTour.css，WO-122 新增 components/formatTools.css，WO-128 新增 screens/timelineScreen.css，WO-129 新增 components/whatsNewDialog.css，WO-130 新增 components/saveReminder.css，WO-138 新增 components/trashSheet.css，WO-140 新增 components/manuscriptVersionSheet.css）
-    expect(CSS_FILES.length).toBe(22);
+    // 全部 23 個介面樣式檔都納入檢查（不含字型；WO-142 新增 components/symbolBar.css，WO-110 新增 screens/welcomeTour.css，WO-122 新增 components/formatTools.css，WO-128 新增 screens/timelineScreen.css，WO-129 新增 components/whatsNewDialog.css，WO-130 新增 components/saveReminder.css，WO-138 新增 components/trashSheet.css，WO-140 新增 components/manuscriptVersionSheet.css）
+    expect(CSS_FILES.length).toBe(23);
     expect(CSS_FILES.some((f) => f.endsWith('/styles/global.css'))).toBe(true);
     const rootOnly = new Map<string, string>();
     for (const rule of GLOBAL_RULES) {
@@ -477,5 +477,38 @@ describe('WO-101：依色票實際疊色的對比', () => {
     // 其他命中 20%（正文欄）、結果列表 35%（四周底）
     expect(contrast(c('--text'), over(c('--search-current'), 0.2, c('--editor')))).toBeGreaterThanOrEqual(4.5);
     expect(contrast(c('--text'), over(c('--search-current'), 0.35, c('--writing-surround')))).toBeGreaterThanOrEqual(4.5);
+  });
+});
+
+const VERSION_SHEET_CSS = readFileSync(new URL('../components/manuscriptVersionSheet.css', import.meta.url), 'utf8');
+
+describe('WO-141：新舊版比較標記語意變數與三套主題對比', () => {
+  it('新增比較標記語意 CSS 變數皆衍生自既有主題變數，不寫死色碼', () => {
+    const forest = themeVars('forest');
+    expect(forest.get('--compare-del-text')).toBe('var(--muted)');
+    expect(forest.get('--compare-del-line')).toBe('color-mix(in srgb, var(--muted) 80%, transparent)');
+    expect(forest.get('--compare-add-text')).toBe('var(--accent)');
+    expect(forest.get('--compare-add-bg')).toBe('color-mix(in srgb, var(--accent) 18%, transparent)');
+
+    const delRule = block(VERSION_SHEET_CSS, '.version-compare-del');
+    expect(delRule).toMatch(/color:\s*var\(--compare-del-text\)/);
+    expect(delRule).toMatch(/text-decoration:\s*line-through/);
+    expect(delRule).toMatch(/text-decoration-color:\s*var\(--compare-del-line\)/);
+
+    const insRule = block(VERSION_SHEET_CSS, '.version-compare-ins');
+    expect(insRule).toMatch(/color:\s*var\(--compare-add-text\)/);
+    expect(insRule).toMatch(/background:\s*var\(--compare-add-bg\)/);
+  });
+
+  it.each(THEME_IDS)('%s：刪掉的字（灰色加劃線）與新加的字（主題色加底色）在比較正文與圖例都看得清楚（對比 ≥ 4.5）', (theme) => {
+    const c = (name: string) => rgb(hex(theme, name));
+    // 刪掉的字（--muted）在比較正文（--bg）與圖例（--panel）上皆達 AA 4.5
+    expect(contrast(c('--muted'), c('--bg'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c('--muted'), c('--panel'))).toBeGreaterThanOrEqual(4.5);
+    // 新加的字（--accent）疊 18% 同色底於比較正文（--bg）與圖例（--panel）上皆達 AA 4.5
+    const addBgInBody = over(c('--accent'), 0.18, c('--bg'));
+    const addBgInLegend = over(c('--accent'), 0.18, c('--panel'));
+    expect(contrast(c('--accent'), addBgInBody)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c('--accent'), addBgInLegend)).toBeGreaterThanOrEqual(4.5);
   });
 });

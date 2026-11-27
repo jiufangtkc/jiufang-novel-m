@@ -50,6 +50,43 @@ export function countWords(text: string): number {
   return total;
 }
 
+/**
+ * 依與 countWords 完全相同的規則將文字切分為計字詞元陣列；
+ * 對任何字串 s 恆滿足 tokenizeWords(s).length === countWords(s)。
+ */
+export function tokenizeWords(text: string): string[] {
+  const tokens: string[] = [];
+  let run: string[] = [];
+  const endRun = () => {
+    if (run.length) tokens.push(...tokenizeRun(run));
+    run = [];
+  };
+  const chars = Array.from(text);
+  for (let i = 0; i < chars.length; i += 1) {
+    const ch = chars[i]!;
+    if (WHITESPACE.test(ch)) {
+      endRun();
+      continue;
+    }
+    if (INVISIBLE.test(ch)) continue;
+    if (LATIN_WORD.test(ch)) {
+      run.push(ch);
+      continue;
+    }
+    if (
+      ASCII_MARK.test(ch) ||
+      (CURLY_APOSTROPHE.test(ch) && run.length > 0 && LATIN_WORD.test(run[run.length - 1]!) && LATIN_WORD.test(chars[i + 1] ?? ''))
+    ) {
+      run.push(ch);
+      continue;
+    }
+    endRun();
+    tokens.push(ch);
+  }
+  endRun();
+  return tokens;
+}
+
 /** 全書字數：每個卷、章、幕的名稱，加上章與幕的正文（與 Word 整份檔案計算的原則一致）。 */
 export function countBookWords(nodes: readonly ChapterNode[]): number {
   return nodes.reduce((sum, node) => {
@@ -132,6 +169,77 @@ function countRun(chars: readonly string[]): number {
     i = j;
   }
   return total;
+}
+
+/**
+ * 將一段連在一起的英數與半形符號切分為計字詞元，邏輯與 countRun 完全對稱。
+ */
+function tokenizeRun(chars: readonly string[]): string[] {
+  type Piece = { kind: 'num' | 'word' | 'mark'; text: string };
+  const pieces: Piece[] = [];
+  for (const ch of chars) {
+    const last = pieces[pieces.length - 1];
+    if (LATIN_WORD.test(ch)) {
+      if (last && last.kind !== 'mark') {
+        last.text += ch;
+        if (!DIGIT.test(ch)) last.kind = 'word';
+      } else {
+        pieces.push({ kind: DIGIT.test(ch) ? 'num' : 'word', text: ch });
+      }
+    } else {
+      pieces.push({ kind: 'mark', text: ch });
+    }
+  }
+
+  // 數字內部符號併進數字（與 countRun 第 2 步相同）
+  for (let i = 1; i + 1 < pieces.length; ) {
+    const prev = pieces[i - 1]!;
+    const mark = pieces[i]!;
+    const next = pieces[i + 1]!;
+    const internal =
+      prev.kind === 'num' &&
+      mark.kind === 'mark' &&
+      next.kind === 'num' &&
+      (mark.text === '.' || mark.text === ':' || (mark.text === ',' && next.text.length === 3));
+    if (internal) {
+      prev.text += mark.text + next.text;
+      pieces.splice(i, 2);
+    } else {
+      i += 1;
+    }
+  }
+
+  // 黏在英文單字上的符號併接或略過（與 countRun 第 3 步相同）
+  const tokens: string[] = [];
+  for (let i = 0; i < pieces.length; ) {
+    const piece = pieces[i]!;
+    if (piece.kind !== 'mark') {
+      tokens.push(piece.text);
+      i += 1;
+      continue;
+    }
+    let j = i;
+    while (j < pieces.length && pieces[j]!.kind === 'mark') j += 1;
+    const before = pieces[i - 1];
+    const after = pieces[j];
+    const touchesWord = before?.kind === 'word' || after?.kind === 'word';
+    if (touchesWord) {
+      if (before && after) {
+        let joinedMarks = '';
+        for (let k = i; k < j; k += 1) {
+          joinedMarks += pieces[k]!.text;
+        }
+        tokens[tokens.length - 1] = `${tokens[tokens.length - 1]}${joinedMarks}${after.text}`;
+        j += 1;
+      }
+    } else {
+      for (let k = i; k < j; k += 1) {
+        tokens.push(pieces[k]!.text);
+      }
+    }
+    i = j;
+  }
+  return tokens;
 }
 
 const WHITESPACE = /^[\s　]$/u;

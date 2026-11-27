@@ -15,8 +15,20 @@ import {
 import { latestEditTimestamp } from '../domain/saveClock';
 import { useLayout } from '../layout';
 import { manuscriptWritePath, newManuscriptFirstNodeId, writePath } from '../domain/openManuscript';
-import { recentDisplayProjects } from '../state/recentProjects';
+import {
+  BADGE_SAME_BOOK,
+  BADGE_SAME_TITLE,
+  KEEP_ONE_BUTTON,
+  KEEP_ONE_PARTIAL_FAILED,
+  filenameLine,
+  removeAlsoSameTitleNote,
+} from '../copy/duplicateOpenCopy';
+import { hasUnsavedChanges } from '../domain/duplicateOpen';
+import { browserDeviceStore, createDeviceOnlyProbe } from '../state/deviceOnlyContent';
+import { removeOtherCopies } from '../state/keepOnlyThis';
+import { recentListEntries } from '../state/recentProjects';
 import { useSample } from '../state/sampleStore';
+import { KeepOnlyThisDialog } from './KeepOnlyThisDialog';
 import { RemoveFromDeviceDialog } from './RemoveFromDeviceDialog';
 import { useFirstRunWelcome } from './useFirstRunWelcome';
 import { useImportTextFile } from './useImportTextFile';
@@ -41,11 +53,42 @@ export function HomeScreen() {
   const steps = useWelcomeSteps({ entry: 'first', project: null });
   const [title, setTitle] = useState(NEW_BOOK_DEFAULT_TITLE);
   const [shape, setShape] = useState<'novel' | 'single'>('novel');
-  // WO-84：同名稿子只列最近一次成功存下來的那份。
-  const recent = recentDisplayProjects(state.projects, state.recentIds, state.saveMeta);
+  // WO-143（取代 WO-84）：同名稿子每一份都列出來，重名時標示差別。
+  const recent = recentListEntries(state.projects, state.recentIds);
+
+  // WO-143：「留下這一份，刪掉同一本的其他份」；keepOne 有值才顯示確認視窗。
+  const [keepOne, setKeepOne] = useState<{
+    id: string;
+    title: string;
+    otherIds: string[];
+    hasUnsaved: boolean;
+  } | null>(null);
+  const [keepOneBusy, setKeepOneBusy] = useState(false);
+  const closeKeepOne = () => {
+    if (!keepOneBusy) setKeepOne(null);
+  };
+  const confirmKeepOne = async () => {
+    if (!keepOne || keepOneBusy) return;
+    setKeepOneBusy(true);
+    try {
+      const result = await removeOtherCopies({ ids: keepOne.otherIds, remove: actions.removeFromDevice });
+      if (result.failedId !== null) actions.toast(KEEP_ONE_PARTIAL_FAILED);
+    } finally {
+      setKeepOneBusy(false);
+      setKeepOne(null);
+    }
+  };
+  useEffect(() => {
+    if (!keepOne) return undefined;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !keepOneBusy) setKeepOne(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [keepOne, keepOneBusy]);
 
   // WO-116：按 X 先問；removing 有值才顯示確認視窗。
-  const [removing, setRemoving] = useState<{ id: string; title: string } | null>(null);
+  const [removing, setRemoving] = useState<{ id: string; title: string; note: string | null } | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const closeRemoving = () => {
     if (!removeBusy) setRemoving(null);
@@ -88,8 +131,14 @@ export function HomeScreen() {
           <p className="empty-note">還沒有稿子。開一本新的，或開啟已經存在的 .db 稿件檔。</p>
         ) : (
           <ul className="project-list">
-            {recent.map((project) => (
-              <li key={project.id} className="project-card" data-testid="project-card">
+            {recent.map((entry) => {
+              const { project } = entry;
+              return (
+              <li
+                key={project.id}
+                className={entry.otherSameBookIds.length > 0 ? 'project-card has-keep-one' : 'project-card'}
+                data-testid="project-card"
+              >
                 <Link to={manuscriptWritePath(project)} className="project-main">
                   <span className="project-icon">
                     <BookIcon />
@@ -103,19 +152,59 @@ export function HomeScreen() {
                         lastEditMs: latestEditTimestamp(state.saveMeta[project.id]),
                       })}　·　字數：${bookWords(project.id)}`}
                     </small>
+                    {entry.filename ? (
+                      <small data-testid="project-filename">{filenameLine(entry.filename)}</small>
+                    ) : null}
+                    {entry.badge ? (
+                      <small className="project-badge" data-testid="project-badge" data-badge={entry.badge}>
+                        {entry.badge === 'same-book' ? BADGE_SAME_BOOK : BADGE_SAME_TITLE}
+                      </small>
+                    ) : null}
                   </span>
                 </Link>
                 <button
                   type="button"
                   className="icon-button"
                   aria-label={removeFromDeviceAria(project.title)}
-                  // WO-116：只開確認視窗，不動任何資料；按「刪掉」才真的刪。
-                  onClick={() => setRemoving({ id: project.id, title: project.title })}
+                  // WO-116：只開確認視窗，不動任何資料；按「刪掉」才真的刪。辨認哪一份一律用稿子代號。
+                  onClick={() =>
+                    setRemoving({
+                      id: project.id,
+                      title: project.title,
+                      note: entry.sameTitleOthers > 0 ? removeAlsoSameTitleNote(project.title) : null,
+                    })
+                  }
                 >
                   <CloseIcon />
                 </button>
+                {entry.otherSameBookIds.length > 0 ? (
+                  <button
+                    type="button"
+                    className="project-keep-one"
+                    data-testid="keep-only-this"
+                    // 只開確認視窗，不動任何資料；只刪 isSameBook 的其他份，不刪只是同名的別本。
+                    onClick={() =>
+                      setKeepOne({
+                        id: project.id,
+                        title: project.title,
+                        otherIds: entry.otherSameBookIds,
+                        hasUnsaved: entry.otherSameBookIds.some((otherId) => {
+                          const other = state.projects.find((item) => item.id === otherId);
+                          // 與開檔詢問同一個判斷：含這個裝置獨有的卡片草稿與即時草稿。
+                          return (
+                            !other ||
+                            hasUnsavedChanges(other, state.saveMeta, createDeviceOnlyProbe(browserDeviceStore()))
+                          );
+                        }),
+                      })
+                    }
+                  >
+                    {KEEP_ONE_BUTTON}
+                  </button>
+                ) : null}
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
       </main>
@@ -200,8 +289,19 @@ export function HomeScreen() {
         <RemoveFromDeviceDialog
           bookTitle={removing.title}
           busy={removeBusy}
+          extraNote={removing.note}
           onConfirm={() => void confirmRemoving()}
           onCancel={closeRemoving}
+        />
+      )}
+      {keepOne && (
+        <KeepOnlyThisDialog
+          bookTitle={keepOne.title}
+          otherCount={keepOne.otherIds.length}
+          hasUnsaved={keepOne.hasUnsaved}
+          busy={keepOneBusy}
+          onConfirm={() => void confirmKeepOne()}
+          onCancel={closeKeepOne}
         />
       )}
       {creating && (

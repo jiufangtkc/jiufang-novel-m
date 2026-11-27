@@ -139,6 +139,13 @@ import {
   useLayout,
 } from '../layout';
 import { useHalfWidthReminder as useHalfWidthSetting } from '../state/halfWidthReminder';
+import { useSymbolBarSetting } from '../state/symbolBarSetting';
+import { SymbolBar } from '../components/SymbolBar';
+import {
+  SYMBOL_BAR_COMPOSING_TOAST,
+  SYMBOL_BAR_MENU_HIDE,
+  SYMBOL_BAR_MENU_SHOW,
+} from '../copy/symbolBarCopy';
 import {
   getProjectChapterVersionRead,
   getProjectChapterVersions,
@@ -197,7 +204,7 @@ export function EditorPane({
   const onUserEditRef = useRef<(() => void) | null>(null);
   const onTrashCaptureRef = useRef<((payload: TrashCapturePayload) => string | null) | null>(null);
   const onTrashUndoRef = useRef<((itemId: string) => void) | null>(null);
-  const { ref, replaceText } = useWritingSurface({
+  const { ref, replaceText, insertSymbol } = useWritingSurface({
     bookId: projectId,
     chapterId: chapter.id,
     openingText: chapter.content ?? '',
@@ -319,6 +326,8 @@ export function EditorPane({
     pointer,
   } = useLayout();
   const [halfWidthOn] = useHalfWidthSetting();
+  // WO-142：全形標點列開關（手指裝置預設開、滑鼠預設關；使用者選過就以選的為準）
+  const [symbolBarEnabled, setSymbolBarEnabled] = useSymbolBarSetting(pointer);
   // WO-105：查字典（只觀察選取；位置只看現有版面判斷）
   const dict = useDictSelection('body', ref);
   const dictNotice = useDictNotice();
@@ -768,6 +777,11 @@ export function EditorPane({
       badge: trashItems.length > 0 ? trashMenuBadge(trashItems.length) : undefined,
       onSelect: () => setTrashOpen(true),
     },
+    {
+      id: 'symbol-bar-toggle',
+      label: symbolBarEnabled ? SYMBOL_BAR_MENU_HIDE : SYMBOL_BAR_MENU_SHOW,
+      onSelect: () => setSymbolBarEnabled(!symbolBarEnabled),
+    },
     ...(hasMenuSelection
       ? [
           {
@@ -795,7 +809,9 @@ export function EditorPane({
           snap.end > snap.start &&
           countWords(snap.valueSnapshot.slice(snap.start, snap.end)) > 0,
       );
-      return 3 + (hasSel ? 1 : 0);
+      // 固定項目：排版、版本、刪稿暫存、符號列開關（共 4 個），有選取時再加「移到刪稿暫存」。
+      // 與上面 extraMenuItems 的項目數一致。
+      return 4 + (hasSel ? 1 : 0);
     },
   });
   onUserEditRef.current = () => {
@@ -1263,6 +1279,17 @@ export function EditorPane({
         !halfWidthQuiet &&
         !(focused && pointer === 'touch')));
 
+  // WO-142：符號列顯示條件。手指裝置只在正文有焦點時顯示；滑鼠裝置開著就一直顯示；編輯卡片（正文唯讀）時不顯示。
+  const showSymbolBar =
+    symbolBarEnabled && !cardEdit.editing && (pointer === 'mouse' || focused);
+  const handleInsertSymbol = (symbolId: string) => {
+    if (isComposingRef.current) {
+      actions.toast(SYMBOL_BAR_COMPOSING_TOAST);
+      return;
+    }
+    if (insertSymbol(symbolId) === 'composing') actions.toast(SYMBOL_BAR_COMPOSING_TOAST);
+  };
+
   const isYieldLeft =
     (layoutMode === 'phone-landscape' || layoutMode === 'medium') && sidePanels.left;
   const isYieldRight =
@@ -1274,6 +1301,7 @@ export function EditorPane({
       className={[
         keyboardOpen ? 'editor is-keyboard' : 'editor',
         focusMode ? 'is-focus-mode' : '',
+        showSymbolBar ? 'has-symbol-bar' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -1510,6 +1538,7 @@ export function EditorPane({
         versionRead={versionRead}
         layoutMode={layoutMode}
         isComposing={() => isComposingRef.current}
+        getCurrentContent={() => ref.current?.value ?? chapter.content ?? ''}
         onClose={() => setVersionsOpen(false)}
         onSaveVersion={handleSaveChapterVersion}
         onUpdateNote={handleUpdateChapterVersionNote}
@@ -1578,6 +1607,14 @@ export function EditorPane({
         }}
       />
       <HalfWidthBubble controller={halfWidth} />
+      {showSymbolBar ? (
+        <SymbolBar
+          textareaRef={ref}
+          onInsert={handleInsertSymbol}
+          onCollapse={() => setSymbolBarEnabled(false)}
+          showTitles={pointer === 'mouse'}
+        />
+      ) : null}
       <footer className="editor-status" data-testid="status-bar">
         <DailyProgressBar words={todayWords} goal={goal} met={isGlowing} compact={keyboardOpen} />
         <div className="status-row">
