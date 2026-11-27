@@ -14,6 +14,12 @@ import { readTimelineData, writeTimelineData, type TimelineRead } from './timeli
 import { readTransferData, writeTransferEvents, type TransferEvent, type TransferRead } from './transferMeta';
 import { readTrashData, writeTrashData, type TrashRead } from './trashMeta';
 import type { TrashItem } from '../domain/trash';
+import {
+  readChapterVersionData,
+  writeChapterVersionData,
+  type ChapterVersionRead,
+} from './chapterVersionMeta';
+import type { ManuscriptVersion } from '../domain/manuscriptVersions';
 
 const PROGRESS = new Set<string>(['Draft', '1st Edit', '2nd Edit', 'Final', 'Discarded']);
 
@@ -141,6 +147,8 @@ export interface LoadedFile {
   bookMeta: BookMetaRead;
   /** WO-138：稿子內附加表的刪稿暫存區（只讀，不建表）。 */
   trash: TrashRead;
+  /** WO-140：稿子內附加表的稿子版本（只讀，不建表）。 */
+  chapterVersions: ChapterVersionRead;
 }
 
 type ChapterNodeWithRaw = ChapterNode & {
@@ -497,6 +505,7 @@ export function readFileProject(sql: Sql): LoadedFile {
     timeline,
     bookMeta: readBookMeta(sql),
     trash: readTrashData(sql),
+    chapterVersions: readChapterVersionData(sql),
   };
 }
 
@@ -1028,6 +1037,8 @@ export function writeFileProject(
   bookMeta?: BookMetaWritable,
   /** WO-138：刪稿暫存區；未傳入或 absent 且為空陣列時零寫入，完全不碰 jiufangm_trash_*。 */
   trashItems?: readonly TrashItem[],
+  /** WO-140：稿子版本；未傳入或 absent 且為空陣列時零寫入，完全不碰 jiufangm_chapter_version_*。 */
+  chapterVersions?: readonly ManuscriptVersion[],
 ): void {
   const fkRow = sql.select('PRAGMA foreign_keys')[0];
   const prevForeignKeys = fkRow && Number(fkRow.foreign_keys) ? 1 : 0;
@@ -1049,6 +1060,8 @@ export function writeFileProject(
     if (bookMeta) writeBookMeta(sql, bookMeta);
     // WO-138：未傳 trashItems 時維持 P0-4 零寫入；傳入時於同一筆交易寫入並讀回核對。
     if (trashItems !== undefined) writeTrashData(sql, trashItems);
+    // WO-140：未傳 chapterVersions 時維持 P0-4 零寫入；傳入時於同一筆交易寫入並讀回核對。
+    if (chapterVersions !== undefined) writeChapterVersionData(sql, chapterVersions);
     sql.exec('COMMIT');
   } catch (error) {
     try {
