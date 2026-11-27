@@ -1,95 +1,92 @@
+/**
+ * WO-143 取代 WO-84：首頁最近清單不再把同名稿子收成一筆。
+ * 這個檔案原本測 WO-84 的「同名只留一筆」，現在改測新行為：照 recentIds 順序全列，重名時標示差別。
+ */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { DemoProject } from '../data/demo';
-import { manuscriptWritePath } from '../domain/openManuscript';
-import { lastSuccessfulSaveMs, recentDisplayProjects } from './recentProjects';
+import { recentListEntries } from './recentProjects';
 
-function proj(id: string, title: string, text: string, origin?: 'file'): DemoProject {
-  return {
-    id,
-    title,
-    updatedLabel: '已在手機',
-    nodes: [{ id: `${id}-c1`, kind: 'chapter', title: '第一章', content: text, children: [] }],
-    ...(origin ? { origin } : {}),
-  } as unknown as DemoProject;
+const UUID_A = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+const UUID_B = 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e';
+
+function proj(id: string, title: string, extra: Partial<DemoProject> = {}): DemoProject {
+  return { id, title, updatedLabel: '已在手機', bookGoal: 1000, nodes: [], origin: 'file', ...extra };
 }
-const meta = (o: Record<string, number | null>) => ({
-  lastAutoSaveMs: null,
-  lastManualSaveMs: null,
-  lastExportMs: null,
-  lastProjectSaveMs: null,
-  ...o,
-});
-const textOf = (p: DemoProject) => (p.nodes[0] as { content: string }).content;
 
-describe('WO-84：首頁同名稿子合併成一筆', () => {
-  it('WO-84：同名兩份只列一筆，且是較晚另存的那份（與清單順序無關）', () => {
-    const old = proj('old', '【範例】同名稿', '舊的正文');
-    const fresh = proj('fresh', '【範例】同名稿', '剛存的正文');
-    const saveMeta = { old: meta({ lastExportMs: 1000 }), fresh: meta({ lastExportMs: 2000 }) };
-    // 較舊那份排在清單最前面（剛被開啟），仍應選剛存那份
-    const shown = recentDisplayProjects([old, fresh], ['old', 'fresh'], saveMeta);
-    expect(shown).toHaveLength(1);
-    expect(shown[0]!.id).toBe('fresh');
-    expect(textOf(shown[0]!)).toBe('剛存的正文');
-    expect(manuscriptWritePath(shown[0]!)).toContain('fresh');
+describe('WO-143 取代 WO-84：首頁清單不合併同名', () => {
+  it('同名兩份都列出來，順序照 recentIds', () => {
+    const a = proj('a', '【範例】同名稿');
+    const b = proj('b', '【範例】同名稿');
+    expect(recentListEntries([a, b], ['b', 'a']).map((e) => e.project.id)).toEqual(['b', 'a']);
   });
 
-  it('WO-84：自動暫存較晚、開啟較晚都不能取代存檔先後', () => {
-    const a = proj('a', '【範例】稿', 'A');
-    const b = proj('b', '【範例】稿', 'B');
-    const saveMeta = {
-      a: meta({ lastProjectSaveMs: 5000 }),
-      b: meta({ lastAutoSaveMs: 9000, lastExportMs: 3000 }),
-    };
-    expect(recentDisplayProjects([b, a], ['b', 'a'], saveMeta)[0]!.id).toBe('a');
+  it('不存在於 projects 的代號被排除；不刪底層專案', () => {
+    const a = proj('a', '甲');
+    const all = [a];
+    expect(recentListEntries(all, ['ghost', 'a']).map((e) => e.project.id)).toEqual(['a']);
+    expect(all).toHaveLength(1);
   });
 
-  it('WO-84：較舊那份後來「立刻暫存」（App 空間）不取代較晚另存的那份', () => {
-    const jia = proj('jia', '【範例】同名稿', '正文甲');
-    const yi = proj('yi', '【範例】同名稿', '正文乙');
-    const saveMeta = {
-      jia: meta({ lastExportMs: 1000, lastManualSaveMs: 9000 }),
-      yi: meta({ lastExportMs: 2000 }),
-    };
-    for (const ids of [['jia', 'yi'], ['yi', 'jia']]) {
-      const shown = recentDisplayProjects([jia, yi], ids, saveMeta);
-      expect(shown).toHaveLength(1);
-      expect(shown[0]!.id).toBe('yi');
-      expect(textOf(shown[0]!)).toBe('正文乙');
-      expect(manuscriptWritePath(shown[0]!)).toContain('yi');
+  it('沒有重名：沒有標示、沒有檔名行、沒有「留下這一份」', () => {
+    const entries = recentListEntries([proj('x', '甲', { filename: 'x.db' }), proj('y', '乙', { filename: 'y.db' })], ['y', 'x']);
+    for (const entry of entries) {
+      expect(entry.badge).toBeNull();
+      expect(entry.filename).toBeNull();
+      expect(entry.sameTitleOthers).toBe(0);
+      expect(entry.otherSameBookIds).toEqual([]);
     }
-    expect(lastSuccessfulSaveMs(meta({ lastManualSaveMs: 9000 }))).toBe(-1);
   });
 
-  it('WO-84：不同書名不合併，清單順序維持', () => {
-    const x = proj('x', '【範例】甲', '1');
-    const y = proj('y', '【範例】乙', '2');
-    expect(recentDisplayProjects([x, y], ['y', 'x'], {}).map((p) => p.id)).toEqual(['y', 'x']);
+  it('同一本（身分證相同）→ same-book，並列出同一本的其他份', () => {
+    const a = proj('a', '道劍', { bookUuid: UUID_A, filename: 'a.db' });
+    const b = proj('b', '道劍', { bookUuid: UUID_A, filename: 'b.db' });
+    const [ea, eb] = recentListEntries([a, b], ['a', 'b']);
+    expect(ea!.badge).toBe('same-book');
+    expect(ea!.filename).toBe('a.db');
+    expect(ea!.otherSameBookIds).toEqual(['b']);
+    expect(eb!.otherSameBookIds).toEqual(['a']);
   });
 
-  it('WO-84：存檔時間相同時留從檔案開回的那份，再平手留清單前面的', () => {
-    const draft = proj('d', '【範例】稿', '草稿');
-    const file = proj('f', '【範例】稿', '檔案', 'file');
-    const same = { d: meta({ lastExportMs: 7 }), f: meta({ lastExportMs: 7 }) };
-    expect(recentDisplayProjects([draft, file], ['d', 'f'], same)[0]!.id).toBe('f');
-    const p1 = proj('p1', '【範例】稿', '1');
-    const p2 = proj('p2', '【範例】稿', '2');
-    expect(recentDisplayProjects([p1, p2], ['p2', 'p1'], {})[0]!.id).toBe('p2');
+  it('只是同名（不同身分證、不同檔名）→ same-title，且不會被列為同一本的其他份', () => {
+    const a = proj('a', '道劍', { bookUuid: UUID_A, filename: 'a.db' });
+    const b = proj('b', ' 道劍 ', { bookUuid: UUID_B, filename: 'b.db' });
+    const [ea, eb] = recentListEntries([a, b], ['a', 'b']);
+    expect(ea!.badge).toBe('same-title');
+    expect(eb!.badge).toBe('same-title');
+    expect(ea!.otherSameBookIds).toEqual([]);
+    expect(ea!.sameTitleOthers).toBe(1);
   });
 
-  it('WO-84：沒有紀錄視為最舊；不刪底層專案', () => {
-    expect(lastSuccessfulSaveMs(undefined)).toBe(-1);
-    const a = proj('a', '【範例】稿', 'A');
-    const b = proj('b', '【範例】稿', 'B');
-    const all = [a, b];
-    const shown = recentDisplayProjects(all, ['a', 'b'], { b: meta({ lastExportMs: 1 }) });
-    expect(shown.map((p) => p.id)).toEqual(['b']);
-    expect(all).toHaveLength(2);
+  it('審查必修 2：另存分枝（不同的已寫入身分證、相同檔名）不是同一本，標示 same-title，也不會被列為可刪', () => {
+    const a = proj('a', '道劍', { bookUuid: UUID_A, filename: '道劍.db', bookMetaPersisted: true });
+    const b = proj('b', '道劍', { bookUuid: UUID_B, filename: '道劍.db', bookMetaPersisted: true, originBookUuid: UUID_A });
+    const [ea, eb] = recentListEntries([a, b], ['a', 'b']);
+    expect(ea!.badge).toBe('same-title');
+    expect(eb!.badge).toBe('same-title');
+    expect(ea!.otherSameBookIds).toEqual([]);
+    expect(eb!.otherSameBookIds).toEqual([]);
   });
 
-  it('WO-84：首頁實際使用同一個選取函式', () => {
+  it('三份：兩份同一本、一份只是同名 → 同一本那兩份互相列出，另一份只是同名', () => {
+    const a = proj('a', '道劍', { bookUuid: UUID_A, filename: 'a.db' });
+    const b = proj('b', '道劍', { bookUuid: UUID_A, filename: 'b.db' });
+    const c = proj('c', '道劍', { bookUuid: UUID_B, filename: 'c.db' });
+    const entries = recentListEntries([a, b, c], ['a', 'b', 'c']);
+    expect(entries.map((e) => e.badge)).toEqual(['same-book', 'same-book', 'same-title']);
+    expect(entries[0]!.otherSameBookIds).toEqual(['b']);
+    expect(entries[2]!.otherSameBookIds).toEqual([]);
+  });
+
+  it('沒有檔名的重名稿子：有標示、沒有檔名行', () => {
+    const [ea] = recentListEntries([proj('a', '道劍'), proj('b', '道劍')], ['a', 'b']);
+    expect(ea!.badge).toBe('same-title');
+    expect(ea!.filename).toBeNull();
+  });
+
+  it('首頁實際使用新的清單函式，不再用 WO-84 的合併函式', () => {
     const source = readFileSync(new URL('../screens/HomeScreen.tsx', import.meta.url), 'utf8');
-    expect(source).toContain('recentDisplayProjects(state.projects, state.recentIds, state.saveMeta)');
+    expect(source).toContain('recentListEntries(state.projects, state.recentIds)');
+    expect(source).not.toContain('recentDisplayProjects');
   });
 });

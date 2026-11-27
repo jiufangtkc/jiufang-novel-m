@@ -12,6 +12,8 @@ import {
 export function RemoveFromDeviceDialog(props: {
   bookTitle: string;
   busy: boolean;
+  /** WO-143：這個裝置上還有其他同書名的稿子時，接在既有內文後面的一句。沒有就不顯示，畫面與以前完全一樣。 */
+  extraNote?: string | null;
   onConfirm: () => void;
   onCancel: () => void;
 }) {
@@ -27,7 +29,9 @@ export function RemoveFromDeviceDialog(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <h2 id="remove-from-device-title">{removeFromDeviceTitle(props.bookTitle)}</h2>
-        <p id="remove-from-device-body">{REMOVE_FROM_DEVICE_BODY}</p>
+        <p id="remove-from-device-body">
+          {props.extraNote ? `${REMOVE_FROM_DEVICE_BODY}${props.extraNote}` : REMOVE_FROM_DEVICE_BODY}
+        </p>
         <div className="dialog-actions delete-actions">
           <button
             type="button"

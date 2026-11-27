@@ -330,6 +330,34 @@ a { color: var(--accent); }
   overflow: hidden;
 }
 
+/*
+ * WO-143：「已經有了」詢問視窗與「留下這一份」確認視窗要蓋過歡迎導覽（welcomeTour.css 的 .welcome-tour 為 fixed、z-index 300），
+ * 否則導覽收尾「開始寫」選到已有的稿子時，視窗被導覽擋住、無法點選。
+ * 取 320：高於導覽 300、各種抽屜與面板（≤290），低於改版說明 350 與匯入視窗 400。
+ * 用 fixed 並加 !important，避免被寫作頁 .write-layout 內的 .sheet-backdrop 規則（z-index 200）蓋回去。
+ */
+.sheet-backdrop.duplicate-open-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 320 !important;
+}
+
+/* WO-143：同書名並列時的標示；有「留下這一份」小字鈕時卡片可換行，鈕獨占一行。 */
+.project-card.has-keep-one { flex-wrap: wrap; }
+.project-keep-one {
+  flex-basis: 100%;
+  min-height: 44px;
+  margin: 0 8px 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: 13px;
+  text-align: left;
+  text-decoration: underline;
+  padding: 0 4px;
+}
+.project-main small.project-badge { color: var(--accent); }
+
 .project-main small, .setting-card small, .setting-row small {
   display: block;
   margin-top: 4px;

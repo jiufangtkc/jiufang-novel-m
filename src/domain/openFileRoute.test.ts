@@ -182,11 +182,13 @@ describe('hook 真的接上同一個決策、所有入口共用', () => {
     expect(hook).toContain('env: readBrowserRouteEnv(),');
     expect(hook).not.toContain('if (canPickLocalFiles())');
     // picker 只在 runPicker 裡呼叫；Windows 路徑（clickInput）只點 input。
-    expect(hook.match(/\.openWithPicker\(\)/g)?.length).toBe(1);
+    // WO-143：呼叫多帶了詢問用的 askDuplicate，仍然只有一處，且在 runPicker 裡。
+    expect(hook.match(/\.openWithPicker\(\{ askDuplicate \}\)/g)?.length).toBe(1);
+    expect(hook).toMatch(/runPicker: \(\) => \{[\s\S]*?\.openWithPicker\(\{ askDuplicate \}\)[\s\S]*?clickInput:/);
     expect(hook).not.toMatch(/showOpenFilePicker\s*\(/);
     expect(hook).toContain('clickInput: () => inputRef.current?.click(),');
     expect(hook).toContain('data-testid="open-db"');
-    expect(hook).toContain('.importFile(file)');
+    expect(hook).toContain('.importFile(file, null, { askDuplicate })');
   });
 
   it('首頁、檔案頁、歡迎導覽、再看一次都經過共用 hook，自己不碰 picker／判定', () => {
