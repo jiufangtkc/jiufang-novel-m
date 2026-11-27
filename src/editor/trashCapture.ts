@@ -41,6 +41,12 @@ export type TrashEditOutcome =
 export interface TrashCaptureTracker {
   noteSelection: (start: number, end: number, beforeLength: number) => void;
   noteHistoryUndo: () => void;
+  /**
+   * WO-142：下一次編輯是「用成對符號把選取文字包起來」，文字都還在，不是刪除；
+   * 到 releaseSuppress 為止（或被下一次 handleEdit 用掉）都不收進刪稿暫存。
+   */
+  suppressNextCapture: () => void;
+  releaseSuppress: () => void;
   handleEdit: (input: {
     chapterId: string;
     before: string;
@@ -60,8 +66,17 @@ export function createTrashCaptureTracker(): TrashCaptureTracker {
   let pendingSelection: SelectionSnapshot | null = null;
   let pendingHistoryUndo = false;
   let lastAutoTrash: LastAutoTrash | null = null;
+  let suppressNext = false;
 
   return {
+    suppressNextCapture() {
+      suppressNext = true;
+    },
+
+    releaseSuppress() {
+      suppressNext = false;
+    },
+
     noteSelection(start, end, beforeLength) {
       pendingHistoryUndo = false;
       if (end > start && start >= 0 && beforeLength >= end) {
@@ -107,6 +122,11 @@ export function createTrashCaptureTracker(): TrashCaptureTracker {
         lastAutoTrash = null;
       }
 
+      if (suppressNext) {
+        suppressNext = false;
+        return { kind: 'none' };
+      }
+
       const range = extractDeletedRange(before, after, selection);
       if (range.end <= range.start) {
         return { kind: 'none' };
@@ -148,6 +168,7 @@ export function createTrashCaptureTracker(): TrashCaptureTracker {
     },
 
     clear() {
+      suppressNext = false;
       pendingSelection = null;
       pendingHistoryUndo = false;
       lastAutoTrash = null;

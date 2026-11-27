@@ -12,6 +12,13 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-142（暫定，待九方審）
+  {
+    version: '0.10.0',
+    items: [
+      '寫作頁新增全形標點列：可插入全形空白、破折號、刪節號和引號等出版常用標點，方便在 iPhone 無法使用第三方輸入法時使用。',
+    ],
+  },
   // WO-143（暫定，待九方審）
   {
     version: '0.9.1',
