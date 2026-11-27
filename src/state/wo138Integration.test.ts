@@ -301,7 +301,7 @@ describe('WO-138 第 7 段：跨版本相容、完整端到端與 0.6.0 整合�
     ).toContain(deleted120);
   });
 
-  it('版號 0.9.1 與改版說明核准內容一致（0.9.0 以下舊條目不動）', () => {
+  it('版號 0.10.0 與改版說明一致（0.9.1 與 0.9.0 以下舊條目不動）', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
       version: string;
     };
@@ -311,18 +311,24 @@ describe('WO-138 第 7 段：跨版本相容、完整端到端與 0.6.0 整合�
       version: string;
       packages: { '': { version: string } };
     };
-    expect(pkg.version).toBe('0.9.1');
-    expect(lock.version).toBe('0.9.1');
-    expect(lock.packages[''].version).toBe('0.9.1');
-    expect(APP_VERSION).toBe('0.9.1');
+    expect(pkg.version).toBe('0.10.0');
+    expect(lock.version).toBe('0.10.0');
+    expect(lock.packages[''].version).toBe('0.10.0');
+    expect(APP_VERSION).toBe('0.10.0');
     expect(RELEASE_NOTES[0]).toEqual({
+      version: '0.10.0',
+      items: [
+        '寫作頁新增全形標點列：可插入全形空白、破折號、刪節號和引號等出版常用標點，方便在 iPhone 無法使用第三方輸入法時使用。',
+      ],
+    });
+    expect(RELEASE_NOTES[1]).toEqual({
       version: '0.9.1',
       items: [
         '再開同一本稿子時，會先告訴你這個裝置上已經有了，讓你選要打開原本那份，還是用剛選的檔取代，不會再默默多出一份',
         '首頁不再把書名相同的稿子收成一筆，每一份都列出來並標示差別，刪除時也會講清楚刪的是哪一份',
       ],
     });
-    expect(RELEASE_NOTES[1]).toEqual({
+    expect(RELEASE_NOTES[2]).toEqual({
       version: '0.9.0',
       items: [
         '版本清單新增「比較」：可逐字對照任一份舊版與現在這一章的差異，並自動統計增減字數與改動段數',

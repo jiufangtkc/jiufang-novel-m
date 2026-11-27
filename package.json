@@ -1,7 +1,7 @@
 {
   "name": "jiufang-novel-m",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.10.0",
   "license": "MIT",
   "type": "module",
   "engines": {

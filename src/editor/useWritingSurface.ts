@@ -9,6 +9,8 @@ import { createIdleGate, IDLE_MS } from './idleGate';
 import { classifyTextDelta, type TextChangeSource, type TextDelta } from '../domain/writingLog';
 import { textForBoundChapter } from './chapterSurface';
 import { createTrashCaptureTracker, type TrashCapturePayload } from './trashCapture';
+import { insertSymbolInto, type InsertSymbolResult } from './symbolInsert';
+import { createWrapTracker } from './symbolWrap';
 
 export interface CommitTextOptions {
   countForToday?: boolean;
@@ -63,6 +65,8 @@ export function useWritingSurface({
    * 組字中不換（回傳 false）。換完立刻走既有 commit-text，字數照甲段算法更新。
    */
   const replaceRef = useRef<(next: string, caret: number, options?: { countForToday?: boolean }) => boolean>(() => false);
+  /** WO-142：全形標點列插入符號（像打字一樣，不是整章替換）。 */
+  const insertSymbolRef = useRef<(symbolId: string) => InsertSymbolResult>(() => 'unavailable');
 
   useEffect(() => {
     const textarea = ref.current;
@@ -86,6 +90,7 @@ export function useWritingSurface({
     const latest = { current: textarea.value };
     const lock = { current: false };
     const trashCapture = createTrashCaptureTracker();
+    const wrapTracker = createWrapTracker();
     let pendingUncountedDelta = 0;
     const gate = createIdleGate(IDLE_MS);
     const consumePendingUncountedDelta = (cancelIdle = false) => {
@@ -148,8 +153,11 @@ export function useWritingSurface({
       if (next === latest.current) return;
       const effectiveSource = nextSource ?? source.current;
       const before = latest.current;
-      const delta = classifyTextDelta(before, next, { source: effectiveSource });
+      // WO-142：包選取的成對符號（及其復原／重做）只算左右兩個符號，不當成大量貼上或刪除。
+      const wrap = wrapTracker.resolve(before, next);
+      const delta = wrap ? wrap.delta : classifyTextDelta(before, next, { source: effectiveSource });
       const prevAutoTrash = trashCapture.getLastAutoTrash();
+      if (wrap) trashCapture.suppressNextCapture();
       const trashOutcome = trashCapture.handleEdit({
         chapterId,
         before,
@@ -157,6 +165,7 @@ export function useWritingSurface({
         source: effectiveSource,
         nowMs: Date.now(),
       });
+      if (wrap) trashCapture.releaseSuppress();
       latest.current = next;
       source.current = 'type';
       mark();
@@ -258,6 +267,28 @@ export function useWritingSurface({
         revealCaret(textarea);
       });
     };
+    // WO-142：全形標點列插入（放在 onCompositionEnd 之後，避免落在既有守衛切的 replaceRef 區塊內）
+    insertSymbolRef.current = (symbolId: string) =>
+      insertSymbolInto(symbolId, {
+        target: textarea,
+        isComposing: () => composing.current,
+        isFocused: () => document.activeElement === textarea,
+        execInsert:
+          typeof document !== 'undefined' && typeof document.execCommand === 'function'
+            ? (text) => document.execCommand('insertText', false, text)
+            : undefined,
+        beginWrap: (record) => wrapTracker.begin(record),
+        endWrap: () => wrapTracker.end(),
+        onFallbackInput: ({ start, end }) => {
+          // 後備路徑：沒有真的 beforeinput／input，手動做與 onInput 相同的事。
+          trashCapture.noteSelection(start, end, latest.current.length);
+          onUserEditRef.current?.();
+          process('type');
+          gate.schedule(() => flush());
+          revealCaret(textarea);
+        },
+        onCaretMoved: () => revealCaret(textarea),
+      });
     const onKeyDown = (event: KeyboardEvent) => {
       const decision = decideEnterKey({
         key: event.key,
@@ -382,6 +413,8 @@ export function useWritingSurface({
 
     return () => {
       replaceRef.current = () => false;
+      insertSymbolRef.current = () => 'unavailable';
+      wrapTracker.clear();
       trashCapture.clear();
       setLiveFlusher(null);
       flush(true);
@@ -407,5 +440,6 @@ export function useWritingSurface({
 
   const replaceText = (next: string, caret: number, options?: { countForToday?: boolean }) =>
     replaceRef.current(next, caret, options);
-  return { ref, dirty, replaceText };
+  const insertSymbol = (symbolId: string) => insertSymbolRef.current(symbolId);
+  return { ref, dirty, replaceText, insertSymbol };
 }
