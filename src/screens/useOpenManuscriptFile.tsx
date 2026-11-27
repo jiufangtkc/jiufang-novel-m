@@ -4,7 +4,9 @@ import { openFileErrorMessage } from '../copy/userFacing';
 import { canPickLocalFiles } from '../db/browserDisk';
 import { writePath } from '../domain/openManuscript';
 import { dispatchOpen, readBrowserRouteEnv } from '../domain/openFileRoute';
+import type { DuplicateChoice, DuplicateOpenInfo } from '../domain/duplicateOpen';
 import { useSample } from '../state/sampleStore';
+import { DuplicateOpenDialog } from './DuplicateOpenDialog';
 
 export type OpenFileResult = 'opened' | 'cancelled' | 'failed';
 
@@ -28,6 +30,28 @@ export function useOpenManuscriptFile(): {
   const inputRef = useRef<HTMLInputElement>(null);
   const afterRef = useRef<((result: OpenFileResult) => void) | null>(null);
   const busyRef = useRef(false);
+  // WO-143：已經有同一本時的詢問。dup 有值才顯示視窗；開著時「開啟稿子」維持 busy。
+  const [dup, setDup] = useState<DuplicateOpenInfo | null>(null);
+  const dupResolveRef = useRef<((choice: DuplicateChoice) => void) | null>(null);
+  const askDuplicate = (info: DuplicateOpenInfo): Promise<DuplicateChoice> =>
+    new Promise<DuplicateChoice>((resolve) => {
+      dupResolveRef.current = resolve;
+      setDup(info);
+    });
+  const answerDuplicate = (choice: DuplicateChoice) => {
+    const resolve = dupResolveRef.current;
+    dupResolveRef.current = null;
+    setDup(null);
+    resolve?.(choice);
+  };
+  // 離開畫面時還開著視窗，就當作取消，不留懸空的等待。
+  useEffect(
+    () => () => {
+      dupResolveRef.current?.('cancel');
+      dupResolveRef.current = null;
+    },
+    [],
+  );
   const begin = () => {
     busyRef.current = true;
     setBusy(true);
@@ -63,7 +87,7 @@ export function useOpenManuscriptFile(): {
         begin();
         // 這一行仍在點擊的同步段落裡：openWithPicker 第一步就是 showOpenFilePicker。
         void actions
-          .openWithPicker()
+          .openWithPicker({ askDuplicate })
           .then((opened) => {
             if (opened) {
               navigate(writePath(opened.id, opened.chapterId));
@@ -83,7 +107,9 @@ export function useOpenManuscriptFile(): {
   };
 
   const input = (
-    <input
+    <>
+      {dup ? <DuplicateOpenDialog info={dup} onChoose={answerDuplicate} /> : null}
+      <input
       ref={inputRef}
       type="file"
       accept=".db,application/octet-stream,application/x-sqlite3"
@@ -98,8 +124,13 @@ export function useOpenManuscriptFile(): {
         }
         begin();
         void actions
-          .importFile(file)
+          .importFile(file, null, { askDuplicate })
           .then((opened) => {
+            if (!opened) {
+              // WO-143：在「已經有了」的視窗按了取消：什麼都沒改，當作取消。
+              settle('cancelled');
+              return;
+            }
             navigate(writePath(opened.id, opened.chapterId));
             settle('opened');
           })
@@ -109,7 +140,8 @@ export function useOpenManuscriptFile(): {
           })
           .finally(end);
       }}
-    />
+      />
+    </>
   );
 
   return { busy, open, input };

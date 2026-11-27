@@ -131,9 +131,9 @@ describe('WO-121：入口共用同一段開檔流程', () => {
     expect(hook).toContain('dispatchOpen({');
     expect(hook).toContain('canPick: canPickLocalFiles(),');
     expect(hook).toContain('env: readBrowserRouteEnv(),');
-    expect(hook).toContain('.openWithPicker()');
+    expect(hook).toContain('.openWithPicker({ askDuplicate })');
     expect(hook).toContain('clickInput: () => inputRef.current?.click(),');
-    expect(hook).toContain('.importFile(file)');
+    expect(hook).toContain('.importFile(file, null, { askDuplicate })');
     // 兩條路都在 finally 解除 busy。
     expect(hook.match(/\.finally\(end\)/g)?.length).toBe(2);
     expect(hook).toContain("settle('opened')");

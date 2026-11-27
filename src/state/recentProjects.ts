@@ -1,47 +1,51 @@
 import type { DemoProject } from '../data/demo';
-import type { SaveMetaEntry } from './deviceSaveRecord';
+import { isSameBook } from '../domain/duplicateOpen';
 
 /**
- * WO-84：首頁最近清單的顯示用合併。
+ * WO-143 取代 WO-84：首頁最近清單不再把同名稿子收成一筆。
  *
- * - 「同名」以首頁看得到的書名（project.title，去掉頭尾空白後逐字相同）為準，不做模糊比對。
- * - 同名只留一筆：最近一次「成功存下來」的那份。存下來只指另存（lastExportMs）、
- *   存回檔案（lastProjectSaveMs）；暫存到 App 空間（lastManualSaveMs）與自動暫存都不算，「最近開啟」「已在手機」「字數」也不當依據。
- * - 時間相同或都沒有紀錄時的備援：先留從檔案開回的那份（內容就是存下來的檔），
- *   再看最近清單的順序（排前面的留下）。這只是穩定備援，不代表存檔先後。
- * - 只決定首頁顯示，不刪底層專案、不動檔案。
+ * - 照 recentIds 的順序列出所有稿子（只排除 projects 裡已不存在的代號），不刪底層專案、不動檔案。
+ * - 書名（去掉頭尾空白後逐字相同）有 2 份以上時，每份多帶一個標示：
+ *   與清單中另一份是同一本（isSameBook）→ 'same-book'；否則 'same-title'。沒有重名的稿子 badge 為 null，外觀不變。
+ * - otherSameBookIds：清單裡「同一本」的其他份（給「留下這一份，刪掉同一本的其他份」用）。
+ *   只含 isSameBook 的份，不含只是同名的別本。
  */
-type SaveMetaMap = Record<string, Partial<SaveMetaEntry> | undefined>;
+export type RecentBadge = 'same-book' | 'same-title' | null;
 
-export function lastSuccessfulSaveMs(meta: Partial<SaveMetaEntry> | undefined): number {
-  if (!meta) return -1;
-  return Math.max(meta.lastExportMs ?? -1, meta.lastProjectSaveMs ?? -1);
+export interface RecentEntry {
+  project: DemoProject;
+  badge: RecentBadge;
+  /** 重名時要多顯示的檔名；沒重名或沒有檔名時為 null。 */
+  filename: string | null;
+  /** 清單中同書名的其他份數（0 代表沒有重名）。 */
+  sameTitleOthers: number;
+  otherSameBookIds: string[];
 }
 
-export function recentDisplayProjects(
+export function recentListEntries(
   projects: readonly DemoProject[],
   recentIds: readonly string[],
-  saveMeta: SaveMetaMap,
-): DemoProject[] {
-  const listed = recentIds
-    .map((id) => projects.find((project) => project.id === id))
-    .filter((project): project is DemoProject => project !== undefined);
-  const winners = new Map<string, DemoProject>();
-  for (const project of listed) {
-    const key = project.title.trim();
-    const current = winners.get(key);
-    if (!current || beats(project, current, saveMeta)) winners.set(key, project);
+): RecentEntry[] {
+  const listed: DemoProject[] = [];
+  const seen = new Set<string>();
+  for (const id of recentIds) {
+    if (seen.has(id)) continue;
+    const project = projects.find((item) => item.id === id);
+    if (project) {
+      listed.push(project);
+      seen.add(id);
+    }
   }
-  // 照最近清單原本的順序輸出，每個書名只放代表那一筆。
-  return listed.filter((project) => winners.get(project.title.trim()) === project);
-}
-
-function beats(candidate: DemoProject, current: DemoProject, saveMeta: SaveMetaMap): boolean {
-  const a = lastSuccessfulSaveMs(saveMeta[candidate.id]);
-  const b = lastSuccessfulSaveMs(saveMeta[current.id]);
-  if (a !== b) return a > b;
-  const aFile = candidate.origin === 'file';
-  const bFile = current.origin === 'file';
-  if (aFile !== bFile) return aFile;
-  return false; // 完全平手：保留清單中排在前面的
+  return listed.map((project) => {
+    const others = listed.filter((item) => item !== project && item.title.trim() === project.title.trim());
+    const otherSameBookIds = others.filter((item) => isSameBook(project, item)).map((item) => item.id);
+    const badge: RecentBadge = others.length === 0 ? null : otherSameBookIds.length > 0 ? 'same-book' : 'same-title';
+    return {
+      project,
+      badge,
+      filename: others.length > 0 && project.filename ? project.filename : null,
+      sameTitleOthers: others.length,
+      otherSameBookIds,
+    };
+  });
 }

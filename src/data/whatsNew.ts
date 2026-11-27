@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-143（暫定，待九方審）
+  {
+    version: '0.9.1',
+    items: [
+      '再開同一本稿子時，會先告訴你這個裝置上已經有了，讓你選要打開原本那份，還是用剛選的檔取代，不會再默默多出一份',
+      '首頁不再把書名相同的稿子收成一筆，每一份都列出來並標示差別，刪除時也會講清楚刪的是哪一份',
+    ],
+  },
   // WO-141（暫定，待九方審）
   {
     version: '0.9.0',
