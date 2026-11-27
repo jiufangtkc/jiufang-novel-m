@@ -69,6 +69,8 @@ html[data-focus-mode="true"] .version-sheet-backdrop {
 .version-restore-notice button:focus-visible,
 .version-header-btn:focus-visible,
 .version-item-btn:focus-visible,
+.version-item-compare-btn:focus-visible,
+.version-compare-collapse-btn:focus-visible,
 .version-note-input:focus-visible,
 .version-save-btn:focus-visible,
 .version-note-save-btn:focus-visible,
@@ -266,10 +268,14 @@ html[data-layout="phone-landscape"] .version-sheet {
 
 .version-sheet-list-item {
   list-style: none;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
 }
 
 .version-item-btn {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   min-height: 44px;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -286,6 +292,26 @@ html[data-layout="phone-landscape"] .version-sheet {
 
 .version-item-btn:hover {
   border-color: var(--accent);
+}
+
+.version-item-compare-btn {
+  flex: 0 0 auto;
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.version-item-compare-btn:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .version-item-main {
@@ -376,4 +402,160 @@ html[data-layout="phone-landscape"] .version-sheet {
 .version-confirm-dialog h3 {
   margin: 0 0 8px;
   font-size: 17px;
+}
+
+/* ---- WO-141：新舊版比較唯讀頁面與標記 ---- */
+.version-sheet.is-compare {
+  max-height: min(92dvh, 780px);
+}
+
+html[data-layout="phone-landscape"] .version-sheet.is-compare {
+  width: min(680px, 100%);
+  max-height: 96dvh;
+  gap: 6px;
+}
+
+html[data-layout="medium"] .version-sheet.is-compare,
+html[data-layout="wide"] .version-sheet.is-compare {
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(90dvh, 820px);
+}
+
+.version-compare-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+html[data-layout="phone-landscape"] .version-compare-pane {
+  gap: 6px;
+}
+
+.version-compare-meta {
+  font-size: 13px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.version-compare-summary {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.version-compare-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 13px;
+}
+
+.version-compare-legend-items {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.version-compare-readonly-hint {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.version-compare-no-diff {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.version-compare-body {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.8;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.version-compare-para {
+  margin: 0;
+  padding: 2px 0 2px 8px;
+  border-left: 3px solid transparent;
+  white-space: pre-wrap;
+}
+
+.version-compare-para.is-blank {
+  min-height: 1.2em;
+}
+
+.version-compare-para.is-added {
+  border-left-color: var(--accent);
+}
+
+.version-compare-para.is-removed {
+  border-left-color: var(--compare-del-text);
+}
+
+.version-compare-para.is-modified {
+  border-left-color: color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+.version-compare-del {
+  color: var(--compare-del-text);
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  text-decoration-color: var(--compare-del-line);
+}
+
+.version-compare-ins {
+  color: var(--compare-add-text);
+  background: var(--compare-add-bg);
+  text-decoration: none;
+  border-radius: 3px;
+  padding: 0 2px;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.version-compare-collapse-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: center;
+  cursor: pointer;
+}
+
+.version-compare-collapse-btn:hover {
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.version-compare-expanded-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }

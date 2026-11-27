@@ -479,3 +479,36 @@ describe('WO-101：依色票實際疊色的對比', () => {
     expect(contrast(c('--text'), over(c('--search-current'), 0.35, c('--writing-surround')))).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+const VERSION_SHEET_CSS = readFileSync(new URL('../components/manuscriptVersionSheet.css', import.meta.url), 'utf8');
+
+describe('WO-141：新舊版比較標記語意變數與三套主題對比', () => {
+  it('新增比較標記語意 CSS 變數皆衍生自既有主題變數，不寫死色碼', () => {
+    const forest = themeVars('forest');
+    expect(forest.get('--compare-del-text')).toBe('var(--muted)');
+    expect(forest.get('--compare-del-line')).toBe('color-mix(in srgb, var(--muted) 80%, transparent)');
+    expect(forest.get('--compare-add-text')).toBe('var(--accent)');
+    expect(forest.get('--compare-add-bg')).toBe('color-mix(in srgb, var(--accent) 18%, transparent)');
+
+    const delRule = block(VERSION_SHEET_CSS, '.version-compare-del');
+    expect(delRule).toMatch(/color:\s*var\(--compare-del-text\)/);
+    expect(delRule).toMatch(/text-decoration:\s*line-through/);
+    expect(delRule).toMatch(/text-decoration-color:\s*var\(--compare-del-line\)/);
+
+    const insRule = block(VERSION_SHEET_CSS, '.version-compare-ins');
+    expect(insRule).toMatch(/color:\s*var\(--compare-add-text\)/);
+    expect(insRule).toMatch(/background:\s*var\(--compare-add-bg\)/);
+  });
+
+  it.each(THEME_IDS)('%s：刪掉的字（灰色加劃線）與新加的字（主題色加底色）在比較正文與圖例都看得清楚（對比 ≥ 4.5）', (theme) => {
+    const c = (name: string) => rgb(hex(theme, name));
+    // 刪掉的字（--muted）在比較正文（--bg）與圖例（--panel）上皆達 AA 4.5
+    expect(contrast(c('--muted'), c('--bg'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c('--muted'), c('--panel'))).toBeGreaterThanOrEqual(4.5);
+    // 新加的字（--accent）疊 18% 同色底於比較正文（--bg）與圖例（--panel）上皆達 AA 4.5
+    const addBgInBody = over(c('--accent'), 0.18, c('--bg'));
+    const addBgInLegend = over(c('--accent'), 0.18, c('--panel'));
+    expect(contrast(c('--accent'), addBgInBody)).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(c('--accent'), addBgInLegend)).toBeGreaterThanOrEqual(4.5);
+  });
+});
