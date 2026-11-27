@@ -141,6 +141,7 @@ import {
 import { isBookRemoved, removedBookIds } from '../db/removedBooks';
 import { deviceKeysOf, removeProjectFromDevice } from './removeFromDevice';
 import type { FormatChange, FormatSnapshot, FormatSnapshotEntry } from '../editor/formatScope';
+import type { VersionRestoreUndoSnapshot } from '../editor/versionRestoreFlow';
 import {
   BOOK_META_FORMAT_REVISION,
   assertBookMetaWritable,
@@ -151,6 +152,11 @@ import { generateUuidV4, isPositiveSafeInteger, isValidUuidV4 } from '../db/exte
 import { assertTimelineDataWritable, type TimelineRead } from '../db/timelineMeta';
 import { assertTransferDataWritable, TransferDataError, type TransferRead } from '../db/transferMeta';
 import { assertTrashDataWritable, TRASH_FORMAT_REVISION, type TrashRead } from '../db/trashMeta';
+import {
+  assertChapterVersionDataWritable,
+  CHAPTER_VERSION_FORMAT_REVISION,
+  type ChapterVersionRead,
+} from '../db/chapterVersionMeta';
 import {
   bindLeaveFlush,
   clearLiveDraft,
@@ -227,10 +233,26 @@ import {
 import {
   insertTrashItemWithLimit,
   isTrashOriginalNodeAlive,
+  isWritableNodeType,
   sortTrashItems,
   type TrashInsertResult,
   type TrashItem,
 } from '../domain/trash';
+import {
+  discardManuscriptVersion,
+  restoreDiscardedManuscriptVersion,
+  saveAutoVersionBeforeRestore,
+  saveManualVersion,
+  sortManuscriptVersions,
+  updateManuscriptVersionNote,
+  type CreateManuscriptVersionInput,
+  type DiscardVersionResult,
+  type ManuscriptVersion,
+  type RestoreDiscardedVersionResult,
+  type SaveAutoVersionResult,
+  type SaveManualVersionResult,
+  type UpdateVersionNoteResult,
+} from '../domain/manuscriptVersions';
 import {
   newChapterId,
   newManuscriptFirstNodeId,
@@ -316,6 +338,8 @@ export interface SampleState {
   exportEvents: TransferEventRecord;
   /** WO-122：最近一次排版前的快照（只在記憶體，不寫入任何儲存、不進 .db）。沒有時為 null 或不存在。 */
   formatUndo?: FormatSnapshot | null;
+  /** WO-140：最近一次回到舊版前的復原快照（只在記憶體，不寫入任何儲存、不進 .db）。沒有時為 null 或不存在。 */
+  versionRestoreUndo?: VersionRestoreUndoSnapshot | null;
 }
 
 /** 開檔帶進來、存檔時原樣帶出的檔案額外資訊。 */
@@ -331,6 +355,8 @@ export interface FileExtras {
   bookMeta?: BookMetaRead;
   /** WO-138：開檔時讀到的刪稿暫存區狀態（absent / ok / newer-revision / corrupt）。 */
   trash?: TrashRead;
+  /** WO-140：開檔時讀到的稿子版本附加資料狀態（absent / ok / newer-revision / corrupt）。 */
+  chapterVersions?: ChapterVersionRead;
 }
 
 export type Action =
@@ -464,7 +490,32 @@ export type Action =
       itemId: string;
       targetNodeId: string;
       nextBody: string;
-    };
+    }
+  /** WO-140：稿子版本操作。 */
+  | {
+      type: 'chapter-version-save-manual';
+      projectId: string;
+      input: Omit<CreateManuscriptVersionInput, 'source'>;
+    }
+  | {
+      type: 'chapter-version-save-auto-before-restore';
+      projectId: string;
+      input: Omit<CreateManuscriptVersionInput, 'source'>;
+    }
+  | {
+      type: 'chapter-version-update-note';
+      projectId: string;
+      versionId: string;
+      note: string;
+    }
+  | { type: 'chapter-version-discard'; projectId: string; versionId: string }
+  | {
+      type: 'chapter-version-restore-discarded';
+      projectId: string;
+      version: ManuscriptVersion;
+    }
+  | { type: 'chapter-version-set-restore-undo'; snapshot: VersionRestoreUndoSnapshot }
+  | { type: 'chapter-version-clear-restore-undo' };
 
 
 function bookkeepingOf(project: DemoProject): StoredBookMark {
@@ -791,6 +842,7 @@ export function attachActionForBook(
       timeline: book.timeline,
       bookMeta: book.bookMeta,
       trash: book.trash,
+      chapterVersions: book.chapterVersions,
     },
   };
 }
@@ -1215,6 +1267,91 @@ function applyProjectTrash(
   };
 }
 
+/** WO-140：讀取目前稿件的稿子版本四態狀態（非檔案稿與舊稿皆為可讀）。 */
+export function getProjectChapterVersionRead(
+  state: SampleState,
+  projectId: string,
+): ChapterVersionRead {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return { kind: 'absent' };
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const chapterVersions = state.fileExtras[key]?.chapterVersions;
+    if (chapterVersions) return chapterVersions;
+  }
+  const versions = project.manuscriptVersions ?? [];
+  return versions.length > 0
+    ? { kind: 'ok', revision: CHAPTER_VERSION_FORMAT_REVISION, versions }
+    : { kind: 'absent' };
+}
+
+/** WO-140：統一取得目前稿件的稿子版本清單（newer-revision 或 corrupt 時回傳空陣列）。 */
+export function getProjectChapterVersions(
+  state: SampleState,
+  projectId: string,
+): ManuscriptVersion[] {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project) return [];
+  if (project.origin === 'file') {
+    const key = project.dbKey ?? project.id;
+    const chapterVersions = state.fileExtras[key]?.chapterVersions;
+    if (chapterVersions) {
+      if (chapterVersions.kind === 'ok') return chapterVersions.versions;
+      if (chapterVersions.kind === 'newer-revision' || chapterVersions.kind === 'corrupt') {
+        return [];
+      }
+    }
+  }
+  return project.manuscriptVersions ?? [];
+}
+
+/** WO-140：若為較新修訂值或損壞狀態，稿子版本資料須維持唯讀不改寫。 */
+export function isProjectChapterVersionsReadOnly(
+  state: SampleState,
+  projectId: string,
+): boolean {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project || project.origin !== 'file') return false;
+  const key = project.dbKey ?? project.id;
+  const kind = state.fileExtras[key]?.chapterVersions?.kind;
+  return kind === 'newer-revision' || kind === 'corrupt';
+}
+
+function applyProjectChapterVersions(
+  state: SampleState,
+  projectId: string,
+  nextVersions: readonly ManuscriptVersion[],
+): SampleState {
+  const project = state.projects.find((item) => item.id === projectId);
+  if (!project || isProjectChapterVersionsReadOnly(state, projectId)) return state;
+  const sorted = sortManuscriptVersions(nextVersions);
+  const key = project.dbKey ?? project.id;
+  const extra = state.fileExtras[key];
+  let nextFileExtras = state.fileExtras;
+  if (extra) {
+    const nextRead: ChapterVersionRead =
+      extra.chapterVersions?.kind === 'absent' && sorted.length === 0
+        ? { kind: 'absent' }
+        : { kind: 'ok', revision: CHAPTER_VERSION_FORMAT_REVISION, versions: sorted };
+    nextFileExtras = {
+      ...state.fileExtras,
+      [key]: {
+        ...extra,
+        chapterVersions: nextRead,
+      },
+    };
+  }
+  return {
+    ...state,
+    projects: mapProject(state.projects, projectId, (current) => ({
+      ...current,
+      updatedLabel: '剛剛',
+      manuscriptVersions: sorted,
+    })),
+    fileExtras: nextFileExtras,
+  };
+}
+
 export function buildFileProjectInfo(state: SampleState, project: DemoProject): FileProjectInfo {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -1418,14 +1555,31 @@ export function buildPromotedFileExtras(
     (project.dbKey ? state.fileExtras[project.dbKey] : undefined) ??
     state.fileExtras[project.id];
   if (existing) {
-    if (!existing.trash && project.trashItems?.length) {
+    const patchedTrash =
+      !existing.trash && project.trashItems?.length
+        ? {
+            trash: {
+              kind: 'ok' as const,
+              revision: TRASH_FORMAT_REVISION,
+              items: sortTrashItems(project.trashItems),
+            },
+          }
+        : null;
+    const patchedVersions =
+      !existing.chapterVersions && project.manuscriptVersions?.length
+        ? {
+            chapterVersions: {
+              kind: 'ok' as const,
+              revision: CHAPTER_VERSION_FORMAT_REVISION,
+              versions: sortManuscriptVersions(project.manuscriptVersions),
+            },
+          }
+        : null;
+    if (patchedTrash || patchedVersions) {
       return {
         ...existing,
-        trash: {
-          kind: 'ok',
-          revision: TRASH_FORMAT_REVISION,
-          items: sortTrashItems(project.trashItems),
-        },
+        ...(patchedTrash ?? {}),
+        ...(patchedVersions ?? {}),
       };
     }
     return existing;
@@ -1462,6 +1616,13 @@ export function buildPromotedFileExtras(
     trash: project.trashItems?.length
       ? { kind: 'ok', revision: TRASH_FORMAT_REVISION, items: sortTrashItems(project.trashItems) }
       : { kind: 'absent' },
+    chapterVersions: project.manuscriptVersions?.length
+      ? {
+          kind: 'ok',
+          revision: CHAPTER_VERSION_FORMAT_REVISION,
+          versions: sortManuscriptVersions(project.manuscriptVersions),
+        }
+      : { kind: 'absent' },
   };
 }
 
@@ -1487,6 +1648,11 @@ const NON_TEXT_CONTENT_ACTIONS = new Set<Action['type']>([
   'trash-restore-deleted',
   'trash-update-reason',
   'trash-put-back',
+  'chapter-version-save-manual',
+  'chapter-version-save-auto-before-restore',
+  'chapter-version-update-note',
+  'chapter-version-discard',
+  'chapter-version-restore-discarded',
 ]);
 
 export function reduce(state: SampleState, action: Action): SampleState {
@@ -1501,7 +1667,14 @@ export function reduce(state: SampleState, action: Action): SampleState {
     }
   }
   if (next.formatUndo && next.activeProjectId !== next.formatUndo.projectId) {
-    return { ...next, formatUndo: null };
+    next = { ...next, formatUndo: null };
+  }
+  if (
+    next.versionRestoreUndo &&
+    (next.activeProjectId !== next.versionRestoreUndo.projectId ||
+      !next.projects.some((item) => item.id === next.versionRestoreUndo!.projectId))
+  ) {
+    next = { ...next, versionRestoreUndo: null };
   }
   return next;
 }
@@ -1549,7 +1722,7 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         countForToday !== undefined ? { countForToday } : undefined,
       );
       if (!done) return state;
-      return { ...done, formatUndo: action.snapshot };
+      return { ...done, formatUndo: action.snapshot, versionRestoreUndo: null };
     }
     case 'format-undo': {
       const countForToday =
@@ -1771,6 +1944,11 @@ function reduceBase(state: SampleState, action: Action): SampleState {
         importEvents: dropEvents(state.importEvents),
         exportEvents: dropEvents(state.exportEvents),
         activeProjectId: state.activeProjectId && ids.has(state.activeProjectId) ? null : state.activeProjectId,
+        formatUndo: state.formatUndo && ids.has(state.formatUndo.projectId) ? null : state.formatUndo,
+        versionRestoreUndo:
+          state.versionRestoreUndo && ids.has(state.versionRestoreUndo.projectId)
+            ? null
+            : state.versionRestoreUndo,
       };
     }
     case 'add-project': {
@@ -2214,9 +2392,81 @@ function reduceBase(state: SampleState, action: Action): SampleState {
       const remainingTrash = currentTrash.filter((item) => item.itemId !== action.itemId);
       return applyProjectTrash(afterCommit, action.projectId, remainingTrash);
     }
+    case 'chapter-version-save-manual': {
+      if (isProjectChapterVersionsReadOnly(state, action.projectId)) return state;
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const currentVersions = getProjectChapterVersions(state, action.projectId);
+      const result = saveManualVersion(currentVersions, action.input);
+      if (result.kind !== 'saved') return state;
+      return applyProjectChapterVersions(state, action.projectId, result.versions);
+    }
+    case 'chapter-version-save-auto-before-restore': {
+      if (isProjectChapterVersionsReadOnly(state, action.projectId)) return state;
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const currentVersions = getProjectChapterVersions(state, action.projectId);
+      const result = saveAutoVersionBeforeRestore(currentVersions, action.input);
+      if (result.kind !== 'saved') return state;
+      return applyProjectChapterVersions(state, action.projectId, result.versions);
+    }
+    case 'chapter-version-update-note': {
+      if (isProjectChapterVersionsReadOnly(state, action.projectId)) return state;
+      const currentVersions = getProjectChapterVersions(state, action.projectId);
+      const target = currentVersions.find((item) => item.version_id === action.versionId);
+      if (!target) return state;
+      const result = updateManuscriptVersionNote(currentVersions, action.versionId, action.note);
+      if (result.kind !== 'updated') return state;
+      if (
+        result.version.note === target.note &&
+        result.version.source === target.source
+      ) {
+        return state;
+      }
+      return applyProjectChapterVersions(state, action.projectId, result.versions);
+    }
+    case 'chapter-version-discard': {
+      if (isProjectChapterVersionsReadOnly(state, action.projectId)) return state;
+      const currentVersions = getProjectChapterVersions(state, action.projectId);
+      const result = discardManuscriptVersion(currentVersions, action.versionId);
+      if (result.kind !== 'discarded') return state;
+      return applyProjectChapterVersions(state, action.projectId, result.versions);
+    }
+    case 'chapter-version-restore-discarded': {
+      if (isProjectChapterVersionsReadOnly(state, action.projectId)) return state;
+      const project = state.projects.find((item) => item.id === action.projectId);
+      if (!project) return state;
+      const currentVersions = getProjectChapterVersions(state, action.projectId);
+      const result = restoreDiscardedManuscriptVersion(currentVersions, action.version);
+      if (result.kind !== 'restored') return state;
+      return applyProjectChapterVersions(state, action.projectId, result.versions);
+    }
+    case 'chapter-version-set-restore-undo': {
+      const project = state.projects.find((item) => item.id === action.snapshot.projectId);
+      const node = project ? findNode(project.nodes, action.snapshot.chapterId) : null;
+      if (!project || !node || !isWritableNodeType(node.type)) return state;
+      return {
+        ...state,
+        versionRestoreUndo: action.snapshot,
+        formatUndo: null,
+      };
+    }
+    case 'chapter-version-clear-restore-undo':
+      return state.versionRestoreUndo ? { ...state, versionRestoreUndo: null } : state;
     case 'set-nodes': {
+      const undoNode =
+        state.versionRestoreUndo && state.versionRestoreUndo.projectId === action.projectId
+          ? findNode(action.nodes, state.versionRestoreUndo.chapterId)
+          : null;
+      const nextVersionRestoreUndo =
+        state.versionRestoreUndo &&
+        state.versionRestoreUndo.projectId === action.projectId &&
+        (!undoNode || !isWritableNodeType(undoNode.type))
+          ? null
+          : state.versionRestoreUndo;
       const nextWithNodes: SampleState = {
         ...state,
+        versionRestoreUndo: nextVersionRestoreUndo,
         projects: mapProject(state.projects, action.projectId, (project) => ({
           ...project,
           updatedLabel: '剛剛',
@@ -2288,7 +2538,7 @@ function reduceBase(state: SampleState, action: Action): SampleState {
   }
 }
 
-interface SampleActions {
+export interface SampleActions {
   dismissRecent: (id: string) => void;
   /** WO-116：從這個裝置刪掉這份稿子的暫存與寫作資料。回傳 true 才是真的刪完；失敗回 false 並跳提示，稿子照舊。 */
   removeFromDevice: (id: string) => Promise<boolean>;
@@ -2403,6 +2653,36 @@ interface SampleActions {
     targetNodeId: string,
     nextBody: string,
   ) => void;
+  /** WO-140：稿子版本操作（均立即落盤本機暫存，不動今日字數）。 */
+  saveChapterVersion: (
+    projectId: string,
+    input: Omit<CreateManuscriptVersionInput, 'source' | 'version_id' | 'saved_at_ms'> & {
+      version_id?: string;
+      saved_at_ms?: number;
+    },
+  ) => Promise<(SaveManualVersionResult & { persisted: boolean }) | { kind: 'read-only'; persisted: false }>;
+  saveAutoChapterVersionBeforeRestore: (
+    projectId: string,
+    input: Omit<CreateManuscriptVersionInput, 'source' | 'version_id' | 'saved_at_ms'> & {
+      version_id?: string;
+      saved_at_ms?: number;
+    },
+  ) => Promise<(SaveAutoVersionResult & { persisted: boolean }) | { kind: 'read-only'; persisted: false }>;
+  updateChapterVersionNote: (
+    projectId: string,
+    versionId: string,
+    note: string,
+  ) => Promise<(UpdateVersionNoteResult & { persisted: boolean }) | { kind: 'read-only'; persisted: false }>;
+  discardChapterVersion: (
+    projectId: string,
+    versionId: string,
+  ) => Promise<(DiscardVersionResult & { persisted: boolean }) | { kind: 'read-only'; persisted: false }>;
+  restoreDiscardedChapterVersion: (
+    projectId: string,
+    version: ManuscriptVersion,
+  ) => Promise<(RestoreDiscardedVersionResult & { persisted: boolean }) | { kind: 'read-only'; persisted: false }>;
+  setVersionRestoreUndo: (snapshot: VersionRestoreUndoSnapshot) => void;
+  clearVersionRestoreUndo: () => void;
   focusProject: (id: string) => void;
   attachImported: (payload: {
     project: DemoProject;
@@ -2475,6 +2755,7 @@ export async function verifyBytesForSave(bytes: Uint8Array): Promise<void> {
       assertTransferDataWritable(db.sql);
       assertTimelineDataWritable(db.sql);
       assertTrashDataWritable(db.sql);
+      assertChapterVersionDataWritable(db.sql);
       return currentSchemaVersion(db.sql);
     } finally {
       db.close();
@@ -2541,6 +2822,7 @@ export function manuscriptSnapshotParts(
   exportEvents: ProjectImportEvents;
   bookMeta: BookMetaWritable | undefined;
   trashItems: TrashItem[] | undefined;
+  chapterVersions: ManuscriptVersion[] | undefined;
 } {
   const key = project.dbKey ?? project.id;
   const extra =
@@ -2560,6 +2842,10 @@ export function manuscriptSnapshotParts(
     extra?.trash?.kind === 'newer-revision' || extra?.trash?.kind === 'corrupt'
       ? undefined
       : getProjectTrash(state, project.id);
+  const chapterVersions =
+    extra?.chapterVersions?.kind === 'newer-revision' || extra?.chapterVersions?.kind === 'corrupt'
+      ? undefined
+      : getProjectChapterVersions(state, project.id);
   return {
     key,
     info,
@@ -2569,6 +2855,7 @@ export function manuscriptSnapshotParts(
     exportEvents,
     bookMeta,
     trashItems,
+    chapterVersions,
   };
 }
 
@@ -2578,10 +2865,8 @@ export async function manuscriptBytesOn(
   project: DemoProject,
   base: Uint8Array | null,
 ): Promise<Uint8Array> {
-  const { info, cards, logs, importEvents, exportEvents, bookMeta, trashItems } = manuscriptSnapshotParts(
-    state,
-    project,
-  );
+  const { info, cards, logs, importEvents, exportEvents, bookMeta, trashItems, chapterVersions } =
+    manuscriptSnapshotParts(state, project);
   return writeBookBytes(
     base,
     info,
@@ -2592,6 +2877,7 @@ export async function manuscriptBytesOn(
     exportEvents,
     bookMeta,
     trashItems,
+    chapterVersions,
   );
 }
 
@@ -2601,11 +2887,8 @@ async function snapshotManuscript(
   persist = true,
   options?: { includeBookMeta?: boolean; overrideBookMeta?: BookMetaWritable },
 ): Promise<{ key: string; bytes: Uint8Array }> {
-  const { key, info, cards, logs, importEvents, exportEvents, bookMeta, trashItems } = manuscriptSnapshotParts(
-    state,
-    project,
-    options,
-  );
+  const { key, info, cards, logs, importEvents, exportEvents, bookMeta, trashItems, chapterVersions } =
+    manuscriptSnapshotParts(state, project, options);
   const baseMark = bookkeepingOf(project);
   const mark: StoredBookMark = options?.overrideBookMeta
     ? {
@@ -2629,6 +2912,7 @@ async function snapshotManuscript(
     exportEvents,
     bookMeta,
     trashItems,
+    chapterVersions,
   );
   return { key, bytes };
 }
@@ -4003,6 +4287,10 @@ export async function persistFileBookStash(input: {
           extra.trash?.kind === 'newer-revision' || extra.trash?.kind === 'corrupt'
             ? undefined
             : getProjectTrash(state, project.id);
+        const chapterVersions =
+          extra.chapterVersions?.kind === 'newer-revision' || extra.chapterVersions?.kind === 'corrupt'
+            ? undefined
+            : getProjectChapterVersions(state, project.id);
         await save(
           dbKey,
           localDbFilename(project.title, project.filename),
@@ -4017,6 +4305,7 @@ export async function persistFileBookStash(input: {
           projectExportEventsOf(state, project.id),
           includeBookMetaInLocalDb ? manuscriptBookMeta(state, project) : undefined,
           trashItems,
+          chapterVersions,
         );
         coordinator.markPersisted(dbKey, contentRev, generation);
         input.dispatch({ type: 'record-auto-save', projectId: project.id, atMs: input.nowMs ?? Date.now() });
@@ -4169,6 +4458,133 @@ export async function persistProjectNow(input: {
     dispatch: input.dispatch,
     onStashResult: input.onStashResult,
   });
+}
+
+/**
+ * WO-140：建立稿子版本操作（供 SampleProvider 與測試共用）。
+ * 任何版本寫入（手動存含 duplicate、自動保存含 reused-latest、改備註、丟掉、放回）皆須實際暫存成功才能回傳 persisted: true。
+ */
+export function createChapterVersionActions(deps: {
+  getState: () => SampleState;
+  dispatch: (action: Action) => void;
+  persistVersionsState: (projectId: string, nextState: SampleState) => Promise<boolean>;
+}): Pick<
+  SampleActions,
+  | 'saveChapterVersion'
+  | 'saveAutoChapterVersionBeforeRestore'
+  | 'updateChapterVersionNote'
+  | 'discardChapterVersion'
+  | 'restoreDiscardedChapterVersion'
+> {
+  return {
+    saveChapterVersion: async (projectId, input) => {
+      if (isProjectChapterVersionsReadOnly(deps.getState(), projectId)) {
+        return { kind: 'read-only', persisted: false };
+      }
+      const fullInput: Omit<CreateManuscriptVersionInput, 'source'> = {
+        ...input,
+        version_id: input.version_id ?? generateUuidV4(),
+        saved_at_ms: input.saved_at_ms ?? Date.now(),
+      };
+      const result = saveManualVersion(
+        getProjectChapterVersions(deps.getState(), projectId),
+        fullInput,
+      );
+      if (result.kind === 'blocked-full') {
+        return { ...result, persisted: false };
+      }
+      if (result.kind === 'duplicate') {
+        const persisted = await deps.persistVersionsState(projectId, deps.getState());
+        return { ...result, persisted };
+      }
+      const prev = deps.getState();
+      deps.dispatch({ type: 'chapter-version-save-manual', projectId, input: fullInput });
+      const next = deps.getState();
+      const persisted =
+        next !== prev ? await deps.persistVersionsState(projectId, next) : false;
+      return { ...result, persisted };
+    },
+    saveAutoChapterVersionBeforeRestore: async (projectId, input) => {
+      if (isProjectChapterVersionsReadOnly(deps.getState(), projectId)) {
+        return { kind: 'read-only', persisted: false };
+      }
+      const fullInput: Omit<CreateManuscriptVersionInput, 'source'> = {
+        ...input,
+        version_id: input.version_id ?? generateUuidV4(),
+        saved_at_ms: input.saved_at_ms ?? Date.now(),
+      };
+      const result = saveAutoVersionBeforeRestore(
+        getProjectChapterVersions(deps.getState(), projectId),
+        fullInput,
+      );
+      if (result.kind === 'blocked-full') {
+        return { ...result, persisted: false };
+      }
+      if (result.kind === 'reused-latest') {
+        const persisted = await deps.persistVersionsState(projectId, deps.getState());
+        return { ...result, persisted };
+      }
+      const prev = deps.getState();
+      deps.dispatch({
+        type: 'chapter-version-save-auto-before-restore',
+        projectId,
+        input: fullInput,
+      });
+      const next = deps.getState();
+      const persisted =
+        next !== prev ? await deps.persistVersionsState(projectId, next) : false;
+      return { ...result, persisted };
+    },
+    updateChapterVersionNote: async (projectId, versionId, note) => {
+      if (isProjectChapterVersionsReadOnly(deps.getState(), projectId)) {
+        return { kind: 'read-only', persisted: false };
+      }
+      const current = getProjectChapterVersions(deps.getState(), projectId);
+      const result = updateManuscriptVersionNote(current, versionId, note);
+      if (result.kind !== 'updated') {
+        return { ...result, persisted: false };
+      }
+      deps.dispatch({ type: 'chapter-version-update-note', projectId, versionId, note });
+      const persisted = await deps.persistVersionsState(projectId, deps.getState());
+      return { ...result, persisted };
+    },
+    discardChapterVersion: async (projectId, versionId) => {
+      if (isProjectChapterVersionsReadOnly(deps.getState(), projectId)) {
+        return { kind: 'read-only', persisted: false };
+      }
+      const result = discardManuscriptVersion(
+        getProjectChapterVersions(deps.getState(), projectId),
+        versionId,
+      );
+      if (result.kind !== 'discarded') {
+        return { ...result, persisted: false };
+      }
+      const prev = deps.getState();
+      deps.dispatch({ type: 'chapter-version-discard', projectId, versionId });
+      const next = deps.getState();
+      const persisted =
+        next !== prev ? await deps.persistVersionsState(projectId, next) : false;
+      return { ...result, persisted };
+    },
+    restoreDiscardedChapterVersion: async (projectId, version) => {
+      if (isProjectChapterVersionsReadOnly(deps.getState(), projectId)) {
+        return { kind: 'read-only', persisted: false };
+      }
+      const result = restoreDiscardedManuscriptVersion(
+        getProjectChapterVersions(deps.getState(), projectId),
+        version,
+      );
+      if (result.kind !== 'restored') {
+        return { ...result, persisted: false };
+      }
+      const prev = deps.getState();
+      deps.dispatch({ type: 'chapter-version-restore-discarded', projectId, version });
+      const next = deps.getState();
+      const persisted =
+        next !== prev ? await deps.persistVersionsState(projectId, next) : false;
+      return { ...result, persisted };
+    },
+  };
 }
 
 export function SampleProvider({
@@ -4579,6 +4995,22 @@ export function SampleProvider({
       dispatchTrashAction(projectId, { type, projectId, item }, immediate);
       return result;
     };
+    const persistVersionsState = async (
+      projectId: string,
+      nextState: SampleState,
+    ): Promise<boolean> => {
+      try {
+        return await persistProjectNow({
+          state: nextState,
+          projectId,
+          dispatch,
+          onStashResult: markStashResult,
+          coordinator: fileStashCoordinatorRef.current ?? undefined,
+        });
+      } catch {
+        return false;
+      }
+    };
     return {
       dismissRecent: (id) => dispatch({ type: 'dismiss-recent', id }),
       removeFromDevice: async (id) => {
@@ -4746,6 +5178,15 @@ export function SampleProvider({
           { type: 'trash-put-back', projectId, itemId, targetNodeId, nextBody },
           true,
         ),
+      ...createChapterVersionActions({
+        getState: () => stateRef.current,
+        dispatch,
+        persistVersionsState,
+      }),
+      setVersionRestoreUndo: (snapshot) =>
+        dispatch({ type: 'chapter-version-set-restore-undo', snapshot }),
+      clearVersionRestoreUndo: () =>
+        dispatch({ type: 'chapter-version-clear-restore-undo' }),
       focusProject: (id) => dispatch({ type: 'focus-project', id }),
       attachImported: (payload) => dispatch({ type: 'attach-file', ...payload }),
       importFile: async (file: File, diskFile?: DiskFile | null) => {

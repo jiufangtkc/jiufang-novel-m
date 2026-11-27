@@ -936,8 +936,8 @@ describe('WO-130 甲段：自動存檔管線、單飛鎖、權限與寫回安全
   });
 });
 
-describe('WO-137／WO-138／WO-139：0.7.0 版號與改版說明驗證', () => {
-  it('package.json、package-lock.json、APP_VERSION 皆為 0.7.0，whatsNew 頂端為 0.7.0 且保留 0.6.0～0.3.0', () => {
+describe('WO-137／WO-138／WO-139／WO-140：0.8.0 版號與改版說明驗證', () => {
+  it('package.json、package-lock.json、APP_VERSION 皆為 0.8.0，whatsNew 頂端為 0.8.0 且保留 0.7.0～0.3.0', () => {
     const pkg = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as {
       version: string;
     };
@@ -946,16 +946,21 @@ describe('WO-137／WO-138／WO-139：0.7.0 版號與改版說明驗證', () => {
       packages: { '': { version: string } };
     };
     const whatsNewSrc = readFileSync(new URL('../data/whatsNew.ts', import.meta.url), 'utf8');
-    expect(pkg.version).toBe('0.7.0');
-    expect(lock.version).toBe('0.7.0');
-    expect(lock.packages[''].version).toBe('0.7.0');
-    expect(APP_VERSION).toBe('0.7.0');
+    expect(pkg.version).toBe('0.8.0');
+    expect(lock.version).toBe('0.8.0');
+    expect(lock.packages[''].version).toBe('0.8.0');
+    expect(APP_VERSION).toBe('0.8.0');
+    expect(whatsNewSrc).toContain('WO-140（暫定，待九方審）');
     expect(whatsNewSrc).toContain('WO-139（暫定，待九方審）');
     expect(whatsNewSrc).toContain('WO-138（暫定，待九方審）');
     expect(whatsNewSrc).toContain('WO-137（暫定，待九方審）');
 
-    expect(RELEASE_NOTES[0]?.version).toBe('0.7.0');
+    expect(RELEASE_NOTES[0]?.version).toBe('0.8.0');
     expect(RELEASE_NOTES[0]?.items).toEqual([
+      '新增稿子版本：可以把這一章目前的樣子存下來，之後查看或回到舊版；版本會跟著稿子檔一起保存',
+      '回到舊版之前，會先自動把現在的樣子存一份，回去後也可以復原',
+    ]);
+    expect(findReleaseNote('0.7.0')?.items).toEqual([
       '排版新增『統一標點』：一鍵把破折號、刪節號、引號和中文裡的半形標點，統一成臺灣出版常用的寫法',
     ]);
     expect(findReleaseNote('0.6.0')?.items).toEqual([

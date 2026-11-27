@@ -7,6 +7,7 @@ import {
   DEMO_EXPANDED_CATEGORIES_RAW,
 } from '../data/demoCards';
 import { isBuiltinSampleBook } from './builtinSampleBook';
+import { normalizeManuscriptVersions } from './manuscriptVersions';
 import { normalizeTrashItems } from './trash';
 
 /** 對齊日後寫進資料庫的列。parent_id 指向上一層，node_type 用 folder、file、scene。 */
@@ -108,6 +109,9 @@ export function normalizeLoadedProject(project: DemoProject): DemoProject {
           : '{}',
     ...(project.trashItems !== undefined
       ? { trashItems: normalizeTrashItems(project.trashItems) }
+      : {}),
+    ...(project.manuscriptVersions !== undefined
+      ? { manuscriptVersions: normalizeManuscriptVersions(project.manuscriptVersions) }
       : {}),
   };
 }

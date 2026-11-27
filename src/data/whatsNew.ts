@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-140（暫定，待九方審）
+  {
+    version: '0.8.0',
+    items: [
+      '新增稿子版本：可以把這一章目前的樣子存下來，之後查看或回到舊版；版本會跟著稿子檔一起保存',
+      '回到舊版之前，會先自動把現在的樣子存一份，回去後也可以復原',
+    ],
+  },
   // WO-139（暫定，待九方審）
   {
     version: '0.7.0',

@@ -1,0 +1,379 @@
+/* WO-140：稿子版本底部清單與復原提示條樣式。
+   色票一律沿用既有 CSS 變數，全部觸控熱區至少 44px。 */
+
+/* ---- 換成舊版後的持續復原提示條（對齊 .format-notice） ---- */
+.version-restore-notice {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 64px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 250;
+  width: min(420px, calc(100vw - 24px));
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  font-size: 14px;
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.version-restore-notice-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-restore-notice-row strong {
+  flex: 1;
+  min-width: 0;
+}
+
+.version-restore-notice p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  opacity: 0.9;
+}
+
+.version-restore-notice-undo,
+.version-restore-notice-close {
+  min-width: 56px;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.version-restore-notice-undo:hover,
+.version-restore-notice-close:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+html[data-layout="phone-landscape"] .version-restore-notice {
+  top: 8px;
+  width: min(420px, calc(100vw - 160px));
+}
+
+/* ---- 專注模式：強制隱藏所有版本介面與提示條 ---- */
+html[data-focus-mode="true"] .version-restore-notice,
+html[data-focus-mode="true"] .version-sheet-backdrop {
+  display: none !important;
+}
+
+.version-restore-notice button:focus-visible,
+.version-header-btn:focus-visible,
+.version-item-btn:focus-visible,
+.version-note-input:focus-visible,
+.version-save-btn:focus-visible,
+.version-note-save-btn:focus-visible,
+.version-detail-actions .button:focus-visible,
+.version-confirm-dialog .button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- 版本底部清單（四種版面共用，覆蓋側欄） ---- */
+.version-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 280;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.version-sheet {
+  width: min(560px, 100%);
+  max-height: min(84dvh, 680px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 16px 16px 0 0;
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+html[data-layout="phone-landscape"] .version-sheet {
+  max-height: 94dvh;
+}
+
+.version-sheet-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.version-sheet-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.version-header-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.version-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.version-sheet-status {
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.version-status-banner {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.version-status-banner.is-warning {
+  border-color: color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+
+.version-status-banner.is-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.version-save-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.version-save-row,
+.version-note-edit-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.version-note-input {
+  flex: 1 1 180px;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 15px;
+  box-sizing: border-box;
+}
+
+.version-save-btn,
+.version-note-save-btn {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 14px;
+  white-space: nowrap;
+}
+
+.version-note-hint {
+  margin: 2px 0 0;
+}
+
+.version-undo-bar {
+  margin: 0;
+}
+
+.version-usage-box {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version-usage-summary {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.version-limit-hint {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text);
+}
+
+.version-limit-hint.is-locked {
+  border-color: var(--danger);
+}
+
+.version-empty {
+  margin: 12px 0;
+}
+
+.version-sheet-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.version-sheet-list-item {
+  list-style: none;
+}
+
+.version-item-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  cursor: pointer;
+}
+
+.version-item-btn:hover {
+  border-color: var(--accent);
+}
+
+.version-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.version-item-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.version-item-time {
+  font-weight: 600;
+}
+
+.version-item-words {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.version-item-note {
+  font-size: 13px;
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.version-item-preview-label {
+  flex-shrink: 0;
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.version-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.version-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.version-preview-hint {
+  margin: 0;
+}
+
+.version-preview-content {
+  min-height: 180px;
+  max-height: 260px;
+}
+
+.version-note-edit-box {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.version-note-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.version-detail-actions .button,
+.version-confirm-dialog .button {
+  min-height: 44px;
+}
+
+.version-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 290;
+  align-items: center;
+  justify-content: center;
+}
+
+.version-confirm-dialog h3 {
+  margin: 0 0 8px;
+  font-size: 17px;
+}
