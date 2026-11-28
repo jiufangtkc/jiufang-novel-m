@@ -228,10 +228,12 @@ import { isHiddenCategory, CATEGORY_TIMELINE, resolveVisibleCategories } from '.
 import {
   addCard as addCardToList,
   deleteCard as deleteCardFromList,
+  moveCardToCategory as moveCardToCategoryInList,
   updateCard as updateCardInList,
   type AddCardInput,
   type UpdateCardPatch,
 } from '../domain/cardOps';
+import { addQuickIdeaCard, type AddQuickIdeaResult } from '../domain/quickIdea';
 import {
   collectAliveChapterIds,
   moveTimelineCardByDelta,
@@ -2617,6 +2619,14 @@ export interface SampleActions {
       cards?: FileCard[];
     },
   ) => void;
+  /**
+   * WO-144：存一張靈感卡（沿用或新建自訂分類「靈感」，新卡排該分類頂層最前）。
+   * 標題與內容都空白回 empty、不改任何資料；只有回 added 時才寫入稿子。
+   * 不計今日字數、不走大量貼上、不進刪稿暫存。
+   */
+  addQuickIdea: (projectId: string, input: { title: string; content: string }) => AddQuickIdeaResult;
+  /** WO-144：把卡片（連同子孫）改到另一個可見分類，排在該分類頂層最後。 */
+  moveCardToCategory: (projectId: string, cardId: string, targetCategory: string) => boolean;
   deleteCard: (
     projectId: string,
     cardId: string,
@@ -5296,6 +5306,43 @@ export function SampleProvider({
         dispatch({ type: 'update-card', projectId, cardId, patch }),
       setCardCategories: (projectId, payload) =>
         dispatch({ type: 'set-card-categories', projectId, ...payload }),
+      addQuickIdea: (projectId, input) => {
+        const current = stateRef.current;
+        const settings = getProjectCategorySettings(current, projectId);
+        const result = addQuickIdeaCard(
+          {
+            cards: getProjectCards(current, projectId),
+            categoryOrder: settings.categoryOrder,
+            categoriesMeta: settings.categoriesMeta,
+          },
+          input,
+        );
+        if (result.kind !== 'added') return result;
+        dispatch({
+          type: 'set-card-categories',
+          projectId,
+          cards: result.cards,
+          ...(result.createdCategory
+            ? { categoryOrder: result.categoryOrder, categoriesMeta: result.categoriesMeta }
+            : {}),
+        });
+        return result;
+      },
+      moveCardToCategory: (projectId, cardId, targetCategory) => {
+        const current = stateRef.current;
+        const cards = getProjectCards(current, projectId);
+        const settings = getProjectCategorySettings(current, projectId);
+        const visibleIds = resolveVisibleCategories({
+          categoryOrder: settings.categoryOrder,
+          categoriesMeta: settings.categoriesMeta,
+          cards,
+        }).map((item) => item.id);
+        const next = moveCardToCategoryInList(cards, cardId, targetCategory, visibleIds);
+        const changed = next.some((card, idx) => card !== cards[idx]);
+        if (!changed) return false;
+        dispatch({ type: 'set-cards', projectId, cards: next });
+        return true;
+      },
       deleteCard: (projectId, cardId, options) =>
         deleteProjectCardWithArchive(stateRef.current, dispatch, projectId, cardId, options),
       restoreDeletedCard: async (projectId, recordOrId, options) => {

@@ -1,5 +1,5 @@
 import type { FileCard } from '../db/projectFile';
-import { CATEGORY_TIMELINE } from './cardCategories';
+import { CATEGORY_TIMELINE, isHiddenCategory } from './cardCategories';
 
 export const DEFAULT_CARD_COLOR = '#3C3F41';
 export const CARD_COLOR_REGEX = /^#[0-9a-fA-F]{6}$/;
@@ -162,17 +162,24 @@ export interface AddCardInput {
 /**
  * 計算新增頂層時間軸卡時的預設 timelineOrder：
  * - 若既有頂層時間軸卡皆無 timelineOrder（尚未在時間線手動排過序），回傳 null（由 addCard 略過欄位，不主動建時間線附加表）。
- * - 若既有頂層時間軸卡已有任何一張具備數字 timelineOrder，則新卡補上 max + 1（已排過序的卡片皆具連續編號），
- *   確保無論從「卡片清單」新增時間軸卡或從「時間線」新增事件，新卡一律排在既有故事順序的最後面且彼此順序一致。
+ * - 若既有頂層時間軸卡「全部」都有數字 timelineOrder，則新卡補上 max + 1，排在既有故事順序最後。
+ * - 若已排序與未排序事件並存（例如復原了一張未排序的事件），回傳 null：不寫 timelineOrder，
+ *   由頂層 sort_order 讓新卡排在未排序事件之後（顯示順序為最後）。
  */
 function inferNextTimelineOrderForTopCard(cards: readonly FileCard[]): number | null {
   const topTimelineCards = buildFileCardTree(cards, CATEGORY_TIMELINE).map((node) => node.card);
   let maxOrder: number | null = null;
+  let hasUnordered = false;
   for (const card of topTimelineCards) {
     if (typeof card.timelineOrder === 'number' && Number.isFinite(card.timelineOrder)) {
       maxOrder = maxOrder === null ? card.timelineOrder : Math.max(maxOrder, card.timelineOrder);
+    } else {
+      hasUnordered = true;
     }
   }
+  // WO-144 返工 D：顯示時「有 timelineOrder 的一律排在沒有的前面」。只要還有未排序事件，
+  // 新卡若寫 max + 1 反而會插到它們前面；此時不寫 timelineOrder，靠頂層 sort_order 排到最後。
+  if (hasUnordered) return null;
   return maxOrder === null ? null : maxOrder + 1;
 }
 
@@ -475,6 +482,67 @@ export function moveCardToParent(
         ...card,
         category: nextCategory,
       };
+    }
+    return card;
+  });
+}
+
+/**
+ * WO-144：把一張卡片（連同所有子孫）改到另一個分類：
+ * - 被改的卡成為目標分類的頂層（清掉 parent_id），排在該分類頂層最後；子孫維持彼此的父子關係與順序
+ * - 目標不可為隱藏分類（ai_chat）；若給 visibleCategoryIds，目標還必須在其中，否則原樣回傳
+ * - 已在目標分類、或卡片本身在隱藏分類時原樣回傳
+ * - 改到 timeline：該分類已有時間線順序時，補上排在最後的 timelineOrder（比照 addCard）；
+ *   尚無順序則不寫 timelineOrder。不強迫填故事時間或連章
+ * - 從 timeline 改走：storyTime／timelineOrder／chapterId 保留在資料裡（附加資料相容），卡片自然離開時間線畫面
+ * - 只動受影響的卡片，其他卡片（含 ai_chat）原物件參照不變
+ */
+export function moveCardToCategory(
+  cards: readonly FileCard[],
+  cardId: string,
+  targetCategory: string,
+  visibleCategoryIds?: Iterable<string>,
+): FileCard[] {
+  const target = cards.find((c) => c.id === cardId);
+  if (!target) return [...cards];
+  if (!targetCategory || isHiddenCategory(targetCategory)) return [...cards];
+  if (isHiddenCategory(target.category)) return [...cards];
+  if (target.category === targetCategory) return [...cards];
+  if (visibleCategoryIds !== undefined) {
+    const allowed = new Set<string>(visibleCategoryIds);
+    if (!allowed.has(targetCategory)) return [...cards];
+  }
+
+  const subtreeIds = collectCardAndDescendantIds(cards, cardId);
+  const topSiblings = cards.filter(
+    (c) =>
+      !subtreeIds.has(c.id) && c.category === targetCategory && (c.parent_id ?? null) === null,
+  );
+  const nextSortOrder =
+    topSiblings.length === 0 ? 0 : Math.max(...topSiblings.map((s) => s.sort_order)) + 1;
+  const nextTimelineOrder =
+    targetCategory === CATEGORY_TIMELINE ? inferNextTimelineOrderForTopCard(cards) : null;
+
+  return cards.map((card) => {
+    if (card.id === cardId) {
+      const { timelineOrder: _drop, ...rest } = card;
+      void _drop;
+      return {
+        ...rest,
+        parent_id: null,
+        category: targetCategory,
+        sort_order: nextSortOrder,
+        ...(targetCategory === CATEGORY_TIMELINE
+          ? nextTimelineOrder !== null
+            ? { timelineOrder: nextTimelineOrder }
+            : {}
+          : card.timelineOrder !== undefined
+            ? { timelineOrder: card.timelineOrder }
+            : {}),
+      };
+    }
+    if (subtreeIds.has(card.id)) {
+      return { ...card, category: targetCategory };
     }
     return card;
   });

@@ -12,6 +12,14 @@ export interface ReleaseNote {
 }
 
 export const RELEASE_NOTES: readonly ReleaseNote[] = [
+  // WO-144（暫定，待九方審）
+  {
+    version: '0.11.0',
+    items: [
+      '寫作頁頁首新增「記靈感」：按一下就能把靈感存成卡片，先放在資料集的「靈感」分類，之後再改到角色或世界觀等分類。',
+      '資料集最上面會出現「靈感」分類，可把卡片改到其他分類。',
+    ],
+  },
   // WO-142（暫定，待九方審）
   {
     version: '0.10.0',

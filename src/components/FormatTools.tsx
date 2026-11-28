@@ -313,6 +313,8 @@ export function FormatMoreButton(props: {
   className: string;
   testId: string;
   onPointerDown?: (event: ReactPointerEvent<HTMLButtonElement>) => void;
+  /** WO-144：選單要開了、焦點還沒被選單移走之前呼叫。 */
+  onBeforeOpen?: () => void;
 }) {
   const pointerDownHandledRef = useRef(false);
   return (
@@ -341,6 +343,7 @@ export function FormatMoreButton(props: {
         if (!handledOnPointerDown) {
           props.onPointerDown?.(event as unknown as ReactPointerEvent<HTMLButtonElement>);
         }
+        props.onBeforeOpen?.();
         props.tools.open(event.currentTarget);
       }}
     >
