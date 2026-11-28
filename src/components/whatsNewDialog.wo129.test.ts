@@ -143,14 +143,15 @@ describe('WO-129 WhatsNewDialog 結構、ARIA 與歷版展開', () => {
     expect(html).not.toContain(`v${APP_VERSION}`);
 
     expect(html).toContain('<ul class="whats-new-list" data-testid="whats-new-list">');
-    // WO-142：最新一版是 0.10.0；0.9.1 起移到歷版（見下面歷版展開的檢查）。
-    expect(RELEASE_NOTES[0]?.version).toBe('0.10.0');
+    // WO-144：最新一版是 0.11.0；0.10.0 起移到歷版（見下面歷版展開的檢查）。
+    expect(RELEASE_NOTES[0]?.version).toBe('0.11.0');
     for (const item of RELEASE_NOTES[0]!.items) {
       expect(html).toContain(`<li>${item}</li>`);
     }
-    expect(RELEASE_NOTES[1]?.version).toBe('0.9.1');
-    expect(RELEASE_NOTES[2]?.version).toBe('0.9.0');
-    expect(RELEASE_NOTES[2]?.items).toEqual([
+    expect(RELEASE_NOTES[1]?.version).toBe('0.10.0');
+    expect(RELEASE_NOTES[2]?.version).toBe('0.9.1');
+    expect(RELEASE_NOTES[3]?.version).toBe('0.9.0');
+    expect(RELEASE_NOTES[3]?.items).toEqual([
       '版本清單新增「比較」：可逐字對照任一份舊版與現在這一章的差異，並自動統計增減字數與改動段數',
       '連續未改動的段落會先收起來，只留前後各一段方便對照，點一下即可展開原文',
     ]);

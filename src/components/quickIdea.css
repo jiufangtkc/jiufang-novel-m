@@ -1,0 +1,131 @@
+/* WO-144：記靈感（頁首圖示、記入畫面、存好提示、資料集靈感清單與改分類）。
+   色票一律沿用既有 CSS 變數，可點的地方至少 44px。 */
+
+/* ---- 頁首燈泡：四種版面頁首可見時都在（頁首被藏起來的專注／橫拿鍵盤開著不另開入口） ---- */
+.quick-idea-button {
+  display: grid;
+  place-items: center;
+  flex: 0 0 44px;
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+.quick-idea-button:hover,
+.quick-idea-button:focus-visible,
+.quick-idea-button[aria-expanded="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+html[data-focus-mode="true"] .quick-idea-button {
+  display: none !important;
+}
+
+/* ---- 記入畫面 ---- */
+.quick-idea-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 285;
+}
+html[data-focus-mode="true"] .quick-idea-backdrop {
+  display: none !important;
+}
+.quick-idea-sheet {
+  max-height: 94dvh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.quick-idea-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 10px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+.quick-idea-field input,
+.quick-idea-field textarea {
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px 12px;
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.6;
+  box-sizing: border-box;
+  width: 100%;
+}
+.quick-idea-field input {
+  min-height: 44px;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.quick-idea-field textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+.quick-idea-field input:focus-visible,
+.quick-idea-field textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.quick-idea-hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.quick-idea-message {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 65%, transparent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text);
+  font-size: 14px;
+}
+
+/* ---- 存好提示（版面位置沿用 .trash-corner-stack／.trash-corner-notice） ---- */
+.quick-idea-notice .trash-corner-text {
+  flex: 1;
+}
+
+/* ---- 資料集：說明文字、靈感清單與改分類 ---- */
+.quick-idea-list-hint {
+  margin: 8px 16px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+}
+.quick-idea-card-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.quick-idea-card-row > .quick-idea-card-main {
+  flex: 1;
+  min-width: 0;
+}
+.quick-idea-move-button {
+  flex: 0 0 auto;
+  min-width: 88px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent);
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.quick-idea-move-sheet .menu-item {
+  width: 100%;
+}

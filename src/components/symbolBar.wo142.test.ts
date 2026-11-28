@@ -138,13 +138,28 @@ describe('WO-142 EditorPane 接線（原始碼比對）', () => {
   it('選單項、選單項數與 getMenuItemCount 一致', () => {
     expect(src).toContain("id: 'symbol-bar-toggle'");
     expect(src).toContain('symbolBarEnabled ? SYMBOL_BAR_MENU_HIDE : SYMBOL_BAR_MENU_SHOW');
-    // extraMenuItems 的固定項（不含有選取才出現的那個）：versions-open、trash-open、symbol-bar-toggle
+    // extraMenuItems 的固定項（不含有選取才出現的那個）：quick-idea-open（WO-144）、versions-open、trash-open、symbol-bar-toggle
     const block = src.slice(src.indexOf('const extraMenuItems'), src.indexOf('const formatTools'));
     const ids = [...block.matchAll(/id: '([^']+)'/g)].map((m) => m[1]);
-    expect(ids).toEqual(['versions-open', 'trash-open', 'symbol-bar-toggle', 'trash-move-selection']);
-    const fixed = ids.length - 1; // 扣掉有選取才出現的 trash-move-selection
-    // getMenuItemCount = 排版項（1）＋固定額外項＋選取項
-    expect(src).toContain(`return ${fixed + 1} + (hasSel ? 1 : 0);`);
+    expect(ids).toEqual([
+      'quick-idea-open',
+      'versions-open',
+      'trash-open',
+      'symbol-bar-toggle',
+      'trash-move-selection',
+    ]);
+    // 扣掉有選取才出現的 trash-move-selection、橫拿打字時不列的 quick-idea-open（WO-144 返工 B）
+    const fixed = ids.length - 2;
+    // getMenuItemCount = 排版項（1）＋固定額外項＋（非橫拿打字時的）記靈感＋選取項
+    expect(src).toContain(
+      `return ${fixed + 1} + (quickIdeaAvailable ? 1 : 0) + (hasSel ? 1 : 0);`,
+    );
+    // 記靈感只在 quickIdeaAvailable 時列入選單；橫拿打字（keyboard.landscape）時為 false
+    // （返工 B）選單開著時用開啟當下鎖定的值，不直接用即時的 keyboard.landscape
+    expect(src).toContain(
+      'const quickIdeaAvailable = isQuickIdeaAvailable(quickIdeaGuardRef.current, keyboard.landscape);',
+    );
+    expect(block).toMatch(/\.\.\.\(quickIdeaAvailable\s*\?\s*\[\s*\{\s*id: 'quick-idea-open'/);
   });
 
   it('符號列用 insertSymbol，不用 replaceText；組字中提示用 copy 常數', () => {

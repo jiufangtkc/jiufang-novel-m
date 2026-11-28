@@ -77,6 +77,14 @@ import {
   type ResolvedCategoryItem,
 } from '../domain/cardCategories';
 import { addCard, addSubCard } from '../domain/cardOps';
+import { findQuickIdeaCategory } from '../domain/quickIdea';
+import {
+  QUICK_IDEA_CATEGORY_LIST_HINT,
+  QUICK_IDEA_LIST_HINT,
+  QUICK_IDEA_MOVE_BUTTON,
+} from '../copy/quickIdeaCopy';
+import { QuickIdeaMoveSheet } from '../components/QuickIdeaMoveSheet';
+import '../components/quickIdea.css';
 import { deletedFromCard, type DeletedCardRecord } from '../domain/cardArchive';
 import { extractTimelineChapters } from '../domain/timeline';
 import { type FileCard } from '../db/projectFile';
@@ -172,6 +180,8 @@ function CardsScreenBody(props: CardsScreenProps) {
   const [cardDeletedNotice, setCardDeletedNotice] = useState(false);
   const [pickingColor, setPickingColor] = useState(initialPickingColor);
   const [savedNotice, setSavedNotice] = useState<string | undefined>(undefined);
+  // WO-144：靈感清單「改分類」正在改的那張卡
+  const [movingCardId, setMovingCardId] = useState<string | null>(null);
 
   // WO-61 整理分類狀態
   const [isOrganizingCategories, setIsOrganizingCategories] = useState(
@@ -367,6 +377,15 @@ function CardsScreenBody(props: CardsScreenProps) {
   const currentCategory = selectedCategoryId
     ? categories.find((c) => c.id === selectedCategoryId) ?? null
     : null;
+  // WO-144：這本稿子有沒有名叫「靈感」的自訂分類（只讀取，不建立）
+  const quickIdeaCategoryId = findQuickIdeaCategory({
+    cards: rawProjectCards,
+    categoryOrder: categorySettings.categoryOrder,
+    categoriesMeta: categorySettings.categoriesMeta,
+  });
+  const isQuickIdeaCategory = Boolean(
+    currentCategory && quickIdeaCategoryId && currentCategory.id === quickIdeaCategoryId,
+  );
   const currentCard = selectedCardId
     ? cards.find((c) => c.id === selectedCardId) ?? null
     : null;
@@ -511,6 +530,18 @@ function CardsScreenBody(props: CardsScreenProps) {
     }
   };
 
+  const handleMoveCardToCategory = (targetCategoryId: string) => {
+    const cardId = movingCardId;
+    setMovingCardId(null);
+    if (!projectId || !cardId) return;
+    const moved = actions.moveCardToCategory(projectId, cardId, targetCategoryId);
+    if (moved && selectedCardId === cardId) {
+      // 卡片已離開目前分類，不再停留在它的內容畫面
+      setEditorMode('preview');
+      dispatch({ type: 'BACK_TO_CARDS' });
+    }
+  };
+
   const handleAddCard = () => {
     if (!projectId || !currentCategory) return;
     const nextCards = addCard(rawProjectCards, { category: currentCategory.id });
@@ -607,21 +638,43 @@ function CardsScreenBody(props: CardsScreenProps) {
     rows: readonly VisibleCardRow[],
     selectedId: string | null,
   ) => {
+    const quickIdeaHint = isQuickIdeaCategory ? (
+      <p className="quick-idea-list-hint" data-testid="quick-idea-list-hint">
+        {QUICK_IDEA_LIST_HINT}
+      </p>
+    ) : null;
+    const moveSheet = (
+      <QuickIdeaMoveSheet
+        open={movingCardId !== null}
+        targets={categories
+          .filter((c) => {
+            const moving = movingCardId ? cards.find((card) => card.id === movingCardId) : null;
+            return !moving || c.id !== moving.category;
+          })
+          .map((c) => ({ id: c.id, name: c.name }))}
+        onPick={handleMoveCardToCategory}
+        onClose={() => setMovingCardId(null)}
+      />
+    );
     if (rows.length === 0) {
       return (
         <>
+          {quickIdeaHint}
           {deletedNotice}
           <div className="cards-empty-category-pane" data-testid="category-cards-empty">
             <p className="empty-note">{CARDS_EMPTY_IN_CATEGORY_HINT}</p>
             {renderAddCardButton('add-card-btn-empty')}
           </div>
+          {moveSheet}
         </>
       );
     }
     return (
       <>
+        {quickIdeaHint}
         {deletedNotice}
         {renderCardList(rows, selectedId)}
+        {moveSheet}
       </>
     );
   };
@@ -770,6 +823,11 @@ function CardsScreenBody(props: CardsScreenProps) {
   // 輔助渲染：分類清單（含最下方「最近刪除」入口與「整理分類」按鈕）
   const renderCategoryList = (selectedId: string | null) => (
     <div className="category-list-container" data-testid="category-list-container">
+      {quickIdeaCategoryId ? (
+        <p className="quick-idea-list-hint" data-testid="quick-idea-category-hint">
+          {QUICK_IDEA_CATEGORY_LIST_HINT}
+        </p>
+      ) : null}
       <ul className="category-list" data-testid="category-list">
         {categories.map((cat) => {
           const count = countCardsInCategory(cards, cat.id);
@@ -896,6 +954,16 @@ function CardsScreenBody(props: CardsScreenProps) {
               <span className="card-item-title">{displayCardTitle(row.card.title)}</span>
               {summary && <span className="card-item-summary">{summary}</span>}
             </button>
+            {isQuickIdeaCategory && (
+              <button
+                type="button"
+                className="quick-idea-move-button"
+                onClick={() => setMovingCardId(row.card.id)}
+                data-testid={`quick-idea-move-${row.card.id}`}
+              >
+                {QUICK_IDEA_MOVE_BUTTON}
+              </button>
+            )}
           </li>
         );
       })}

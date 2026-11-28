@@ -22,7 +22,21 @@ import {
 } from '../components/ManuscriptVersionSheet';
 import { VersionRestoreNotice } from '../components/VersionRestoreNotice';
 import '../components/manuscriptVersionSheet.css';
-import { BackIcon, CardsIcon, FocusIcon, ListTreeIcon } from '../components/Icons';
+import { BackIcon, CardsIcon, FocusIcon, LightbulbIcon, ListTreeIcon } from '../components/Icons';
+import { QuickIdeaSheet } from '../components/QuickIdeaSheet';
+import { QuickIdeaNotice } from '../components/QuickIdeaNotice';
+import '../components/quickIdea.css';
+import {
+  createQuickIdeaPlaceGuard,
+  isQuickIdeaAvailable,
+  persistPlaceOnBodyBlur,
+  persistScrollPlace,
+  settleQuickIdeaSession,
+  startTailWatch,
+  tryEnterQuickIdea,
+  type QuickIdeaPlaceGuard,
+} from '../editor/quickIdeaPlaceGuard';
+import { QUICK_IDEA_COMPOSING_TOAST, QUICK_IDEA_OPEN_LABEL } from '../copy/quickIdeaCopy';
 import { runReminderSave, StaleSaveReminder, useStaleSaveTick } from '../components/StaleSaveReminder';
 import { SaveHeaderStatus } from '../components/SaveHeaderStatus';
 import { StatusBadge } from '../components/StatusBadge';
@@ -156,7 +170,16 @@ import {
   useProject,
   useSample,
 } from '../state/sampleStore';
-import { caretToRestore, nearIdsOf, readWritePlace, saveWritePlace, scrollTopToRestore } from '../state/navMemory';
+import {
+  caretToRestore,
+  nearIdsOf,
+  patchCardsPlace,
+  readCardsPlace,
+  readWritePlace,
+  saveWritePlace,
+  scrollTopToRestore,
+  selectionPatch,
+} from '../state/navMemory';
 import { editorSaveStatus, unifiedFocusSaveLabel } from './editorSaveStatus';
 import {
   HalfWidthBadge,
@@ -394,6 +417,14 @@ export function EditorPane({
   projectIdRef.current = projectId;
   const chapterIdRef = useRef(chapter.id);
   chapterIdRef.current = chapter.id;
+  // WO-144：記靈感。頁首燈泡與「⋯」選單項共用 openQuickIdea；存好後的提示記著那張卡與分類。
+  const [quickIdeaOpen, setQuickIdeaOpen] = useState(false);
+  const quickIdeaGuardRef = useRef<QuickIdeaPlaceGuard>(createQuickIdeaPlaceGuard());
+  const [quickIdeaNotice, setQuickIdeaNotice] = useState<{
+    cardId: string;
+    categoryCode: string;
+    token: number;
+  } | null>(null);
   const [trashNotice, setTrashNotice] = useState<{
     itemId: string | null;
     message: string;
@@ -457,6 +488,14 @@ export function EditorPane({
   useEffect(() => {
     syncSelectionRef.current();
   }, [chapter.content, trashOpen, versionsOpen, focusMode]);
+
+  useEffect(() => {
+    if (!quickIdeaNotice) return;
+    const timer = window.setTimeout(() => {
+      setQuickIdeaNotice((prev) => (prev && prev.token === quickIdeaNotice.token ? null : prev));
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [quickIdeaNotice]);
 
   const showSelectionNotice = !focusMode && !trashOpen && !versionsOpen && selectionWordCount !== null;
 
@@ -758,7 +797,55 @@ export function EditorPane({
     }
   };
 
+  // WO-144：頁首燈泡與「⋯」選單項走同一個開啟函式。正在組字時不開，避免打斷輸入法。
+  // 橫拿且鍵盤開著（html.landscape-writing，頁首已藏起）時不提供記靈感：選單不列、開啟函式也不開。
+  // 「⋯」開著時用開啟當下鎖定的橫拿判斷（選單搶走焦點後 keyboard.landscape 會變 false，不能跟著變）。
+  const quickIdeaAvailable = isQuickIdeaAvailable(quickIdeaGuardRef.current, keyboard.landscape);
+  const openQuickIdea = () => {
+    const entry = tryEnterQuickIdea(quickIdeaGuardRef.current, {
+      landscapeTypingNow: keyboard.landscape,
+      composing: isComposingRef.current,
+    });
+    if (entry === 'blocked') return;
+    if (entry === 'composing') {
+      actionsRef.current.toast(QUICK_IDEA_COMPOSING_TOAST);
+      return;
+    }
+    setQuickIdeaNotice(null);
+    // tryEnterQuickIdea 已先進入保護階段，記入欄拿焦點造成的失焦才不會寫游標與閱讀位置
+    setQuickIdeaOpen(true);
+  };
+
+  const handleQuickIdeaSave = (input: { title: string; content: string }): boolean => {
+    const result = actionsRef.current.addQuickIdea(projectId, input);
+    if (result.kind !== 'added') return false;
+    setQuickIdeaOpen(false);
+    setQuickIdeaNotice({ cardId: result.cardId, categoryCode: result.categoryCode, token: Date.now() });
+    return true;
+  };
+
+  const handleQuickIdeaView = () => {
+    const notice = quickIdeaNotice;
+    if (!notice) return;
+    setQuickIdeaNotice(null);
+    flushCardEdit('close');
+    patchCardsPlace(
+      projectId,
+      selectionPatch(readCardsPlace(projectId), notice.categoryCode, notice.cardId),
+    );
+    navigate(`/p/${projectId}/cards`);
+  };
+
   const extraMenuItems: FormatExtraMenuItem[] = [
+    ...(quickIdeaAvailable
+      ? [
+          {
+            id: 'quick-idea-open',
+            label: QUICK_IDEA_OPEN_LABEL,
+            onSelect: openQuickIdea,
+          },
+        ]
+      : []),
     {
       id: 'versions-open',
       label: VERSION_MENU_OPEN,
@@ -809,14 +896,29 @@ export function EditorPane({
           snap.end > snap.start &&
           countWords(snap.valueSnapshot.slice(snap.start, snap.end)) > 0,
       );
-      // 固定項目：排版、版本、刪稿暫存、符號列開關（共 4 個），有選取時再加「移到刪稿暫存」。
-      // 與上面 extraMenuItems 的項目數一致。
-      return 4 + (hasSel ? 1 : 0);
+      // 固定項目：排版、版本、刪稿暫存、符號列開關（共 4 個）；
+      // 橫拿打字以外再加「記靈感」，有選取時再加「移到刪稿暫存」。與上面 extraMenuItems 的項目數一致。
+      return 4 + (quickIdeaAvailable ? 1 : 0) + (hasSel ? 1 : 0);
     },
   });
   onUserEditRef.current = () => {
     if (formatTools.hasSnapshot) formatTools.dismissNotice();
   };
+  // WO-144：選單與記入畫面都關了，才結束保護階段（進過記靈感就丟掉暫緩的位置寫入，否則補寫）
+  // 進過記靈感的話，面板關閉後保護再延續一小段（等鍵盤收合、可視區穩定，或使用者主動輸入）
+  const quickIdeaTailCancelRef = useRef<() => void>(() => {});
+  useEffect(() => {
+    const guard = quickIdeaGuardRef.current;
+    quickIdeaTailCancelRef.current();
+    settleQuickIdeaSession(guard, {
+      menuOpen: formatTools.isOpen,
+      quickIdeaOpen,
+    });
+    quickIdeaTailCancelRef.current = startTailWatch(guard);
+  }, [formatTools.isOpen, quickIdeaOpen]);
+  useEffect(() => () => quickIdeaTailCancelRef.current(), []);
+  const beginQuickIdeaMenuSession = () =>
+    quickIdeaGuardRef.current.beginMenu(keyboard.landscape);
 
   const [landscapeExitState, setLandscapeExitState] = useState(INITIAL_LANDSCAPE_EXIT_STATE);
   const landscapeExitTimerRef = useRef<number | null>(null);
@@ -1402,10 +1504,26 @@ export function EditorPane({
           <span className="view-cards-label">{VIEW_CARDS_BUTTON}</span>
         </button>
         {!focusMode ? (
+          <button
+            type="button"
+            className="quick-idea-button"
+            aria-label={QUICK_IDEA_OPEN_LABEL}
+            aria-haspopup="dialog"
+            aria-expanded={quickIdeaOpen}
+            // 不搶走正文焦點，也不打斷正在組的字
+            onPointerDown={(event) => keepBodyFocusOnPointerDown(ref.current, event)}
+            onClick={openQuickIdea}
+            data-testid="quick-idea-open-topbar"
+          >
+            <LightbulbIcon size={20} />
+          </button>
+        ) : null}
+        {!focusMode ? (
           <FormatMoreButton
             tools={formatTools}
             className="format-more-button"
             testId="format-more-topbar"
+            onBeforeOpen={beginQuickIdeaMenuSession}
             onPointerDown={captureMenuSelection}
           />
         ) : null}
@@ -1485,6 +1603,7 @@ export function EditorPane({
           tools={formatTools}
           className="format-more-floating"
           testId="format-more-landscape"
+          onBeforeOpen={beginQuickIdeaMenuSession}
           onPointerDown={captureMenuSelection}
         />
       ) : null}
@@ -1499,8 +1618,11 @@ export function EditorPane({
           onDismiss={() => actions.clearVersionRestoreUndo()}
         />
       ) : null}
-      {!focusMode && (trashNotice || showSelectionNotice) ? (
+      {!focusMode && (trashNotice || showSelectionNotice || quickIdeaNotice) ? (
         <div className="trash-corner-stack">
+          {quickIdeaNotice ? (
+            <QuickIdeaNotice onView={handleQuickIdeaView} onDismiss={() => setQuickIdeaNotice(null)} />
+          ) : null}
           {trashNotice ? (
             <TrashCornerNotice
               message={trashNotice.message}
@@ -1516,6 +1638,13 @@ export function EditorPane({
           ) : null}
         </div>
       ) : null}
+      <QuickIdeaSheet
+        open={quickIdeaOpen && !focusMode}
+        bookTitle={project?.title ?? ''}
+        layoutMode={layoutMode}
+        onClose={() => setQuickIdeaOpen(false)}
+        onSave={handleQuickIdeaSave}
+      />
       <TrashSheet
         open={trashOpen && !focusMode}
         items={trashItems}
@@ -1578,7 +1707,13 @@ export function EditorPane({
           setFocused(true);
           saveWritePlaceNow(true);
         }}
-        onScroll={() => saveWritePlaceNow()}
+        onTouchStart={() => quickIdeaGuardRef.current.userInput()}
+        onWheel={() => quickIdeaGuardRef.current.userInput()}
+        onKeyDown={() => quickIdeaGuardRef.current.userInput()}
+        onScroll={() => {
+          // WO-144：記靈感的選單／記入畫面期間，鍵盤收起等造成的捲動不寫閱讀位置
+          persistScrollPlace(quickIdeaGuardRef.current, () => saveWritePlaceNow());
+        }}
         onCompositionStart={() => {
           isComposingRef.current = true;
           compositionQueue.startComposition();
@@ -1601,9 +1736,14 @@ export function EditorPane({
             clearPendingComposition();
           }
           const el = ref.current;
-          if (el) actions.rememberPlace(projectId, chapter.id, el.selectionStart ?? 0);
-          // 失焦當下不改記住的鍵盤狀態（切頁也會失焦）；真正離開時以按下當下為準
-          saveWritePlaceNow(typingAtPointerRef.current);
+          // WO-144：記靈感畫面開著時，焦點移到記入欄造成的失焦不寫游標與閱讀位置
+          persistPlaceOnBodyBlur(quickIdeaGuardRef.current, {
+            remember: () => {
+              if (el) actions.rememberPlace(projectId, chapter.id, el.selectionStart ?? 0);
+            },
+            // 失焦當下不改記住的鍵盤狀態（切頁也會失焦）；真正離開時以按下當下為準
+            save: () => saveWritePlaceNow(typingAtPointerRef.current),
+          });
         }}
       />
       <HalfWidthBubble controller={halfWidth} />
